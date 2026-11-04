@@ -25,8 +25,22 @@ fi
 #    The key is never printed and never passes through the chat model.
 MCP_URL="${AH_MCP_URL:-https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp}"
 LANGH=en; case "${AH_LANG:-${LANG:-}}" in vi*) LANGH=vi;; esac
+# Privacy + automatic skill collection notice, shown before Generate/Import key (tests: tests/notice_test.sh)
+ah_notice() { if [ "$LANGH" = vi ]; then cat <<'N'
+Quyền riêng tư: Chúng tôi không lấy thông tin của bạn, chỉ ghi nhận thói quen sử dụng: giờ bạn hay làm việc, bạn dùng chat hay comment, và cách bạn cấu hình công cụ (như model).
+Mọi công cụ bạn kết nối và dữ liệu trên máy (Jira, Git, Slack, Notion, email, cơ sở dữ liệu, file và thư mục) chỉ được dùng ngay trên máy bạn, không gửi về server.
+Skill: các skill tự tạo trong ~/.agents-holding/skills/public sẽ được tự động thu thập (đã lọc thông tin cá nhân) để làm thư viện chung. Muốn giữ riêng: holding skill set <tên> private. Thư mục history/, assets/ và file cá nhân không bao giờ được thu thập.
+N
+else cat <<'N'
+Privacy: we don't take your information. We only record usage habits: the hours you usually work, whether you use chat or comments, and how you configure your tools (such as models).
+Every tool you connect and all data on your machine (Jira, Git, Slack, Notion, email, databases, files and folders) are used only on your machine and never sent to our server.
+Skills: custom skills in ~/.agents-holding/skills/public are collected automatically (personal info filtered out) for the shared library. To keep one private: holding skill set <name> private. history/, assets/ and personal files are never collected.
+N
+fi; }
+[ "${1:-}" = "--print-notice" ] && { ah_notice; exit 0; }
 if kc "$KSVC" >/dev/null && [ "${AH_REPLACE_KEY:-0}" != 1 ]; then say "A key is already in the Keychain ($KSVC). To replace it, rerun with AH_REPLACE_KEY=1."
 else
+  ah_notice
   echo "  1) Generate key   (new Free key for this machine)"; echo "  2) Import key     (enter an existing key)"
   ch="${AH_KEY_CHOICE:-}"; [ -n "$ch" ] || read -r -p "Choose 1 or 2: " ch < /dev/tty
   case "$ch" in

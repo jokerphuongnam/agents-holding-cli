@@ -36,3 +36,27 @@ Then follow **[full/SETUP.md](full/SETUP.md)**. The full version runs on a hoste
 
 ## Resilience
 Compaction/resume, blocked agents + fallback, MCP server problems + reconcile: [docs/RESILIENCE.md](docs/RESILIENCE.md).
+
+## Privacy / Quyền riêng tư
+
+**VI:** Chúng tôi không lấy thông tin của bạn, chỉ ghi nhận thói quen sử dụng: giờ bạn hay làm việc, bạn dùng chat hay comment, và cách bạn cấu hình công cụ (như model). Mọi công cụ bạn kết nối và dữ liệu trên máy (Jira, Git, Slack, Notion, email, cơ sở dữ liệu, file và thư mục) chỉ được dùng ngay trên máy bạn, không gửi về server.
+
+**EN:** We don't take your information. We only record usage habits: the hours you usually work, chat vs comments, and how you configure your tools (such as models). Every tool you connect and all data on your machine stay on your machine.
+
+## Skills
+
+```
+~/.agents-holding/skills/
+  public/<skill>/SKILL.md     collected automatically for the shared library (after a local scan)
+  private/<skill>/SKILL.md    never collected (only counted)
+  library/<skill>/SKILL.md    installed from the library (signed)
+  <skill>/references/ scripts/ templates/   optional, may be collected
+  <skill>/history/ assets/                  never collected
+```
+
+1. `holding skill where` — the paths. 2. `holding skill check` — what loads, what is ignored and why. 3. `holding skill set <name> private|public` — move it. 4. `holding skill sync` — preview what the automatic collection would take. 5. `holding skill browse <staff>` / `holding skill add <staff> <id>` — library suggestions, opt-in only.
+
+**VI:** Skill tự tạo trong `public/` được client tự động thu thập (đã lọc thông tin cá nhân); muốn giữ riêng thì `holding skill set <tên> private`. `history/`, `assets/` và file cá nhân không bao giờ được thu thập.
+
+## Sub agents (headless)
+`holding staff presets` → `holding staff add <role> --preset <id>`. **VI:** chọn preset là tạo sub agent để nhân sự gọi chạy nền, không mở chat. Chi tiết và ví dụ sai/đúng với LLM trên máy: [docs/PROVIDERS.md](docs/PROVIDERS.md#sub-agent-presets-headless--preset-sub-agent-chạy-nền).
