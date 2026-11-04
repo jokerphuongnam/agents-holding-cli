@@ -57,7 +57,7 @@ Open your agent in the repo (`cd ~/Code/shop && claude`, `codex`, or `grok`) and
 /holding-ceo set up a company for this repo
 ```
 
-The holding CEO looks at your stack, creates the company and writes `.agents/company.json`. Commit that one file. Use `/ceo <what you want>` for day-to-day work, and `/help` to list every command.
+The holding CEO looks at your stack, creates the company and writes `.agents/company.json`. Commit that one file. Use `/ceo <what you want>` for day-to-day work, `/staffs` to see your staff as a tree (each role with a one-line description), and `/help` to list every command.
 
 ## 3. Check everything
 
