@@ -42,13 +42,14 @@ case "$1" in
   open-setup) shift; exec bash "$here/open-setup.sh" "$@" ;;
   staff) [ "${2:-}" = test ] && { shift 2; exec node "$here/staff-test.mjs" "$@"; }; echo "usage: holding staff test <staff>"; exit 1 ;;
   staffs) set +e; out="$(bash "$here/ah-cli.sh" "$@")"; rc=$?; printf '%s\n' "$out" | node "$here/staffs-local.mjs" "${AH_COMPANY:-}" "$@"; exit $rc ;;
-  usage|tasks|history|sources|renew|plan|fire|assign|convention|auto-pr|flow|custom-skills|help|tokens|token-add|token-revoke|token-renew|token-label|token-reset-device|token-show)
+  billing|usage|tasks|history|sources|renew|plan|fire|assign|convention|auto-pr|flow|custom-skills|help|tokens|token-add|token-revoke|token-renew|token-label|token-reset-device|token-show)
     exec bash "$here/ah-cli.sh" "$@" ;;
   server) shift; exec bash "$here/ah-cli.sh" "$@" ;;
   jira-tasks|jira-task|jira-board|jira-new|jira-move|jira-comment) exec node "$here/jira.mjs" "$@" ;;
   *) cat <<USAGE
 usage:
   holding set-staff <staff> <provider> <model> [low|medium|high] [--company X]   per-company staff -> provider/model/effort
+  holding billing                     plan + credits used/left (read-only; more credits: contact the owner)
   holding inbox [--all] [KEY]         CEO inbox: what needs you (questions, 1/2/3, hires, blocks, gates), pending first
   holding reply <KEY|item> <answer>   quick answer without a session (e.g. holding reply KAN-12 2); the staff resumes
   holding ceo --item <id|KEY>         open a CEO session focused on that pending item

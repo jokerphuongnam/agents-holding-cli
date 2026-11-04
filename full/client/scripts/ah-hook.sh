@@ -14,7 +14,7 @@ case "$name" in ah-doctor|ah-help|ah-plan|ah-status|ah-usage|ah-history|ah-tasks
 run=()
 case "$name" in
   staffs) if [ -f "$here/holding" ] && [ -f "$here/staffs-local.mjs" ]; then run=(bash "$here/holding" staffs); else run=(bash "$here/ah-cli.sh" staffs); fi ;; # server tree + this machine's provider/model/effort per staff
-  usage|tasks|history|sources|renew|plan|doctor|status|fire|assign|convention|auto-pr|custom-skills|help|tokens|token-add|token-revoke|token-renew|token-label|token-reset-device|token-show)
+  billing|usage|tasks|history|sources|renew|plan|doctor|status|fire|assign|convention|auto-pr|custom-skills|help|tokens|token-add|token-revoke|token-renew|token-label|token-reset-device|token-show)
     run=(bash "$here/ah-cli.sh" "$name") ;;
   run) [ -d "$cwd" ] && cd "$cwd"; export AH_HOOK_RUN=1; run=(node "$here/run-cli.mjs") ;;
   hire) export AH_HOOK_RUN=1; run=(bash "$here/holding" hire) ;;  # /hire <role> [--agent P --model M --effort E]: hire + bind (no flags: remembered default)

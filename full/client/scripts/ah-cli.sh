@@ -42,6 +42,8 @@ pickup() {
   echo "Send it PRIVATELY. Read it again later: security find-generic-password -s agents-holding-issued-$id -w | pbcopy"; k=""
 }
 args="${A[*]:-}"
+# billing: language follows the input; no words typed -> the terminal language (vi_* -> Vietnamese)
+[ "$cmd" = billing ] && [ -z "$args" ] && case "${AH_LANG:-${LANG:-}}" in vi*) args="vi";; esac
 # read-only commands keep the last good answer; on server down / 5xx / timeout they print it marked STALE (never for writes)
 RO=0; case "$cmd" in status|board|tasks|task|usage|staffs|staff|team|flow|flows|listener|help|skills|habits|setup-status|ceo) RO=1;; esac
 CACHE="$HOME/.config/agents-holding/cache/cli-${CO:-none}-$cmd-$(printf '%s' "$args" | shasum | cut -c1-10).txt"

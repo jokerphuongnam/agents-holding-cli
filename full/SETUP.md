@@ -62,7 +62,7 @@ then add `headers = { "Authorization" = "Bearer ${AGENTS_HOLDING_KEY}", "X-AH-De
 **Slash commands.** The server defines them (MCP prompts). Claude Code lists them as `/mcp__agents-holding__ceo`; Codex and Cursor list them under the server's prompts. **Grok CLI does not show MCP prompts**: it loads command files from `~/.grok/commands/*.md`, which `connect.sh` (and `install.sh`) write for you and refresh on every run; run `holding sync-commands` (or rerun `connect.sh`) to pick up new server commands. Names that clash with Grok built-ins get an `ah-` prefix: `/ah-doctor`, `/ah-help`, `/ah-plan`, `/ah-status`, `/ah-usage`, `/ah-history`, `/ah-tasks`. `/ah-help` (or `help` elsewhere) lists them all.
 
 **Instant commands (no model, no tokens).** Commands that only show data are answered without the AI:
-- In Grok, `holding sync-commands` (run by `connect.sh`/`install.sh`) installs a prompt hook (`~/.grok/hooks/agents-holding.json`). When you type `/staffs`, `/whoami`, `/ah-usage`, `/ah-tasks`, `/ah-history`, `/sources`, `/renew`, `/ah-plan KEY`, `/ah-doctor`, `/listener`, `/hire`, `/fire`, `/assign`, `/convention`, `/auto-pr`, `/flow` (show/list), `/custom-skills`, `/ah-help`, the owner `/tokens` and `/token-*` commands, or `/jira-*`, the hook prints the answer and Grok shows "Turn blocked by a hook". That message is expected: it means the prompt never went to the model. Turn this off with `export AH_HOOK=0`, or skip installing it with `holding sync-commands --no-hook`.
+- In Grok, `holding sync-commands` (run by `connect.sh`/`install.sh`) installs a prompt hook (`~/.grok/hooks/agents-holding.json`). When you type `/staffs`, `/whoami`, `/billing`, `/ah-usage`, `/ah-tasks`, `/ah-history`, `/sources`, `/renew`, `/ah-plan KEY`, `/ah-doctor`, `/listener`, `/hire`, `/fire`, `/assign`, `/convention`, `/auto-pr`, `/flow` (show/list), `/custom-skills`, `/ah-help`, the owner `/tokens` and `/token-*` commands, or `/jira-*`, the hook prints the answer and Grok shows "Turn blocked by a hook". That message is expected: it means the prompt never went to the model. Turn this off with `export AH_HOOK=0`, or skip installing it with `holding sync-commands --no-hook`.
 - In a terminal, `holding staffs`, `holding whoami`, `holding usage 7`, `holding plan KAN-1`, `holding tokens`, and so on give the same output. `holding help` lists them. `holding server doctor` and `holding server listener` show the server's side of those checks.
 - These commands still go through the agent because they need it: `/ceo`, `/holding-ceo`, `/new-task`, `/split`, `/approve`, `/connect-jira`, `/flow edit`, `/admin`.
 
@@ -164,7 +164,7 @@ Defaults: plan/question stages use a cheap model (Grok `grok-4.7-build-fast`, Cl
 
 ## Renewing
 
-The assistant warns you 7 days before the key expires. `/whoami` shows the plan and expiry date, and `/renew` explains how to renew. Your data is kept if the key expires.
+The assistant warns you 7 days before the key expires. `/whoami` shows the plan and expiry date, and `/renew` explains how to renew. `holding billing` (or `/billing`) shows your plan, credits used and credits left ("no data yet" until the credit system is on); to get more credits, contact the owner. It answers in the language you type in. Your data is kept if the key expires.
 
 ## Uninstall
 
