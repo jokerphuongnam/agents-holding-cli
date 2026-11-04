@@ -137,6 +137,8 @@ Defaults: plan/question stages use a cheap model (Grok `grok-4.7-build-fast`, Cl
    If your repo is in Documents, Desktop or Downloads, click **Allow** when macOS asks whether `node` may read that folder.
 7. Run `/doctor` again. Every step should show `[x]`.
 
+> Who decides at each stage (default flow, customizable): see [docs/WHO-DECIDES.md](../docs/WHO-DECIDES.md).
+
 ### Working with the board
 
 - New cards stay in **To Do**. **Drag a card to In Progress to start it.**

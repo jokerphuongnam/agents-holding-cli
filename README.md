@@ -12,6 +12,10 @@ That writes `./.agents/my-product-company/`. Open `system/staffs/leadership/ceo.
 
 This is the free company: two people, one plan, one build. The full edition adds a product desk, QC, a skill library, plan history, child companies, and the Mac app.
 
+## Who decides what
+
+See [docs/WHO-DECIDES.md](docs/WHO-DECIDES.md): the default Jira flow, colour-coded by who decides (human / AI / script). You can customize your own flow.
+
 ## Full version (license key)
 
 Got a license key (`ah_live_...`)? Add the server to your agent and sign in with the key when the browser opens. Works with Claude Code, Codex, Cursor and Grok:
