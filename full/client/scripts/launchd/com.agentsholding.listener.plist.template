@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.agentsholding.listener</string>
+  <key>ProgramArguments</key><array><string>/bin/bash</string><string>__BIN_DIR__/run-listener.sh</string></array>
+  <key>EnvironmentVariables</key><dict>
+    <key>AH_SERVER_DIR</key><string>__SERVER_DIR__</string>
+    <key>AH_REPO_DIR</key><string>__REPO_DIR__</string>
+    <key>HOME</key><string>__HOME__</string>
+  </dict>
+  <key>WorkingDirectory</key><string>__HOME__</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>30</integer>
+  <key>StandardOutPath</key><string>__HOME__/Library/Logs/agents-holding/launchd.out.log</string>
+  <key>StandardErrorPath</key><string>__HOME__/Library/Logs/agents-holding/launchd.err.log</string>
+</dict></plist>

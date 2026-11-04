@@ -1,0 +1,29 @@
+#!/bin/sh
+# holding <command>: local helper for agents-holding customers.
+src="$0"  # follow symlinks (e.g. ~/.local/bin/holding -> ~/.agents-holding/scripts/holding)
+while [ -L "$src" ]; do d="$(dirname "$src")"; src="$(readlink "$src")"; case "$src" in /*) ;; *) src="$d/$src" ;; esac; done
+here="$(cd "$(dirname "$src")" && pwd)"
+case "$1" in
+  listen) shift; exec node "$here/holding-listen.mjs" "$@" ;;
+  listener) shift; exec bash "$here/launchd/listener.sh" "$@" ;;
+  doctor) shift; exec bash "$here/doctor.sh" "$@" ;;
+  jira-keychain) shift; exec bash "$here/jira-keychain-setup.sh" "$@" ;;
+  jira-workflow) shift; exec bash "$here/jira-setup-workflow.sh" "$@" ;;
+  jira-webhook) shift; exec bash "$here/jira-register-webhook.sh" "$@" ;;
+  open-setup) shift; exec bash "$here/open-setup.sh" "$@" ;;
+  *) cat <<USAGE
+usage:
+  holding listener on [--repo DIR]   start the background listener now
+  holding listener off               stop it AND turn auto-start off
+  holding listener autostart on|off  start at login (only while the listener is on)
+  holding listener status            running? PID, autostart, last 'join ok'
+  holding listener logs [-f]         recent listener log
+  holding doctor [--repo DIR]        check every local setup step
+  holding listen [--repo DIR] [--once]   run the listener in the foreground
+  holding jira-keychain <site> <email>     store your Atlassian API token in the macOS Keychain (hidden prompt)
+  holding jira-workflow <site> <email> <KEY> [--dry-run]   create missing Jira statuses/columns
+  holding jira-webhook '<setup_url>'      register the Jira webhook (token from the Keychain)
+  holding open-setup '<setup_url>'        open the /connect-jira setup page
+USAGE
+     exit 2 ;;
+esac
