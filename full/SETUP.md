@@ -1,6 +1,6 @@
 # agents-holding: full version setup (macOS)
 
-You need a **license key** (`ah_live_...`) from the person who invited you. Everything else is free to install. Setup takes about 10 minutes, or about 25 with Jira.
+Setup offers exactly two options: **Generate key** (a new Free key for this Mac, 1,500 credits/month; one Free key per machine, ever) or **Import key** (a key you already have, e.g. from the owner, or your own key on another Mac within its device limit). No email is needed. Everything else is free to install. Setup takes about 10 minutes, or about 25 with Jira.
 
 The examples use sample values. Replace them with your own:
 
@@ -20,7 +20,7 @@ curl -fsSL https://raw.githubusercontent.com/jokerphuongnam/agents-holding-free/
 ```
 It asks your key at a hidden prompt and keeps it only in the macOS Keychain, creates this Mac's device id, adds agents-holding to Grok (and Claude Code / Codex if installed), adds two Keychain loader lines to `~/.zshrc`, and runs `grok mcp doctor agents-holding`. Open a new terminal afterwards.
 
-**1 key = 1 machine.** A key binds to the first machine that uses it (the `X-AH-Device` header from the Keychain id, or the sign-in page's browser id). Another machine gets "bound to another machine"; ask the owner to run `/key reset-device`, then connect the new machine.
+**Keys are per machine.** A key counts each Mac (or browser) that uses it against its device limit (usually 1). `holding key show` shows your key id, plan, credits and devices used/max. To upgrade, send your **key id** (never the key) to the owner.
 
 Manual alternative (OAuth sign-in page):
 
@@ -63,7 +63,7 @@ then add `headers = { "Authorization" = "Bearer ${AGENTS_HOLDING_KEY}", "X-AH-De
 
 **Instant commands (no model, no tokens).** Commands that only show data are answered without the AI:
 - In Grok, `holding setup sync` (run by `connect.sh`/`install.sh`) installs a prompt hook (`~/.grok/hooks/agents-holding.json`). When you type `/staff list`, `/key show`, `/billing`, `/billing usage`, `/task list`, `/task history`, `/jira sources`, `/key renew`, `/task plan KEY`, `/doctor`, `/listener`, `/staff add`, `/staff remove`, `/task set`, `/company set convention`, `/company set auto-pr`, `/flow` (show/list), `/skill list --custom`, `/help`, the owner `/key list` and `/token-*` commands, or `/jira-*`, the hook prints the answer and Grok shows "Turn blocked by a hook". That message is expected: it means the prompt never went to the model. Turn this off with `export AH_HOOK=0`, or skip installing it with `holding setup sync --no-hook`.
-- In a terminal, `holding staff list`, `holding key show`, `holding billing usage 7`, `holding task plan KAN-1`, `holding key list`, and so on give the same output. `holding help` lists them. `holding doctor --server` and `holding listener status --server` show the server's side of those checks.
+- In a terminal, `holding staff list`, `holding key show`, `holding billing usage 7`, `holding task plan KAN-1`, and so on give the same output. `holding help` lists them. `holding doctor --server` and `holding listener status --server` show the server's side of those checks.
 - These commands still go through the agent because they need it: `/ceo`, `/ceo`, `/task add`, `/task split`, `/approve`, `/jira setup`, `/flow edit`, `/admin`.
 
 
@@ -164,7 +164,7 @@ Defaults: plan/question stages use a cheap model (Grok `grok-4.7-build-fast`, Cl
 
 ## Renewing
 
-The assistant warns you 7 days before the key expires. `/key show` shows the plan and expiry date, and `/key renew` explains how to renew. `holding billing` (or `/billing`) shows your plan, credits used and credits left ("no data yet" until the credit system is on); to get more credits, contact the owner. It answers in the language you type in. Your data is kept if the key expires.
+The assistant warns you 7 days before the key expires. `/key show` shows the plan and expiry date, and to renew or get more credits, contact the owner. `holding billing` (or `/billing`) shows your plan, credits used and credits left ("no data yet" until the credit system is on); to get more credits, contact the owner. It answers in the language you type in. Your data is kept if the key expires.
 
 ## Uninstall
 
@@ -183,3 +183,11 @@ claude mcp remove agents-holding --scope user; codex mcp remove agents-holding  
 - Comment on a card in **Planned**: the plan is revised and stays in Planned. Comment in **In Review** (or drag it back to Coding with a comment): it goes back to Coding, the same developer fixes it on `feature/<KEY>`, QC runs, and it returns to In Review. Only you move cards to Done.
 - `holding habit list [show|edit|clear]`: preferences learned from your comments when a task reaches Done (local file, used in later plans and code).
 - `holding status`: listener running?, realtime connection, last Jira event, last heartbeat, current task/stage. `holding notify on|off`: macOS notifications. Cards being worked on carry the `agent-working` label.
+
+## Key: Generate key or Import key
+
+- `holding key generate`: creates a new Free key for this Mac and stores it in the Keychain (never shown). A Mac that already had a Free key cannot get another; Free credits do not reset by generating again.
+- `holding key import`: hidden prompt for a key you already have; stored in the Keychain, then `holding key show`.
+- `holding key show` / `holding billing` / `holding credit show`: your key id, plan, credits, devices. To upgrade or get more credits, send your key id to the owner.
+
+Lost your Free key on this Mac? Run Generate key again: it recovers this machine's key (same credits, new secret). Paid keys: use Import key.

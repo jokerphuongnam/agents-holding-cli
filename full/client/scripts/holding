@@ -23,7 +23,8 @@ usage: holding <noun> <verb> [args]   (chat: /<noun> <verb> ...; no verb = list/
   jira list [column] | show KEY | board | add "title" [desc] | move KEY <column> | comment KEY "text"   [--project KEY]
   inbox list [--all] [KEY] | inbox reply <KEY|item> <answer>
   ceo [--item <id|KEY>]               the CEO is your chat session (/ceo); --item opens one focused on a pending item
-  key show | renew                    your license (owner, home-Mac key: key list | add <label> [plan] [days] | remove <ref> | renew <ref> [days] | set label <id> <label> | reset-device <ref> | show <id>)
+  key show | generate | import        your key id, plan, credits, devices (generate: new Free key; import: use an existing key on this Mac)
+  credit show                         your credits
   billing [vi|en] | billing usage [days]
   status [--server] | doctor [--repo DIR] [--server] | notify on|off
   setup sync [--owner] [--claude] | setup open '<setup_url>'
@@ -87,7 +88,8 @@ case "$noun" in
   inbox) case "$verb" in ""|list|reply) exec node "$here/inbox-cli.mjs" "${verb:-list}" "$@" ;; *) exec node "$here/inbox-cli.mjs" list "$verb" "$@" ;; esac ;;
   ceo) [ -n "$verb" ] && exec node "$here/inbox-cli.mjs" ceo "$verb" "$@"
     echo "The CEO is your current chat session: use /ceo in your agent (Grok/Claude/Codex). Focus one pending item: holding ceo --item <id> (opens a CEO session)."; exit 0 ;;
-  key) case "$verb" in ""|show) [ $# -eq 0 ] && node "$here/companies-cli.mjs" show; srv "$@" ;; renew|list|add|remove|set|reset-device) srv "$@" ;; *) usage ;; esac ;;
+  key) case "$verb" in ""|show) [ $# -eq 0 ] && node "$here/companies-cli.mjs" show; srv "$@" ;; generate|import|renew|list|add|remove|set|reset-device|rotate) srv "$@" ;; *) usage ;; esac ;;
+  credit) case "$verb" in ""|show|plans|add|list) srv "$@" ;; *) usage ;; esac ;;
   billing) case "$verb" in ""|usage|vi|en) srv "$@" ;; *) bash "$here/ah-cli.sh" billing "$verb" "$@"; exit $? ;; esac ;;
   status) case " $verb $* " in *" --server "*) exec bash "$here/ah-cli.sh" status ;; esac; exec node "$here/status.mjs" status ${verb:+"$verb"} "$@" ;;
   doctor) case " $verb $* " in *" --server "*) exec bash "$here/ah-cli.sh" doctor ;; esac; exec bash "$here/doctor.sh" ${verb:+"$verb"} "$@" ;;

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # agents-holding: connect THIS Mac in one command (no Node needed):
 #   curl -fsSL https://raw.githubusercontent.com/jokerphuongnam/agents-holding-free/main/full/connect.sh | bash
-# 1) asks your license key at a hidden Keychain prompt (never echoed, never in a file)  2) creates this machine's device id
-# (1 key = 1 machine) in the Keychain  3) adds agents-holding to Grok (~/.grok/config.toml), Claude Code and Codex if installed,
+# 1) creates this machine's device id in the Keychain  2) Generate key (new Free key) or Import key (hidden prompt; never
+# echoed, never in a file)  3) adds agents-holding to Grok (~/.grok/config.toml), Claude Code and Codex if installed,
 # reading the key/device from env vars  4) adds the Keychain loader to ~/.zshrc (idempotent)  5) health check.
 # Env: AH_MCP_URL, AH_AGENTS=grok,claude,codex (default: installed ones), AH_NO_DOCTOR=1, AH_OWNER=1 (owner Mac: also owner commands).
 set -euo pipefail
@@ -12,17 +12,30 @@ say() { printf '\033[1;32m==>\033[0m %s\n' "$*"; }; warn() { printf '\033[1;33m!
 [ "$(uname)" = Darwin ] || die "macOS only (Keychain). Other systems: see full/SETUP.md"
 kc() { security find-generic-password -s "$1" -a "$USER" -w 2>/dev/null; }
 
-# 1. license key -> Keychain (hidden prompt from the terminal even when piped from curl)
-if kc "$KSVC" >/dev/null; then say "License key already in the Keychain ($KSVC). To replace it: security delete-generic-password -s $KSVC, then rerun."
-else
-  say "Paste your license key (ah_live_...) at the hidden prompt, then again to confirm:"
-  security add-generic-password -U -s "$KSVC" -a "$USER" -l "agents-holding license" -w < /dev/tty || die "could not store the key"
-fi
-# 2. per-machine device id (sha256 of the hardware UUID; stable, not reversible) -> Keychain
+# 1. per-machine device id (sha256 of the hardware UUID; stable, not reversible) -> Keychain
 if ! kc "$DSVC" >/dev/null; then
   hw="$(ioreg -rd1 -c IOPlatformExpertDevice | awk -F'"' '/IOPlatformUUID/{print $4}')"; [ -n "$hw" ] || hw="$(uuidgen)"
   dev="mac-$(printf 'agents-holding:%s' "$hw" | shasum -a 256 | cut -c1-32)"
   security add-generic-password -U -s "$DSVC" -a "$USER" -l "agents-holding device id" -w "$dev"
+fi
+# 2. key -> Keychain. Exactly two options: Generate key (new Free key for THIS machine; one per machine, ever) or
+#    Import key (a key you already have: from the owner, or your own key from another Mac; counts against its max devices).
+#    The key is never printed and never passes through the chat model.
+MCP_URL="${AH_MCP_URL:-https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp}"
+LANGH=en; case "${AH_LANG:-${LANG:-}}" in vi*) LANGH=vi;; esac
+if kc "$KSVC" >/dev/null && [ "${AH_REPLACE_KEY:-0}" != 1 ]; then say "A key is already in the Keychain ($KSVC). To replace it, rerun with AH_REPLACE_KEY=1."
+else
+  echo "  1) Generate key   (new Free key for this machine)"; echo "  2) Import key     (enter an existing key)"
+  ch="${AH_KEY_CHOICE:-}"; [ -n "$ch" ] || read -r -p "Choose 1 or 2: " ch < /dev/tty
+  case "$ch" in
+    1|g|generate) b="$(osascript -l JavaScript -e 'function run(a){return JSON.stringify({device:a[0],device_name:a[1],lang:a[2]})}' "$(kc "$DSVC")" "$( (scutil --get LocalHostName 2>/dev/null || hostname -s) | LC_ALL=C tr -cd 'A-Za-z0-9 ._-' | cut -c1-60)" "$LANGH")"
+      r="$(curl -sS --max-time 45 -X POST "$MCP_URL/free-signup" -H "Content-Type: application/json" -H "X-AH-Lang: $LANGH" --data-binary "$b")" || die "MCP server unreachable, try again"
+      k="$(osascript -l JavaScript -e 'function run(a){const j=JSON.parse(a[0]);return j.ok?"OK "+j.key:"ERR "+(j.message||"failed")}' "$r")"; r=""
+      case "$k" in "OK "*) security add-generic-password -U -s "$KSVC" -a "$USER" -l "agents-holding license" -w "${k#OK }" || die "could not store the key"; k=""; say "New Free key generated and stored in the Keychain (not shown).";;
+        *) die "${k#ERR }";; esac ;;
+    2|i|import) say "Paste your key (ah_live_...) at the hidden prompt, then again to confirm:"
+      security add-generic-password -U -s "$KSVC" -a "$USER" -l "agents-holding license" -w < /dev/tty || die "could not store the key" ;;
+    *) die "choose 1 (Generate key) or 2 (Import key)" ;; esac
 fi
 export AGENTS_HOLDING_KEY="$(kc "$KSVC")" AGENTS_HOLDING_DEVICE="$(kc "$DSVC")"
 export AGENTS_HOLDING_DEVICE_NAME="$( (scutil --get LocalHostName 2>/dev/null || hostname -s) | LC_ALL=C tr -cd 'A-Za-z0-9 ._-' | cut -c1-60)"

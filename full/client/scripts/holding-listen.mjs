@@ -73,6 +73,21 @@ function serverUp() {
   L.desktopNotify(homedir(), "agents-holding", "Server is back; replaying missed Jira changes");
   for (const c of companyList) reconcile(c, was.since).catch((e) => log("reconcile failed:", e.message));
 }
+// Credits: key inactive or out of credits -> the Jira Listener stops working (no agent runs) until the owner adds credits/renews;
+// it keeps the heartbeat so it resumes by itself. Message from the server (language of the input).
+const credit = { blocked: null };
+function creditBlock(msg) {
+  const m = String(msg ?? "").replace(/\s*\[AH_NO_CREDIT\]/, "").trim();
+  if (credit.blocked) return; credit.blocked = { msg: m, since: new Date().toISOString() };
+  log(`\x1b[31mJIRA LISTENER STOPPED: ${m}\x1b[0m`);
+  L.writeStatus(homedir(), { credit: { blocked: true, msg: m, since: credit.blocked.since } });
+  L.desktopNotify(homedir(), "agents-holding", `Jira Listener stopped: ${m}`);
+}
+function creditOk() {
+  if (!credit.blocked) return; credit.blocked = null; log("credits available again: Jira Listener resumes");
+  L.writeStatus(homedir(), { credit: { blocked: false, msg: "", since: null } });
+  for (const c of companyList) reconcile(c).catch((e) => log("reconcile failed:", e.message));
+}
 async function mcp(name, a) {
   let r, body;
   try { r = await fetch(`${base}/functions/v1/mcp`, { method: "POST", signal: AbortSignal.timeout(Number(process.env.AH_MCP_TIMEOUT_MS ?? 60000)), headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", Authorization: `Bearer ${key}`, ...deviceHeaders },
@@ -83,8 +98,11 @@ async function mcp(name, a) {
   if (r.ok) serverUp();
   let j; try { j = JSON.parse(body); } catch { throw new Error(`${name} failed: HTTP ${r.status}`); } const t = j.result?.content?.[0]?.text;
   if (j.result?.isError && /quota|limit (reached|exceeded)/i.test(t ?? "")) { const q = { cause: "quota", msg: X.QUOTA_MSG }; serverDown(q); throw new X.ServerError(q); }
+  if (j.result?.isError && /AH_NO_CREDIT/.test(t ?? "")) { creditBlock(t); throw new Error(`${name} stopped: ${t}`); }
   if (!t || j.result.isError) throw new Error(`${name} failed: ${t ?? JSON.stringify(j.error)}`);
-  return JSON.parse(t);
+  const v = JSON.parse(t);
+  if (name === "listener_heartbeat") { if (v?.credit_blocked) creditBlock(v.credit_message); else creditOk(); }
+  return v;
 }
 
 // ---- server-side last-seen heartbeat (for /listener and /doctor); best effort ----
@@ -161,6 +179,7 @@ function debounce(p) {
 let running = false, runningIssue = null;
 const pending = new Map(); // issue -> latest notice
 function wake(p) {
+  if (credit.blocked) { log(`stopped (${credit.blocked.msg}); ignoring ${p.event} ${p.issue ?? p.task_id ?? "?"}`); return; }
   const k = `${p.company ?? company}/${p.issue ?? p.task_id ?? "?"}`;
   if (running) {
     if (p.event === "agent_move" && k === runningIssue) { log(`chain: ignoring agent_move ${k} -> ${p.stage} (the active run continues it)`); return; }

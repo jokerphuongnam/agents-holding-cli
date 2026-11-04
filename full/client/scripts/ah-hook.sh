@@ -18,10 +18,10 @@ case "$name $verb" in
   "task add"*|"task split"*|"skill add"*|"jira setup"*|"flow edit"*|"flow "[A-Z]*|"flow default"*) exit 0 ;;  # need the agent
 esac
 case "$name" in
-  staff|task|provider|skill|project|company|listener|jira|inbox|key|billing|status|doctor|notify|setup|habit|flow)
+  staff|task|provider|skill|project|company|listener|jira|inbox|key|credit|billing|status|doctor|notify|setup|habit|flow)
     if [ -n "$H" ]; then export AH_HOOK_RUN=1; run=(bash "$here/holding" "$name")
     else case "$name $verb" in
-        "staff list"|"staff "|"staff remove"|"task "*|"skill list"|"skill "|"jira sources"|"key "*|"billing "*|"status "*|"doctor "*|"flow "*) run=(bash "$here/ah-cli.sh" "$name") ;;
+        "staff list"|"staff "|"staff remove"|"task "*|"skill list"|"skill "|"jira sources"|"key "*|"credit "*|"billing "*|"status "*|"doctor "*|"flow "*) run=(bash "$here/ah-cli.sh" "$name") ;;
         *) echo "/$name $verb needs the full client (Node + install.sh): see SETUP.md" >&2; exit 2 ;;
       esac; fi ;;
   help) run=(bash "$here/ah-cli.sh" help) ;;
