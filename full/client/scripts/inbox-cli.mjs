@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // CEO inbox from the terminal (no chat needs to stay open; notifications are the trigger):
 //   holding inbox list [--all] [KEY]         pending items (staff questions, 1/2/3 decisions, hires, blocks, gates), pending first
+//   holding inbox dismiss <item|KEY>               close an item without answering (nothing is sent)
 //   holding inbox reply <KEY|item> <answer...>      quick answer without a session (e.g. holding inbox reply KAN-12 2); the staff resumes from its checkpoint
 //   holding ceo [--item <id>|KEY]             open a CEO session focused on that item (agent CLI in a new Terminal window when not in one)
 //   holding company set communication [jira+chat|chat]    per company: jira+chat (default) or chat only (no question/decision/progress comments on cards)
@@ -38,6 +39,9 @@ if (cmd === "list") {
 } else if (cmd === "reply") {
   const [ref, ...ans] = pos; if (!ref || !ans.length) { console.error("usage: holding inbox reply <KEY|item id> <answer...>   e.g. holding inbox reply KAN-12 2"); process.exit(2); }
   const d = await mcp("inbox_reply", { ...(company ? { company } : {}), item: ref, answer: ans.join(" ") }); console.log(d.tell_user);
+} else if (cmd === "dismiss") {
+  const ref = pos[0]; if (!ref) { console.error("usage: holding inbox dismiss <item id|KEY>   (ids: holding inbox list)"); process.exit(2); }
+  const d = await mcp("inbox_dismiss", { ...(company ? { company } : {}), item: ref }); console.log(d.tell_user);
 } else if (cmd === "communication") {
   if (!company) { console.error("which company? run inside a company repo or pass --company X"); process.exit(2); }
   const m = pos[0];

@@ -21,7 +21,7 @@ usage: holding <noun> <verb> [args]   (chat: /<noun> <verb> ...; no verb = list/
   listener start [--repo DIR] | stop | status [--server] | logs [-f] | autostart on|off | run [--repo DIR] [--once]
   jira connect <site> <email> | setup-workflow <site> <email> <KEY> [--dry-run] | connect-events '<setup_url>' | sources
   jira list [column] | show KEY | board | add "title" [desc] | move KEY <column> | comment KEY "text"   [--project KEY]
-  inbox list [--all] [KEY] | inbox reply <KEY|item> <answer>
+  inbox list [--all] [KEY] | inbox reply <KEY|item> <answer> | inbox dismiss <item|KEY>
   ceo [--item <id|KEY>]               the CEO is your chat session (/ceo); --item opens one focused on a pending item
   key show | generate | import        your key id, plan, credits, devices (generate: new Free key; import: use an existing key on this Mac)
   credit show                         your credits
@@ -85,7 +85,7 @@ case "$noun" in
     ""|list|show|board|add|move|comment) exec node "$here/jira.mjs" "${verb:-list}" "$@" ;;
     setup) echo "/jira setup needs the agent: run it inside grok/claude/codex." >&2; exit 2 ;;
     *) usage ;; esac ;;
-  inbox) case "$verb" in ""|list|reply) exec node "$here/inbox-cli.mjs" "${verb:-list}" "$@" ;; *) exec node "$here/inbox-cli.mjs" list "$verb" "$@" ;; esac ;;
+  inbox) case "$verb" in ""|list|reply|dismiss) exec node "$here/inbox-cli.mjs" "${verb:-list}" "$@" ;; *) exec node "$here/inbox-cli.mjs" list "$verb" "$@" ;; esac ;;
   ceo) [ -n "$verb" ] && exec node "$here/inbox-cli.mjs" ceo "$verb" "$@"
     echo "The CEO is your current chat session: use /ceo in your agent (Grok/Claude/Codex). Focus one pending item: holding ceo --item <id> (opens a CEO session)."; exit 0 ;;
   key) case "$verb" in ""|show) [ $# -eq 0 ] && node "$here/companies-cli.mjs" show; srv "$@" ;; generate|import|renew|list|add|remove|set|reset-device|rotate) srv "$@" ;; *) usage ;; esac ;;
@@ -97,5 +97,6 @@ case "$noun" in
   setup) case "$verb" in sync) exec bash "$here/sync-commands.sh" "$@" ;; open) exec bash "$here/open-setup.sh" "$@" ;; *) usage ;; esac ;;
   habit) case "$verb" in ""|list|edit|clear) exec node "$here/habits.mjs" "${verb:-list}" "$@" ;; *) usage ;; esac ;;
   flow) case "$verb" in ""|show|list) srv "$@" ;; *) echo "/flow $verb needs the agent: run it inside grok/claude/codex." >&2; exit 2 ;; esac ;;
+  security) srv "$@" ;;  # server decides; non-admins get the same help as an unknown command
   *) usage ;;
 esac

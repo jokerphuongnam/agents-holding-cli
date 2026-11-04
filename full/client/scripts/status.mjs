@@ -20,5 +20,17 @@ if (cmd === "notify") {
   for (const [co, v] of Object.entries(st?.companies ?? {})) { const n = Object.entries(v.needs ?? {}); if (!n.length) continue;
     const of = (l) => n.filter(([, x]) => x === l).map(([k]) => k);
     console.log(`${co}: needs-hire ${of("needs-hire").length} (${of("needs-hire").join(", ") || "-"}) · needs-decision ${of("needs-decision").length} (${of("needs-decision").join(", ") || "-"})`); }
+  try { // pending CEO inbox items (all companies of this key); quiet when offline
+    const { execFileSync } = await import("node:child_process");
+    const kc = (s) => { try { return execFileSync("security", ["find-generic-password", "-s", s, "-a", process.env.USER, "-w"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { return null; } };
+    const key = process.env.AGENTS_HOLDING_KEY || kc("agents-holding-license"), dev = process.env.AGENTS_HOLDING_DEVICE || kc("agents-holding-device");
+    if (key) {
+      const r = await fetch(process.env.AH_MCP_URL ?? "https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp", { method: "POST", signal: AbortSignal.timeout(8000),
+        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream", "X-AH-Client": "ah-cli", ...(dev ? { "X-AH-Device": dev } : {}) },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "inbox_list", arguments: {} } }) });
+      const j = await r.json(), d = JSON.parse(j.result?.content?.[0]?.text ?? "null");
+      if (d && typeof d.count === "number") console.log(d.count ? `\x1b[1;31mCEO inbox: ${d.count} pending\x1b[0m (holding inbox list · reply <id> <answer> · dismiss <id>)` : "CEO inbox: nothing pending ✔");
+    }
+  } catch { /* offline: skip */ }
   console.log("server view (Jira listener + events as the server sees them): ask your agent /listener or /doctor");
 }
