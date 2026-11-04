@@ -11,9 +11,10 @@
 // Every model call is a FRESH session (no resume) with no MCP servers (lean GROK_HOME / CODEX_HOME, claude --strict-mcp-config);
 // the CLI is grok (default), claude or codex, see agents.mjs (AH_AGENT or per-company agent.json),
 // with a short saved plan (state dir) + the user's approval/feedback instead of the old conversation.
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 export const AGENT_MARK = "[agent-holding]";
 export const AGENT_MARKS = [AGENT_MARK, "[agents-holding]"]; // legacy prefix still recognized as an agent comment
@@ -245,10 +246,24 @@ export function jiraClient(cfg, { dry, log }) {
     async issue(key) { return req("GET", `/issue/${encodeURIComponent(key)}?fields=summary,description,comment`); },
     async search(jql, fields = ["status", "updated"]) { const j = await req("POST", "/search/jql", { jql, fields, maxResults: 50 }); return j?.issues ?? []; },
     async meta(key) { const j = await req("GET", `/issue/${encodeURIComponent(key)}?fields=labels,components`); return { labels: j.fields?.labels ?? [], components: (j.fields?.components ?? []).map((c) => c.name) }; },
-    async staffLabel(key, role) { // replace the previous staff:<role> label (null = remove)
+    async staffLabel(key, role, jiraUser = null) { // replace the previous staff:<role> label (null = remove)
       if (dry) return log(`JIRA (dry): label ${key} staff:${role ?? "(remove)"}`);
-      const ops = staffLabelOps((await this.meta(key)).labels, role); if (!ops.length) return;
-      await req("PUT", `/issue/${encodeURIComponent(key)}`, { update: { labels: ops } });
+      const ops = staffLabelOps((await this.meta(key)).labels, role);
+      if (ops.length) await req("PUT", `/issue/${encodeURIComponent(key)}`, { update: { labels: ops } });
+      if (role) await this.assignSelf(key, jiraUser).catch((e) => log(`Jira assignee ${key} failed: ${e.message}`)); // same moment as staff:<role>
+    },
+    // Assignee = the connected Jira account the Jira Listener uses (staff are not Jira users; staff:<role> shows which staff).
+    // Set when a staff picks the card up; kept on needs-hire / needs-decision / blocked (that account's owner must act), kept at Done.
+    async myself() { if (this._me === undefined) this._me = (await req("GET", "/myself"))?.accountId ?? null; return this._me; },
+    async userId(u) { // staff jira_user: accountId as is, or an email looked up once
+      if (!u) return null; if (!String(u).includes("@")) return String(u); this._users ??= {};
+      if (!(u in this._users)) this._users[u] = (await req("GET", `/user/search?query=${encodeURIComponent(u)}`))?.[0]?.accountId ?? null; return this._users[u];
+    },
+    async assignSelf(key, jiraUser = null) {
+      if (dry) return log(`JIRA (dry): assignee ${key} = ${jiraUser ?? "Jira Listener account"}`);
+      const me = (await this.userId(jiraUser).catch(() => null)) ?? await this.myself(); if (!me) return;
+      const j = await req("GET", `/issue/${encodeURIComponent(key)}?fields=assignee`); if (j?.fields?.assignee?.accountId === me) return;
+      await req("PUT", `/issue/${encodeURIComponent(key)}/assignee`, { accountId: me }); log(`JIRA: assignee ${key} = Jira Listener account`);
     },
     async labels(key, add = [], remove = []) { // generic label add/remove (needs-hire / needs-decision)
       const ops = [...add.map((l) => ({ add: l })), ...remove.map((l) => ({ remove: l }))]; if (!ops.length) return;
@@ -495,6 +510,23 @@ export function desktopNotify(home, title, msg, exec = (c, a) => execFileSync(c,
   if (!notifyOn(home) || platform !== "darwin") return false;
   try { exec("osascript", notifyArgs(title, msg)); return true; } catch { return false; }
 }
+/** What the user must do, per CEO inbox kind (one line, shown in the 'Agents Holding' notification and `holding inbox`). */
+export const INBOX_NEED = { question: "a staff has a question for you", decision: "pick an option (1/2/3)", hire: "needs a hire (or pick an existing staff)", blocked: "an agent is blocked (e.g. needs a login)", failed: "a run failed: needs a look", gate: "approve or ask for changes", qc: "QC failed after fixes: needs a look", repo: "which repo should this task use?", staff: "staff decision needed" };
+export const HOLDING_BIN = join(dirname(fileURLToPath(import.meta.url)), "holding");
+/** 'Agents Holding' action notification: banner always; with dialogs on (default, `holding notify dialog off`), an "Open CEO" button
+ *  opens a CEO session focused on the item (holding ceo --item <id>). Non-blocking: runs detached, the staff run already exited. */
+export function actionNotifyArgs({ issue, need, how, id, company }, bin = HOLDING_BIN) {
+  const msg = `${issue ?? ""} ${need}. Answer: ${how}`.trim(), safe = (x) => String(x ?? "").replace(/[^A-Za-z0-9_.-]/g, "");
+  const run = `'${bin.replace(/'/g, "")}' ceo --item ${safe(id)} --company ${safe(company)} --new-window >/dev/null 2>&1 &`;
+  return ["-e", `display notification "${asq(msg)}" with title "Agents Holding" subtitle "${asq(`${issue ?? ""} needs you`)}" sound name "Glass"`,
+    "-e", `set r to display dialog "${asq(msg)}" with title "Agents Holding" buttons {"Later", "Open CEO"} default button "Open CEO" giving up after 900`,
+    "-e", `if button returned of r is "Open CEO" then do shell script "${run.replace(/"/g, "")}"`];
+}
+export function dialogsOn(home) { try { return JSON.parse(readFileSync(notifyFile(home), "utf8")).dialog !== false; } catch { return true; } }
+export function actionNotify(home, item, spawnIt = (a) => { const c = spawn("osascript", a, { detached: true, stdio: "ignore" }); c.on("error", () => {}); c.unref(); }, platform = process.platform) {
+  if (!notifyOn(home) || platform !== "darwin") return false;
+  const a = actionNotifyArgs(item); spawnIt(dialogsOn(home) ? a : a.slice(0, 2)); return true;
+}
 export const statusPath = (home) => join(home, ".config/agents-holding/listener-status.json");
 export function readStatus(home) { try { return JSON.parse(readFileSync(statusPath(home), "utf8")); } catch { return null; } }
 export function writeStatus(home, patch) {
@@ -509,8 +541,8 @@ export function listenerAlive(home = homedirSafe()) { const st = readStatus(home
 function homedirSafe() { return process.env.AH_HOME ?? process.env.HOME; }
 export function listenerWarning(home = homedirSafe(), { tty = !!process.stdout.isTTY && !process.env.AH_HOOK_RUN } = {}) {
   if (listenerAlive(home)) return null;
-  const body = ["The Jira Listener is NOT running: Jira card moves and comments are not received and no agent runs.",
-    "  start now + at every login:  holding jira-listener start && holding jira-listener autostart on", "  check:                       holding listener status   (or /listener)"];
+  const body = ["Jira Listener is off — all Jira automation is stopped until you start it:",
+    "  holding jira-listener start && holding jira-listener autostart on", "  Jira Listener keeps all Jira automation running.   check: holding jira-listener status   (or /listener)"];
   return tty ? `\x1b[1;31m🔴 ${body[0]}\x1b[0m\n\x1b[31m${body.slice(1).join("\n")}\x1b[0m` : `🔴 **${body[0]}**\n${body.slice(1).map((l) => `**${l.trim()}**`).join("\n")}`;
 }
 export function formatStatus(st, alive, now = Date.now()) {

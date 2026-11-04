@@ -24,7 +24,9 @@ case "$1" in
   agent) shift; exec node "$here/agent-cli.mjs" "$@" ;;
   set-staff|unset-staff|set-lang) exec node "$here/agent-cli.mjs" "$@" ;;
   providers) shift; exec node "$here/providers-cli.mjs" "$@" ;;
-  ceo) echo "The CEO is your current chat session: use /ceo in your agent (Grok/Claude/Codex). It delegates with holding run <staff> \"task\"."; exit 0 ;;
+  ceo) shift; [ $# -gt 0 ] && exec node "$here/inbox-cli.mjs" ceo "$@"
+    echo "The CEO is your current chat session: use /ceo in your agent (Grok/Claude/Codex). Focus one pending item: holding ceo --item <id> (opens a CEO session)."; exit 0 ;;
+  inbox|reply|communication) exec node "$here/inbox-cli.mjs" "$@" ;;
   companies) shift; exec node "$here/companies-cli.mjs" list "$@" ;;
   use|current) exec node "$here/companies-cli.mjs" "$@" ;;
   whoami) node "$here/companies-cli.mjs" current "$@"; exec bash "$here/ah-cli.sh" "$@" ;;
@@ -47,6 +49,10 @@ case "$1" in
   *) cat <<USAGE
 usage:
   holding set-staff <staff> <provider> <model> [low|medium|high] [--company X]   per-company staff -> provider/model/effort
+  holding inbox [--all] [KEY]         CEO inbox: what needs you (questions, 1/2/3, hires, blocks, gates), pending first
+  holding reply <KEY|item> <answer>   quick answer without a session (e.g. holding reply KAN-12 2); the staff resumes
+  holding ceo --item <id|KEY>         open a CEO session focused on that pending item
+  holding communication [jira+chat|chat]   chat = no question/decision/progress comments on Jira cards (labels/status/assignee still update)
   holding set-lang <code|auto> [--company X]   output language (auto = same as each card / prompt)
   holding set-staff <staff> "<command with {prompt}>"   fixed launch command (default = company default command)
   holding staff test <staff>   dry-run the staff launch command

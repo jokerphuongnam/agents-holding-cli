@@ -83,7 +83,7 @@ export function resolveAgent({ env = process.env, cfg = {}, text, role = null, s
 }
 
 /** Fields of a fixed-command staff binding; {model} {effort} {cwd} {max_turns} placeholders resolve from them. */
-export const CMD_FIELDS = ["command", "model", "effort", "cwd", "context", "max_turns", "timeout", "env", "fallback"];
+export const CMD_FIELDS = ["command", "model", "effort", "cwd", "context", "max_turns", "timeout", "env", "fallback", "jira_user"];
 export const EFFORTS = ["low", "medium", "high"];
 /** `holding staffs` runtime cell for one staff: "<model> - <effort>" exactly as resolveAgent will run it. */
 export function staffRuntime({ env = process.env, cfg = {}, role, text = true, stageModel = null }) {

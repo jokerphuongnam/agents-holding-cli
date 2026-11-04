@@ -16,6 +16,17 @@ LOG_DIR="$HOME/Library/Logs/agents-holding"
 LOG="$LOG_DIR/jira-listener.log"
 ERR="$LOG_DIR/jira-listener.err.log"
 
+WD_LABEL=com.agentsholding.listener-watchdog   # separate tiny job: notifies the moment the Jira Listener stops
+WD_PLIST="$HOME/Library/LaunchAgents/$WD_LABEL.plist"
+START_CMD="holding jira-listener start && holding jira-listener autostart on"
+install_watchdog() { # always on (also at login), independent of the listener job; idempotent
+  mkdir -p "$BIN_DIR" "$LOG_DIR" "$HOME/Library/LaunchAgents"
+  install -m 755 "$SERVER_DIR/scripts/launchd/watchdog.sh" "$BIN_DIR/watchdog.sh"
+  sed -e "s#__HOME__#$HOME#g" -e "s#__BIN_DIR__#$BIN_DIR#g" "$SERVER_DIR/scripts/launchd/$WD_LABEL.plist.template" > "$WD_PLIST.tmp"
+  plutil -lint -s "$WD_PLIST.tmp" && mv "$WD_PLIST.tmp" "$WD_PLIST"
+  if launchctl print "$DOMAIN/$WD_LABEL" >/dev/null 2>&1; then launchctl kickstart -k "$DOMAIN/$WD_LABEL" >/dev/null 2>&1 || true
+  else launchctl bootstrap "$DOMAIN" "$WD_PLIST" 2>/dev/null || true; fi
+}
 running_pid() { launchctl print "$DOMAIN/$LABEL" 2>/dev/null | awk '/^\tpid = /{print $3; exit}'; }
 loaded() { launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; }
 plist_repo() { [ -f "$1" ] || return 0; /usr/libexec/PlistBuddy -c "Print :EnvironmentVariables:AH_REPO_DIR" "$1" 2>/dev/null || true; }
@@ -50,7 +61,8 @@ fi
 cmd_status() {
   local pid repo last
   repo="$(plist_repo "$MASTER")"; [ -z "$repo" ] && repo="$(plist_repo "$AUTO")"
-  if loaded; then pid="$(running_pid)"; echo "Jira Listener: ON  (running${pid:+, PID $pid})"; else printf '\033[1;31m🔴 Jira Listener: OFF (not running): Jira moves and comments are not received, no agent runs.\n   start + autostart: holding jira-listener start && holding jira-listener autostart on\033[0m\n'; fi
+  if loaded; then pid="$(running_pid)"; echo "Jira Listener: ON  (running${pid:+, PID $pid})"; else printf '\033[1;31m🔴 Jira Listener is off — all Jira automation is stopped until you start it:\n   %s\033[0m\n   (Jira Listener keeps all Jira automation running.)\n' "$START_CMD"; fi
+  if launchctl print "$DOMAIN/$WD_LABEL" >/dev/null 2>&1; then echo "watchdog     : ON  (notifies at once if the Jira Listener stops)"; else echo "watchdog     : OFF (holding jira-listener start installs it)"; fi
   if [ -f "$AUTO" ]; then echo "autostart    : ON  (starts at login: $AUTO)"; else echo "autostart    : OFF"; fi
   echo "repo         : ${repo:-<not installed; run: holding jira-listener start --repo DIR>}"
   last="$(grep -E ' join ' "$LOG" 2>/dev/null | tail -1 || true)"
@@ -69,6 +81,7 @@ cmd_on() {
   repo="$(cd "$repo" && pwd)"
   [ -f "$repo/.agents/company.json" ] || { echo "error: $repo/.agents/company.json not found (run /holding-ceo in that repo first)"; exit 2; }
   write_plist "$repo"
+  install_watchdog
   [ "$OLD_AUTO" = 1 ] && cp "$MASTER" "$AUTO"   # migrated: keep autostart ON
   [ -f "$AUTO" ] && cp "$MASTER" "$AUTO"   # keep the login copy in sync
   if loaded; then echo "already running; restarting with current config"; launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true; sleep 1; fi
@@ -95,7 +108,7 @@ cmd_autostart() {
   case "${1:-}" in
     on) loaded || { echo "error: the Jira Listener is off. Turn it on first: holding jira-listener start   (then: holding jira-listener autostart on)"; exit 1; }
         [ -f "$MASTER" ] || write_plist "$(plist_repo "$AUTO")"
-        mkdir -p "$(dirname "$AUTO")"; cp "$MASTER" "$AUTO"; poke; echo "autostart ON (starts at login)." ;;
+        mkdir -p "$(dirname "$AUTO")"; cp "$MASTER" "$AUTO"; install_watchdog; poke; echo "autostart ON (starts at login)." ;;
     off) rm -f "$AUTO"; poke; echo "autostart OFF (still running now: $(loaded && echo yes || echo no))." ;;
     *) echo "usage: holding jira-listener autostart on|off"; exit 2 ;;
   esac

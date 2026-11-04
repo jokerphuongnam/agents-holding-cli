@@ -35,6 +35,8 @@ const T = {
               codex -c developer_instructions, grok --rules, other CLIs env AH_CONTEXT_FILE; "none"; or a file path
    timeout    seconds before the run is killed (default 900)
    env        extra environment {"K": "V"} (the server key is never passed)
+   jira_user  optional Jira assignee for this staff (accountId or email). Empty = the connected Jira account the Jira Listener
+              uses. Set when the staff picks the card up (same moment as the staff:<id> label). For a future team mode.
  Output parsing follows the first word: claude / codex / grok JSON (with token usage), anything else = plain text.`,
     def: `"default": command for every staff without its own (empty = built-in provider adapter)`,
     staff: "Your staff (live values)",
@@ -56,6 +58,8 @@ const T = {
               codex -c developer_instructions, grok --rules, CLI khác qua biến môi trường AH_CONTEXT_FILE; "none"; hoặc đường dẫn file
    timeout    số giây trước khi dừng lần chạy (mặc định 900)
    env        biến môi trường thêm {"K": "V"} (khóa server không bao giờ được truyền)
+   jira_user  (tùy chọn) người được giao trên Jira cho nhân viên này (accountId hoặc email). Để trống = tài khoản Jira
+              mà Jira Listener đang dùng. Gán ngay khi nhân viên nhận thẻ (cùng lúc với nhãn staff:<id>). Dành cho chế độ team sau này.
  Đọc kết quả theo từ đầu tiên: claude / codex / grok dạng JSON (kèm token), còn lại = văn bản thường.`,
     def: `"default": lệnh cho mọi nhân viên chưa có lệnh riêng (để trống = adapter có sẵn)`,
     staff: "Nhân viên của bạn (giá trị đang dùng)",
@@ -67,6 +71,7 @@ const EXAMPLES = [
   ["codex", `"tech-lead": { "command": "codex exec --json --skip-git-repo-check -s read-only -m {model} -c model_reasoning_effort=\\"{effort}\\" \\"{prompt}\\"", "model": "gpt-5", "effort": "medium" },`],
   ["grok", `"ba-lead": { "command": "grok --single \\"{prompt}\\" --model {model} --reasoning-effort {effort} --max-turns {max_turns} --output-format json --no-subagents", "model": "grok-4.7-build-fast", "effort": "low", "max_turns": 1 },`],
   ["ollama", `"qa-lead": { "command": "ollama run {model}", "model": "qwen2.5-coder", "context": "none" },`],
+  ["jira_user", `"developer": { "command": "", "jira_user": "dev@example.com" },`],
   ["custom CLI", `"writer": { "command": "my-llm --system-file {context_file} --cwd {cwd} --prompt-file {prompt_file}", "env": { "MY_LLM_PROFILE": "work" } },`],
 ];
 export function renderJsonc(company, { staff = {}, command = "", lang = "en" } = {}) {

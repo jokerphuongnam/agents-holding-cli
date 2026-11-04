@@ -89,11 +89,23 @@ async function mcp(name, a) {
 
 // ---- server-side last-seen heartbeat (for /listener and /doctor); best effort ----
 const autostartPlist = join(homedir(), "Library/LaunchAgents/com.agentsholding.jira-listener.plist");
-const heartbeat = () => Promise.all(companyList.map((company) => mcp("listener_heartbeat", { company, host: hostname(), pid: process.pid, autostart: existsSync(autostartPlist), version: "3" })
-  .then(() => L.writeStatus(homedir(), { companies: { [company]: { heartbeat_at: new Date().toISOString(), heartbeat_ok: true } } }))
+// Every 60s (server marks the Jira Listener offline after ~2.5 min without one). Back after an outage: post the offline
+// comment once on every card that changed meanwhile (text from the server, task language), then reconcile replays the change.
+const heartbeat = (state = "online") => Promise.all(companyList.map((company) => mcp("listener_heartbeat", { company, host: hostname(), pid: process.pid, autostart: existsSync(autostartPlist), version: "4", state })
+  .then(async (r) => { if (r?.communication) commMode[company] = r.communication; L.writeStatus(homedir(), { companies: { [company]: { heartbeat_at: new Date().toISOString(), heartbeat_ok: true } } });
+    if (state !== "online" || !(r?.was_offline || r?.missed?.length)) return;
+    log(`Jira Listener back online for ${company} (server saw it offline since ${r.offline_since ?? "?"}); ${r.missed?.length ?? 0} card(s) changed meanwhile`);
+    for (const m of r.missed ?? []) if (m.issue && m.comment) await comms(m.issue, m.comment);
+    reconcile(company, r.offline_since ?? undefined).catch((e) => log("reconcile failed:", e.message)); })
   .catch((e) => { log("heartbeat failed:", e.message); L.writeStatus(homedir(), { companies: { [company]: { heartbeat_at: new Date().toISOString(), heartbeat_ok: false } } }); })));
 L.writeStatus(homedir(), { pid: process.pid, started_at: new Date().toISOString(), notify: L.notifyOn(homedir()), running: null, companies: {} });
-setInterval(heartbeat, 10 * 60 * 1000);
+setInterval(heartbeat, Number(process.env.AH_HEARTBEAT_SEC ?? 60) * 1000);
+// Clean shutdown (launchctl bootout/unload, holding jira-listener stop, Ctrl-C, logout): tell the server right away.
+let stopping = false;
+for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(sig, () => { if (stopping) return; stopping = true;
+  log(`\x1b[31m${sig}: Jira Listener stopping; telling the MCP server it is offline\x1b[0m`);
+  L.writeStatus(homedir(), { stopped_at: new Date().toISOString(), stop_signal: sig });
+  Promise.race([heartbeat("stopped"), new Promise((r) => setTimeout(r, 4000))]).finally(() => process.exit(0)); });
 process.on("SIGUSR1", () => heartbeat()); // `holding listener autostart on|off` pokes us to report the new state
 
 // ---- one-at-a-time runner (token saving) ----
@@ -117,6 +129,22 @@ const jiraCfg = (() => { const p = join(homedir(), ".config/agents-holding/jira.
   return j.site && j.email && j.keychain_service ? { site: j.site, email: j.email, keychain_service: j.keychain_service } : null; } catch { return null; } })();
 const lean = process.env.AH_LEAN !== "0";
 const jira = jiraCfg ? L.jiraClient(jiraCfg, { dry: dryJira, log }) : null;
+// Communication (per company, from the heartbeat; `holding communication jira+chat|chat`): everything the user must act on
+// (question, 1/2/3, hire, blocked, gate, QC stop, failed, which repo) ALWAYS goes to the CEO inbox + an 'Agents Holding'
+// notification; Jira comments only in jira+chat mode. Labels/status/assignee update in both modes. Runs never wait for input:
+// they post the item and exit; the answer (Jira comment, /ceo or holding reply) re-triggers the task from its checkpoint.
+const commMode = {};
+async function comms(issue, text, kind = null) {
+  if (kind) {
+    try { const it = await mcp("inbox_post", { company, issue, kind, need: L.INBOX_NEED[kind] ?? "needs you", body: String(text).slice(0, 8000) });
+      log(`inbox: ${issue} ${kind} -> ${it.short_id}${it.new ? "" : " (updated)"}`);
+      if (it.new) L.actionNotify(homedir(), { issue, need: L.INBOX_NEED[kind] ?? "needs you", how: it.how, id: it.id, company });
+    } catch (e) { log(`inbox_post failed: ${e.message}`); }
+  }
+  if (commMode[company] === "chat") return log(`chat mode: not commenting on ${issue}${kind ? ` (${kind} is in the CEO inbox)` : ""}`);
+  if (!jira) return log(`JIRA (no client): ${String(text).slice(0, 160).replace(/\n/g, " ")}`);
+  await jira.comment(issue, text).catch((e) => log("Jira comment failed:", e.message));
+}
 const leanHome = lean ? L.leanGrokHome(homedir()) : null;
 const listenerJira = dryJira || !!jiraCfg;
 const sessDir = (sid, home = join(homedir(), ".grok")) => join(home, "sessions", encodeURIComponent(repo), sid);
@@ -160,7 +188,7 @@ async function useCtx(p) {
   if (r.none) { log(`route: ${issue} (${company}) matches no registered repo; skipped`); return false; }
   if (r.ask) {
     const st = L.stateDir(homedir(), company);
-    if (!L.loadPlan(st, issue).repo_asked) { const t = R.askComment(issue, r.ask); if (jira) await jira.comment(issue, t).catch((e) => log("Jira comment failed:", e.message)); else log(`JIRA (no client): ${t.replace(/\n/g, " ")}`); L.savePlan(st, issue, { repo_asked: r.ask }); }
+    if (!L.loadPlan(st, issue).repo_asked) { const t = R.askComment(issue, r.ask); await comms(issue, t, "repo"); L.savePlan(st, issue, { repo_asked: r.ask }); }
     log(`route: ${issue} feeds ${r.ask.join(",")}; no repo:<name> label/component -> asked on Jira, waiting`); return false;
   }
   runRepos = r.repos.map((x) => x.path); repo = runRepos[0]; runSettings = r.repos[0].settings ?? {};
@@ -261,7 +289,7 @@ async function leanModel(kind, issue, stage, prompt, role = null, context = null
       catch (e) { if (!e.agentOut) throw e; return { ok: false, out: e.agentOut, code: e.agentCode, kind: cliKind(cm.rsv) }; }
     }, {
       onRetry: async (cm, c, ms) => { log(`lean ${kind} ${issue}: ${cm.label} ${c.cause}${ms ? `; backoff ${Math.round(ms / 1000)}s` : "; retrying fresh from the checkpoint"}`); X.ckptSave(stp, issue, { last_error: c.cause }); },
-      onSwitch: async (from, to, c) => { log(`lean ${kind} ${issue}: ${from.label} ${c.cause} -> fallback ${to.label}`); if (jira) await jira.comment(issue, `[agent-holding] ${X.switchNote(lang, from.label, to.label, c)}`).catch(() => {}); },
+      onSwitch: async (from, to, c) => { log(`lean ${kind} ${issue}: ${from.label} ${c.cause} -> fallback ${to.label}`); await comms(issue, `[agent-holding] ${X.switchNote(lang, from.label, to.label, c)}`); },
     });
     if (used !== cmds[0]) log(`lean ${kind} ${issue}: done by fallback ${used.label}`);
     return value;
@@ -309,12 +337,12 @@ async function leanRun(p, na, depth = 0) {
     if (e.server) { L.writeStatus(homedir(), { last_run: { issue, result: `PAUSED ${vis.stage}: ${e.message.slice(0, 120)}`, at: new Date().toISOString() } }); return; } // server problem: already warned; resumes from the checkpoint on the replay
     if (e.agent) {
       if (jira) { await jira.labels(issue, [X.BLOCKED_LABEL]).catch((x) => log("Jira label failed:", x.message));
-        await jira.comment(issue, `${L.staffTag(vis.staff)} ${X.blockedComment(L.getLang(), e.agent, { cmd: e.cmd, stage: L.stageTitle(vis.stage), tried: e.tried ?? [] })}`).catch((x) => log("Jira comment failed:", x.message)); }
+        await comms(issue, `${L.staffTag(vis.staff)} ${X.blockedComment(L.getLang(), e.agent, { cmd: e.cmd, stage: L.stageTitle(vis.stage), tried: e.tried ?? [] })}`, "blocked"); }
       L.desktopNotify(homedir(), `agents-holding: ${issue} agent blocked`, `${e.agent.kind} ${e.agent.cause}${e.agent.fix ? ` - fix: ${e.agent.fix}` : ""}`);
       L.writeStatus(homedir(), { last_run: { issue, result: `BLOCKED ${vis.stage}: ${e.agent.kind} ${e.agent.cause}`, at: new Date().toISOString() } });
       return;
     }
-    if (jira) await jira.comment(issue, L.failedComment(vis.staff, vis.stage, e.message)).catch((x) => log("Jira comment failed:", x.message));
+    await comms(issue, L.failedComment(vis.staff, vis.stage, e.message), "failed");
     L.desktopNotify(homedir(), `agents-holding: ${issue} FAILED`, `${L.stageTitle(vis.stage)}: ${e.message}`);
     L.writeStatus(homedir(), { last_run: { issue, result: `FAILED ${vis.stage}: ${String(e.message).slice(0, 120)}`, at: new Date().toISOString() } });
   } finally {
@@ -339,9 +367,9 @@ async function leanRunInner(p, na, depth, vis) {
     if (!(role in vis.briefs)) { try { vis.briefs[role] = await mcp("staff_brief", { company, role, text: `${iss.summary}\n${iss.description}`.slice(0, 2000), max_skills: 2 }); } catch (e) { log(`staff_brief ${role} failed: ${e.message}`); vis.briefs[role] = null; } }
     return vis.briefs[role];
   };
-  const say = async (staff, t0) => { const t = staff === false ? t0 : `${L.staffTag(staff)} ${t0}`; // every comment: [agent-holding] [<staff name>] ...
+  const say = async (staff, t0, kind = null) => { const t = staff === false ? t0 : `${L.staffTag(staff)} ${t0}`; // every comment: [agent-holding] [<staff name>] ...
     if (dryJira && !jira) return log(`JIRA (dry): comment ${issue} "${t.slice(0, 160).replace(/\n/g, " ")}"`);
-    if (jira) await jira.comment(issue, t).catch((e) => log("Jira comment failed:", e.message));
+    await comms(issue, t, kind);
   };
   if (na.waiting) return log(`lean: ${issue} waiting (${na.stage})`);
   const record = (kind, body) => mcp("record_artifact", { company, task: issue, kind, body: body || kind, role: "agent" }).catch((e) => log(`record ${kind} failed:`, e.message));
@@ -349,10 +377,10 @@ async function leanRunInner(p, na, depth, vis) {
     for (let i = 0; i < 2; i++) {
       try { const r = await mcp("advance", { company, task: issue, to_stage: to, listener_jira: true }); log(`lean: ${issue} ${from} -> ${r.stage}`);
         await jiraOps(issue); // move the card NOW, before the next stage's work starts (the board shows what is actually happening)
-        if (jira && r.stage !== "done") { const role = L.stageRole(na, r.stage, { developer: L.loadPlan(st, issue).developer }); if (role && vis.staffRole !== role) { vis.staffRole = role; await jira.staffLabel(issue, role).catch((e) => log("Jira staff label failed:", e.message)); } } // staff:<id> = owner of the stage just entered
+        if (jira && r.stage !== "done") { const role = L.stageRole(na, r.stage, { developer: L.loadPlan(st, issue).developer }); if (role && vis.staffRole !== role) { vis.staffRole = role; await jira.staffLabel(issue, role, L.loadAgentCfg(homedir(), company).staff?.[role]?.jira_user || null).catch((e) => log("Jira staff label failed:", e.message)); } } // staff:<id> = owner of the stage just entered
         X.ckptSave(st, issue, { stage: r.stage, done: [] });
         vis.gates ??= new Set();
-        if (r.stage === to && L.GATE_HINTS[to] && !vis.gates.has(to)) { vis.gates.add(to); await say(false, L.gateComment(L.stageStaff(na, to), to)); } // explicit gate: how to approve / revise
+        if (r.stage === to && L.GATE_HINTS[to] && !vis.gates.has(to)) { vis.gates.add(to); await say(false, L.gateComment(L.stageStaff(na, to), to), "gate"); } // explicit gate: how to approve / revise
         return true; }
       catch (e) { const m = e.message.match(/kind=(\w+)/); if (i || !m) { log(`lean: advance ${from} -> ${to} failed: ${e.message}`); return false; } await record(m[1], art?.(m[1])); }
     }
@@ -369,7 +397,7 @@ async function leanRunInner(p, na, depth, vis) {
     { const ck = X.ckptLoad(st, issue); if (ck?.stage !== s0) X.ckptSave(st, issue, { stage: s0, done: [], code_done: [], running: true }); else X.ckptSave(st, issue, { running: true }); }
     if (vis.started.has(s0)) return; vis.started.add(s0);
     if (jira && !vis.labeled) { vis.labeled = true; await jira.label(issue, "add").catch((e) => log("Jira label add failed:", e.message)); }
-    if (jira && kind !== "script" && vis.staffRole !== role) { vis.staffRole = role; await jira.staffLabel(issue, role).catch((e) => log("Jira staff label failed:", e.message)); }
+    if (jira && kind !== "script" && vis.staffRole !== role) { vis.staffRole = role; await jira.staffLabel(issue, role, L.loadAgentCfg(homedir(), company).staff?.[role]?.jira_user || null).catch((e) => log("Jira staff label failed:", e.message)); }
     if (kind !== "script" && !(kind === "code" && na.review_feedback)) await say(false, L.startedComment(vis.staff, s0, L.staffWhy(na, s0, { kind, developer: dev0 }))); // review: the "back to Coding" comment says it
     L.desktopNotify(homedir(), `agents-holding: ${issue}`, `Started ${L.stageTitle(s0)}`);
   };
@@ -380,7 +408,7 @@ async function leanRunInner(p, na, depth, vis) {
     if (seg.kind === "text") {
       if (resumable(s0, "plan") && saved.plan) { plan = saved.plan; log(`lean: ${issue} ${s0}: resume from checkpoint (plan already done, no model call)`); if (seg.moves[0] && !(await advance(s0, seg.moves[0]))) return; continue; }
       const r = await leanModel("text", issue, s0, L.textPrompt(iss, {  prevPlan: s0 === "planned" ? plan : null, feedback: fb, allowQuestion: s0 !== "planned" && (na.flow_stages ?? []).includes("ba_question") }), L.stageRole(na, s0), L.contextOf({ brief: await brief(L.stageRole(na, s0)), habits }));
-      if (r.question && s0 !== "planned") { await record("question", r.question); await say(L.stageStaff(na, s0), `QUESTION\n${r.question}`); await advance(s0, "ba_question"); break; }
+      if (r.question && s0 !== "planned") { await record("question", r.question); await say(L.stageStaff(na, s0), `QUESTION\n${r.question}`, "question"); await advance(s0, "ba_question"); break; }
       plan = r.plan || r.summary || ""; if (!plan) { throw new Error("the model returned an empty plan"); }
       await record("plan", plan); await say(L.stageStaff(na, s0), `PLAN\n${plan}`); L.savePlan(st, issue, { plan }); stepDone(s0, "plan");
       if (seg.moves[0] && !(await advance(s0, seg.moves[0]))) return;
@@ -418,7 +446,7 @@ Jira: ${issue}` });
       const files = filesOf(repo), hints = L.fileHints(files, `${iss.summary} ${iss.description} ${plan ?? ""}`);
       const listed = files.length <= 40 ? files : hints;
       const r = await leanModel("tech", issue, s0, L.techPlanPrompt(iss, {  plan, feedback: fb, files: listed, snippets: L.fileSnippets(repo, hints.slice(0, 5)), devRoles }), L.stageRole(na, s0, { kind: "techplan" }), L.contextOf({ brief: await brief(L.stageRole(na, s0, { kind: "techplan" })), habits }));
-      if (r.question && !r.tech_plan) { await record("question", r.question); await say(who, `QUESTION\n${r.question}`); return; }
+      if (r.question && !r.tech_plan) { await record("question", r.question); await say(who, `QUESTION\n${r.question}`, "question"); return; }
       const techPlan = r.tech_plan || r.summary || ""; if (!techPlan) { throw new Error("the model returned an empty tech plan"); }
       const dev = L.pickDeveloper(devRoles, r.developer, na.assigned_role, `${iss.summary} ${iss.description} ${techPlan}`);
       if (dev !== "tech-lead" && dev !== na.assigned_role) await mcp("assign", { company, task: issue, role: dev }).catch((e) => log(`assign ${dev} failed:`, e.message));
@@ -438,7 +466,7 @@ Jira: ${issue}` });
         const files = filesOf(rp);
         const multi = runRepos.length > 1 ? `\nThis task spans repos ${runRepos.map(rname).join(", ")}; you are in ${rname(rp)}: change only what belongs here.` : "";
         const r1 = await leanModel("code", issue, stage, L.codePrompt(iss, {  plan: (plan ?? "") + multi, techPlan: o.techPlan, approval, feedback: o.feedback, hints: L.fileHints(files, `${iss.summary} ${iss.description} ${plan ?? ""}`), qc: !!o.selfCheck?.[rp], preexisting: L.preexistingFails(L.loadPlan(st, issue).qc_baseline?.[rp] ?? o.baselines?.[rp]), review: !!o.review, branch }), o.dev, L.contextOf({ brief: await brief(o.dev), habits }));
-        if (r1.question && !r1.summary) { await record("question", r1.question); await say(o.who, `QUESTION (${rname(rp)})\n${r1.question}`); repo = runRepos[0]; return null; }
+        if (r1.question && !r1.summary) { await record("question", r1.question); await say(o.who, `QUESTION (${rname(rp)})\n${r1.question}`, "question"); repo = runRepos[0]; return null; }
         const sha = L.commitAll(rp, `${o.wip ? `WIP(${issue}) ${o.wip}: ` : `${issue}: `}${r1.commit_message || iss.summary || "agent change"}`);
         const h = o.host ? host(r1) : { msg: [] };
         wheres.push(`${runRepos.length > 1 ? rname(rp) + ": " : ""}Branch ${branch}${sha ? ` @ ${sha}` : " (no changes)"}${h.url ? ` PR ${h.url}${h.merged ? " (merged)" : ""}` : " (local, not pushed)"}${h.msg.length && !h.url ? ` - ${h.msg.join("; ")}` : ""}`);
@@ -505,7 +533,7 @@ Jira: ${issue}` });
         fixes++; res = runQc();
       }
       const sv = L.loadPlan(st, issue);
-      if (res.some((x) => !x.v.pass)) { const txt = qcText(res); await record("qc_fail", txt); await say(who, `QC FAIL\n${txt}\nStopping: needs a look from you.`); log(`lean: ${issue} QC failed after ${fixes} fix(es); stopped`); return; }
+      if (res.some((x) => !x.v.pass)) { const txt = qcText(res); await record("qc_fail", txt); await say(who, `QC FAIL\n${txt}\nStopping: needs a look from you.`, "qc"); log(`lean: ${issue} QC failed after ${fixes} fix(es); stopped`); return; }
       const txt = [qcText(res), res.every((x) => !x.v.passed.length) && sv.tests && `Developer check: ${sv.tests}`].filter(Boolean).join("\n");
       const steps = L.prSteps(na, seg), h = steps.open || steps.merge ? host(sv) : { msg: [] };
       const where = [sv.where, ...h.msg].filter(Boolean).join("\n");
@@ -534,7 +562,7 @@ async function learnHabits(issue, readKey, staff) {
   const { all, added } = L.mergeHabits(old, Array.isArray(r?.habits) ? r.habits : []);
   if (!added.length) return log(`habits: ${issue}: nothing new (${old.length} kept)`);
   L.saveHabits(homedir(), company, all); log(`habits: ${issue}: +${added.length} (${all.length} total)`);
-  if (jira) await jira.comment(issue, L.learnedComment(staff, added)).catch((e) => log("Jira comment failed:", e.message));
+  await comms(issue, L.learnedComment(staff, added));
 }
 
 // Deterministic Jira card moves (no AI): transition by target STATUS NAME, fallback stage comment. Dry: print only.
@@ -648,7 +676,7 @@ async function connect(company) {
         if (sf.kind !== "ok") {
           log(`staffing ${k}: ${sf.kind} ${[...(sf.missing_roles ?? []), ...(sf.missing_skills ?? [])].join(",")}${sf.post ? "" : " (already asked)"}`);
           if (jira) jira.labels(k, [sf.label], other).catch((e) => log("Jira label failed:", e.message))
-            .then(() => (p.say ? jira.comment(k, p.say) : null)).then(() => (sf.post && sf.text ? jira.comment(k, sf.text) : null)).catch((e) => log("Jira comment failed:", e.message));
+            .then(() => (p.say ? comms(k, p.say) : null)).then(() => (sf.post && sf.text ? comms(k, sf.text, sf.kind === "needs_hire" ? "hire" : "decision") : null)).catch((e) => log("Jira comment failed:", e.message));
           if (sf.post) L.notify?.(`Jira Listener: ${k} ${sf.kind === "needs_hire" ? "needs a hire" : "needs your decision"}`);
           return;
         }
@@ -656,7 +684,7 @@ async function connect(company) {
       }
       if (p.say && (p.issue ?? p.task_id)) { // server-decided one-off reply (To Do comment / "who should take this?"): post as is, no run
         const k = p.issue ?? p.task_id;
-        if (jira) jira.comment(k, p.say).catch((e) => log("Jira comment failed:", e.message)); else log(`JIRA (no client): ${String(p.say).replace(/\n/g, " ")}`);
+        comms(k, p.say);
         if (!(p.event === "staffing_choice" && !p.waiting)) return; // "3 proceed": confirm, then run
       }
       if (p.waiting) return; // user gate
