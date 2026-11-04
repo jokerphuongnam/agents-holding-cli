@@ -1,0 +1,21 @@
+// node skills_test.mjs: strict layout, held_back, exclusions, symlink safety, visibility move, metadata counts.
+import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, existsSync } from "node:fs"; import { tmpdir } from "node:os"; import { join } from "node:path";
+import { check, bundle, setVisibility, localMeta, ROOT } from "./skills.mjs";
+let f = 0; const ok = (n, c) => { console.log((c ? "PASS " : "FAIL ") + n); if (!c) f++; };
+const home = mkdtempSync(join(tmpdir(), "ahs-")), r = ROOT(home), mk = (p, t) => { mkdirSync(join(p, ".."), { recursive: true }); writeFileSync(p, t); };
+const FM = (n) => `---\nname: ${n}\ndescription: d\nversion: 1\n---\nbody\n`;
+mk(join(r, "public/good/SKILL.md"), FM("good")); mk(join(r, "public/good/scripts/run.sh"), "echo hi"); mk(join(r, "public/good/history/h.md"), "old"); mk(join(r, "public/good/assets/a.txt"), "x");
+mk(join(r, "public/good/references/me.md"), "mail me at a@b.co"); mk(join(r, "public/good/weird/x.md"), "x");
+mk(join(r, "public/pers/SKILL.md"), FM("pers") + "see /Users/alice/proj"); mk(join(r, "public/nofm/SKILL.md"), "no frontmatter"); mk(join(r, "stray/x/SKILL.md"), FM("x"));
+mk(join(r, "private/mine/SKILL.md"), FM("mine")); mkdirSync(join(r, "public/good/templates"), { recursive: true }); symlinkSync("/etc/hosts", join(r, "public/good/templates/link.md"));
+const c = check(home); ok("valid skills load", c.ok.map((s) => s.name).sort().join() === "good,mine,pers");
+ok("invalid ones reported with reason + fix", ["nofm", "stray", "weird"].every((x) => c.bad.some((b) => b.path.includes(x) && b.fix)));
+const g = bundle(c.ok.find((s) => s.name === "good"), []); const paths = g.files.map((x) => x.path);
+ok("history/ assets/ never collected", !paths.some((p) => /^(history|assets)\//.test(p)));
+ok("flagged file excluded", !paths.includes("references/me.md") && g.excluded.some((e) => e.path === "references/me.md"));
+ok("symlinks never followed", !paths.some((p) => p.includes("link")));
+ok("SKILL.md + scripts collected", paths.includes("SKILL.md") && paths.includes("scripts/run.sh"));
+ok("personalized SKILL.md holds the whole skill back", bundle(c.ok.find((s) => s.name === "pers"), []).held_back);
+setVisibility(home, "good", "private"); ok("skill set private moves the folder", existsSync(join(r, "private/good/SKILL.md")));
+const m = localMeta(home); ok("heartbeat meta = counts only", m.private_skills === 2 && m.public_skills === 1 && Object.keys(m).sort().join() === "lang,os,private_skills,public_skills");
+console.log(`skills_test: ${f} failures`); process.exit(f ? 1 : 0);

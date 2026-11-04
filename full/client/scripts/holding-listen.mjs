@@ -3,6 +3,8 @@
 // Multi-project: one process for every repo in ~/.config/agents-holding/projects.json (see registry.mjs; --repo DIR = only that repo).
 // Usage: holding listener run [--repo DIR] [--once] [--dry-jira] | [--run ISSUE --event E --stage S [--dry-jira]]   (license: $AGENTS_HOLDING_KEY or Keychain agents-holding-license|agents-holding-test-license)
 // One agent run at a time; events arriving during a run are coalesced into one follow-up run. Logs: ~/Library/Logs/agents-holding/.
+import * as O from "./outbound.mjs";
+import { localMeta } from "./skills.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
@@ -89,6 +91,7 @@ function creditOk() {
   for (const c of companyList) reconcile(c).catch((e) => log("reconcile failed:", e.message));
 }
 async function mcp(name, a) {
+  if (O.governed(name)) a = O.outbound(name, a); // single outbound allowlist (telemetry / crawl / billing)
   let r, body;
   try { r = await fetch(`${base}/functions/v1/mcp`, { method: "POST", signal: AbortSignal.timeout(Number(process.env.AH_MCP_TIMEOUT_MS ?? 60000)), headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", Authorization: `Bearer ${key}`, ...deviceHeaders },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: a } }) }); body = await r.text(); }
@@ -109,8 +112,9 @@ async function mcp(name, a) {
 const autostartPlist = join(homedir(), "Library/LaunchAgents/com.agentsholding.jira-listener.plist");
 // Every 60s (server marks the Jira Listener offline after ~2.5 min without one). Back after an outage: post the offline
 // comment once on every card that changed meanwhile (text from the server, task language), then reconcile replays the change.
-const heartbeat = (state = "online") => Promise.all(companyList.map((company) => mcp("listener_heartbeat", { company, host: hostname(), pid: process.pid, autostart: existsSync(autostartPlist), version: "4", state })
-  .then(async (r) => { if (r?.communication) commMode[company] = r.communication; L.writeStatus(homedir(), { companies: { [company]: { heartbeat_at: new Date().toISOString(), heartbeat_ok: true } } });
+const myJira = {}; // enterprise: this key's Jira account; work starts only on cards assigned to it
+const heartbeat = (state = "online") => Promise.all(companyList.map((company) => mcp("listener_heartbeat", { company, host: hostname(), pid: process.pid, autostart: existsSync(autostartPlist), version: "4", state, meta: localMeta() })
+  .then(async (r) => { if (r?.communication) commMode[company] = r.communication; if (r?.enterprise) myJira[company] = r.jira_account ?? null; L.writeStatus(homedir(), { companies: { [company]: { heartbeat_at: new Date().toISOString(), heartbeat_ok: true } } });
     if (state !== "online" || !(r?.was_offline || r?.missed?.length)) return;
     log(`Jira Listener back online for ${company} (server saw it offline since ${r.offline_since ?? "?"}); ${r.missed?.length ?? 0} card(s) changed meanwhile`);
     for (const m of r.missed ?? []) if (m.issue && m.comment) await comms(m.issue, m.comment);
@@ -685,6 +689,7 @@ async function connect(company) {
     if (msg.event === "phx_reply" && msg.topic === topic) { log("join", msg.payload.status, "company", company); if (msg.payload.status === "ok") { backoffs[company] = 1000; heartbeat(); rt("joined"); if (!joinedOnce[company]) { joinedOnce[company] = true; reconcile(company).catch((e) => log("reconcile failed:", e.message)); } if (downNotified[company]) { downNotified[company] = false; L.desktopNotify(homedir(), "agents-holding", `Listener reconnected (${company})`); reconcile(company).catch((e) => log("reconcile failed:", e.message)); } } else rt(`join ${msg.payload.status}`); }
     if (msg.event === "broadcast" && msg.payload?.event === "next_action") {
       const p = { ...(msg.payload.payload ?? {}), company };
+      if (p.enterprise && company in myJira && p.assignee_account !== myJira[company]) { log("skip", p.issue ?? "", "(assigned to someone else)"); return; }
       L.writeStatus(homedir(), { companies: { [company]: { last_event_at: new Date().toISOString(), last_event: `${p.event} ${p.issue ?? ""}`.trim() } } });
       log("next_action", company, p.event, p.issue ?? p.task_id ?? "", "stage", p.stage, p.waiting ? "(waiting on user)" : "");
       const sf = p.staffing; // staffing gate (needs-hire / needs-decision): post ONE rich comment + label, no run; cleared -> remove labels

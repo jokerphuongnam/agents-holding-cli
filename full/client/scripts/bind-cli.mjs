@@ -11,7 +11,7 @@ import * as A from "./agents.mjs";
 import { resolveCompany } from "./company.mjs";
 const home = process.env.HOME || homedir();
 const a = process.argv.slice(2), opt = (n) => { const i = a.indexOf(n); return i >= 0 ? a[i + 1] : undefined; };
-const VAL = ["--agent", "--provider", "--model", "--effort", "--company"];
+const VAL = ["--agent", "--provider", "--model", "--effort", "--company", "--preset"];
 const pos = a.filter((x, i) => !x.startsWith("--") && !VAL.includes(a[i - 1]));
 if (pos[0] === "remembered") {
   const [, sub, role, provider, model, effort] = pos;
@@ -27,7 +27,12 @@ if (!company) { console.error("run inside a repo with .agents/company.json, pass
 let roles = pos.filter((r) => r !== "ceo");
 if (!roles.length && !process.stdin.isTTY) { try { roles = (JSON.parse(readFileSync(0, "utf8") || "[]")).filter((r) => r !== "ceo"); } catch {} }
 const flags = { command: opt("--command"), provider: opt("--agent") ?? opt("--provider"), model: opt("--model"), effort: opt("--effort") };
+if (opt("--preset")) { const P = await import("./presets.mjs"); const p = P.PRESETS.find((x) => x.id === opt("--preset"));
+  if (!p) { console.error(`unknown preset ${opt("--preset")} (holding staff presets)`); process.exit(1); }
+  const b = P.bindingFor(p, flags.model); if (b.providerDef) { const g = A.loadGlobalCfg(home); A.saveGlobalCfg(home, { providers: { ...(g.providers ?? {}), [p.id]: b.providerDef } }); }
+  Object.assign(flags, { command: b.command, provider: b.provider, model: b.model }); const d = await P.detect(p); if (!d.installed) console.error(`⚠️  ${p.id}: ${d.how}`); }
 const tty = process.stdin.isTTY && !a.includes("--yes") && !process.env.AH_HOOK_RUN;
+if (tty) console.log((await import("./presets.mjs"))[/^vi/i.test(process.env.AH_LANG ?? process.env.LANG ?? "") ? "NOTE_VI" : "NOTE_EN"]);
 const defs = A.loadDefaults(home), cfg = A.loadAgentCfg(home, company);
 const rl = tty ? createInterface({ input: process.stdin, output: process.stdout }) : null;
 let shown = false;

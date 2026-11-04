@@ -213,3 +213,36 @@ Output parsing is picked from the first word:
 - anything else: plain text (a trailing `{...}` JSON is used if present)
 
 `holding provider list` prints each built-in's full effective template, then the company's default command and per-staff commands. `/staff list` shows `<staff> - $ <command…>`.
+
+## Sub-agent presets (headless) / Preset sub agent (chạy nền)
+
+> **VI:** Chọn preset là tạo một sub agent để nhân sự gọi chạy nền (headless) khi làm task — **không** mở cửa sổ chat. Với LLM chạy trên máy, cài xong rồi mở chat với nó là sai cách; cách đúng là thêm nó làm sub agent runner.
+>
+> **EN:** A preset creates a sub agent the staff runs headless in the background for each task — it does **not** open a chat. For a local LLM, installing it and chatting with it is the wrong way; add it as a sub-agent runner.
+
+`holding staff presets` lists every preset with a detect-installed check (binary on PATH, or the local server answering `/models`):
+
+| id | runner | headless call |
+|---|---|---|
+| claude | Claude Code | `claude -p --output-format json … "{prompt}"` |
+| codex | Codex | `codex exec --json --ephemeral … "{prompt}"` |
+| ollama | Ollama CLI | `ollama run {model}` (prompt on stdin) |
+| ollama-api | Ollama server | OpenAI-compatible `http://localhost:11434/v1` |
+| lmstudio | LM Studio server | `http://localhost:1234/v1` |
+| llamacpp | llama.cpp `llama-server` | `http://localhost:8080/v1` |
+| vllm | vLLM server | `http://localhost:8000/v1` |
+| openai-compatible | any compatible endpoint | set `baseURL` in `~/.config/agents-holding/agents.json` |
+
+### Sai vs đúng / Wrong vs right
+
+**Sai / Wrong**
+1. `ollama pull qwen2.5-coder`
+2. `ollama run qwen2.5-coder` → một cửa sổ chat mở ra / a chat opens.
+3. Copy task vào chat, copy kết quả ra / paste the task in, copy the answer out. Nhân sự không dùng được nó / the staff can't use it.
+
+**Đúng / Right**
+1. `ollama pull qwen2.5-coder` (hoặc bật server LM Studio / llama.cpp / vLLM).
+2. `holding staff presets` → thấy `✅ ollama`.
+3. `holding staff add backend-engineer --preset ollama --model qwen2.5-coder`
+4. `holding staff test backend-engineer` → chạy nền, không mở chat / runs headless, no chat.
+5. `/ceo KAN-12` → khi tới bước của backend-engineer, nhân sự tự gọi sub agent đó / the staff calls that runner on its own.

@@ -59,8 +59,8 @@ osascript -l JavaScript -e 'function run(a){ObjC.import("Foundation");const s=$.
   return (r.isError?"ERR ":"")+x}' "$tmp/out.json" "$code" > "$tmp/txt"
 }
 # key show <id>: pick up a parked key -> Keychain (agents-holding-issued-<id>) + clipboard; only a masked form is printed
-pickup() {
-  call key "show $1"; line="$(grep '^AH_NEW_KEY ' "$tmp/txt" || true)"
+pickup() { # pickup <id> [team]
+  if [ "${2:-}" = team ]; then call team "key $1"; else call key "show $1"; fi; line="$(grep '^AH_NEW_KEY ' "$tmp/txt" || true)"
   [ -n "$line" ] || { cat "$tmp/txt"; return 1; }
   id="$(printf '%s' "$line" | cut -d' ' -f2)"; k="$(printf '%s' "$line" | cut -d' ' -f3)"; : > "$tmp/txt"
   security add-generic-password -U -s "agents-holding-issued-$id" -a "$USER" -w "$k" 2>/dev/null || { echo "could not store in Keychain" >&2; return 1; }
@@ -80,11 +80,13 @@ stale() { # stale <why>: print the cached answer marked STALE (read-only cmds) o
   if [ "$RO" = 1 ] && [ -f "$CACHE" ]; then echo "⚠️  STALE (cached $(date -r "$CACHE" '+%Y-%m-%d %H:%M'); server unavailable: $1)"; cat "$CACHE"; exit 0; fi
 }
 if [ -n "$OWNCMD" ] && [ "$cmd" = key ] && [ "$V" = show ]; then pickup "$X"; exit $?; fi
+if [ "$cmd" = team ] && [ "$V" = key ]; then pickup "$X" team; exit $?; fi
 call "$cmd" "$args"
 case "$code" in 402|429) stale quota; exit 1;; 5*|000) stale "server error HTTP $code"; exit 1;; esac
 grep -qi '^ERR .*\(quota\|limit \(reached\|exceeded\)\)' "$tmp/txt" && { stale quota; exit 1; }
 cat "$tmp/txt"; grep -q '^ERR \|^HTTP ' "$tmp/txt" && exit 1
 [ "$RO" = 1 ] && { mkdir -p "$(dirname "$CACHE")"; chmod 700 "$(dirname "$CACHE")"; cp "$tmp/txt" "$CACHE"; }
+case "$cmd $V" in "team add"|"team rotate") id="$(sed -nE 's/.*holding team key ([0-9a-f-]{36}).*/\1/p' "$tmp/txt" | head -1)"; [ -n "$id" ] && { echo; pickup "$id" team || true; } ;; esac
 [ -n "$SK" ] && exit 0  # custom key: the owner already knows it; nothing to pick up
 case "$OWNCMD $cmd $V" in "1 key add"|"1 key renew"|"1 key rotate") id="$(sed -nE 's/.*holding key show ([0-9a-f-]{36}).*/\1/p' "$tmp/txt" | head -1)"; [ -n "$id" ] && { echo; pickup "$id" || true; } ;; esac
 exit 0
