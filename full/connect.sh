@@ -4,9 +4,11 @@
 # 1) creates this machine's device id in the Keychain  2) Generate key (new Free key) or Import key (hidden prompt; never
 # echoed, never in a file)  3) adds agents-holding to Grok (~/.grok/config.toml), Claude Code and Codex if installed,
 # reading the key/device from env vars  4) adds the Keychain loader to ~/.zshrc (idempotent)  5) health check.
+# --print-url: print the server URL and exit.
 # Env: AH_MCP_URL, AH_AGENTS=grok,claude,codex (default: installed ones), AH_NO_DOCTOR=1, AH_OWNER=1 (owner Mac: also owner commands).
 set -euo pipefail
 MCP_URL="${AH_MCP_URL:-https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp}"
+[ "${1:-}" = "--print-url" ] && { printf '%s\n' "$MCP_URL"; exit 0; }
 KSVC="agents-holding-license"; DSVC="agents-holding-device"
 say() { printf '\033[1;32m==>\033[0m %s\n' "$*"; }; warn() { printf '\033[1;33m!!\033[0m %s\n' "$*" >&2; }; die() { printf '\033[1;31mFAIL\033[0m %s\n' "$*" >&2; exit 1; }
 [ "$(uname)" = Darwin ] || die "macOS only (Keychain). Other systems: see full/SETUP.md"

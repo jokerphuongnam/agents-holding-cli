@@ -37,7 +37,7 @@ ceo - current session
 └─ qa-lead - grok-4.7-build-fast - default ⚠ unbound (company default)
 ```
 
-**The CEO is always your current chat session** (whatever agent and model you are chatting in). It has no binding and `holding staff set ceo …` is refused. When `/ceo` delegates, it runs `holding staff run <staff> "<task>"` (Grok: `/staff run <staff> <task>`), which starts that staff as a **separate process on its own binding**. The Jira listener does the same for every stage.
+**The CEO is always your current chat session** (whatever agent and model you are chatting in). It has no binding and `holding staff set ceo …` is refused. When `/ceo` delegates, it runs `holding staff run <staff> "<task>"` (default AI agent CLI: `/staff run <staff> <task>`), which starts that staff as a **separate process on its own binding**. The Jira listener does the same for every stage.
 
 **Binding step.** `holding project add` (new company) and `holding staff add <role>` ask, per staff (never the CEO):
 

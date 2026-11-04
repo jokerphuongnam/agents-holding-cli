@@ -42,7 +42,7 @@ flowchart LR
 - **Ask, don't guess.** When it is not sure, `/ceo` asks you "Not sure who should take this: A (reason) / B (reason). Which staff?" and waits. It never quietly falls back to the CEO.
 - **Scoped loading.** `get_role` returns only the acting staff's card and skills. `get_skill` requires `role` and refuses skills that belong to another staff. `any_role=true` is the explicit override.
 - **Caps.** Each staff call loads a condensed **brief** (`staff_brief`): the persona, cut to 1,200 characters or fewer, plus the 2 most relevant of the staff's own skills (3 at most), each summarised. The whole brief stays at or below 6,000 characters (about 1.5k tokens).
-- **Runs on that staff's provider.** The CEO is the chat session you are in (no binding). It delegates with `holding staff run <staff> "<task>"` (Grok `/staff run`), which starts the staff as a separate process on its own provider/model/effort (`holding staff set`, `holding provider set`, or the step in `holding project add` / `holding staff add`, where Enter accepts your remembered default from `holding provider list`). Unbound staff use the company default and show `⚠ unbound` in `/staff list`. See docs/PROVIDERS.md.
+- **Runs on that staff's provider.** The CEO is the chat session you are in (no binding). It delegates with `holding staff run <staff> "<task>"` (the default AI agent CLI `/staff run`), which starts the staff as a separate process on its own provider/model/effort (`holding staff set`, `holding provider set`, or the step in `holding project add` / `holding staff add`, where Enter accepts your remembered default from `holding provider list`). Unbound staff use the company default and show `⚠ unbound` in `/staff list`. See docs/PROVIDERS.md.
 
 *Jira flow (listener)*
 - **One stage-owner table** (server `STAGE_OWNERS`, cached locally):
@@ -75,7 +75,7 @@ flowchart LR
   `/staff list` shows the result as `<staff> - <model> - <effort>`. See [PROVIDERS.md](PROVIDERS.md).
 - **Language.** Output follows the input: the card's title and description, or the latest user comment for replies, or the `/ceo` prompt. A Vietnamese card gets Vietnamese plans, questions, comments and gate hints; a Chinese card gets Chinese. Code, identifiers and commit messages follow the repo's conventions. The `[agent-holding] [<staff>]` prefix never changes. Fixed strings are translated for en/vi/zh/ja/ko; other languages fall back to English. Override per company with `holding company set lang <code|auto>`.
 
-**Which company.** Holding data is per company. Every command takes `--company X`; otherwise the company comes from the nearest `.agents/company.json` above the current folder, then the active company (`holding company use <company>`, stored in `~/.config/agents-holding/active`). `holding company list` lists local companies (repos, boards, bound staff, active marker); `holding status` and `/key show` show the current one. Grok slash commands resolve the same way.
+**Which company.** Holding data is per company. Every command takes `--company X`; otherwise the company comes from the nearest `.agents/company.json` above the current folder, then the active company (`holding company use <company>`, stored in `~/.config/agents-holding/active`). `holding company list` lists local companies (repos, boards, bound staff, active marker); `holding status` and `/key show` show the current one. the default AI agent CLI slash commands resolve the same way.
 
 ## One /ceo, two modes
 

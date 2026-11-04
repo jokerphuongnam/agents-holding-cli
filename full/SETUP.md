@@ -18,7 +18,7 @@ The examples use sample values. Replace them with your own:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/jokerphuongnam/agents-holding-free/main/full/connect.sh | bash
 ```
-It asks your key at a hidden prompt and keeps it only in the macOS Keychain, creates this Mac's device id, adds agents-holding to Grok (and Claude Code / Codex if installed), adds two Keychain loader lines to `~/.zshrc`, and runs `grok mcp doctor agents-holding`. Open a new terminal afterwards.
+It asks your key at a hidden prompt and keeps it only in the macOS Keychain, creates this Mac's device id, adds agents-holding to the default AI agent CLI (and Claude Code / Codex if installed), adds two Keychain loader lines to `~/.zshrc`, and runs `grok mcp doctor agents-holding`. Open a new terminal afterwards.
 
 **Keys are per machine.** A key counts each Mac (or browser) that uses it against its device limit (usually 1). `holding key show` shows your key id, plan, credits and devices used/max. To upgrade, send your **key id** (never the key) to the owner.
 
@@ -26,31 +26,31 @@ Manual alternative (OAuth sign-in page):
 
 Add the server URL to your agent. The first time it connects, your browser opens a small sign-in page: paste your license key and click **Connect**. The agent gets its own access token for your license (renewed automatically); the key is not stored in any config file.
 
-Server URL: `https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp`
+Server URL: `$AH_MCP_URL`; set it once with `export AH_MCP_URL="$(curl -fsSL https://raw.githubusercontent.com/jokerphuongnam/agents-holding-free/main/full/connect.sh | bash -s -- --print-url)"`.
 
 **Claude Code**
 ```bash
-claude mcp add --transport http --scope user agents-holding https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp
+claude mcp add --transport http --scope user agents-holding $AH_MCP_URL
 claude            # then type /mcp, pick agents-holding, Authenticate
 ```
 
 **Codex CLI**
 ```bash
-codex mcp add agents-holding --url https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp
+codex mcp add agents-holding --url $AH_MCP_URL
 codex mcp login agents-holding      # only if the browser did not open
 ```
 
 **Cursor**: Settings → MCP → Add server, or in `~/.cursor/mcp.json`:
 ```json
-{ "mcpServers": { "agents-holding": { "url": "https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp" } } }
+{ "mcpServers": { "agents-holding": { "url": "<value of $AH_MCP_URL>" } } }
 ```
 Cursor shows **Needs login**; click it.
 
-**Grok CLI**
+**Default AI agent CLI (`grok` command)**
 ```bash
-grok mcp add --transport http agents-holding https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp
+grok mcp add --transport http agents-holding $AH_MCP_URL
 ```
-If your Grok version does not open the sign-in page, use the key header instead, with the key kept in the macOS Keychain:
+If your AI agent CLI version does not open the sign-in page, use the key header instead, with the key kept in the macOS Keychain:
 ```bash
 security add-generic-password -U -s agents-holding-license -a "$USER" -w     # paste the key at the hidden prompt
 echo 'export AGENTS_HOLDING_KEY="$(security find-generic-password -s agents-holding-license -a "$USER" -w 2>/dev/null)"' >> ~/.zshrc
@@ -59,10 +59,10 @@ echo 'export AGENTS_HOLDING_DEVICE="$(security find-generic-password -s agents-h
 ```
 then add `headers = { "Authorization" = "Bearer ${AGENTS_HOLDING_KEY}", "X-AH-Device" = "${AGENTS_HOLDING_DEVICE}" }` under `[mcp_servers.agents-holding]` in `~/.grok/config.toml` (`connect.sh` above does all of this for you).
 
-**Slash commands.** The server defines them (MCP prompts). Claude Code lists them as `/mcp__agents-holding__ceo`; Codex and Cursor list them under the server's prompts. **Grok CLI does not show MCP prompts**: it loads command files from `~/.grok/commands/*.md`, which `connect.sh` (and `install.sh`) write for you and refresh on every run; run `holding setup sync` (or rerun `connect.sh`) to pick up new server commands. Names that clash with Grok built-ins get an `ah-` prefix: `/doctor`, `/help`, `/task plan`, `/status`, `/billing usage`, `/task history`, `/task list`. `/help` (or `help` elsewhere) lists them all.
+**Slash commands.** The server defines them (MCP prompts). Claude Code lists them as `/mcp__agents-holding__ceo`; Codex and Cursor list them under the server's prompts. **The default AI agent CLI does not show MCP prompts**: it loads command files from `~/.grok/commands/*.md`, which `connect.sh` (and `install.sh`) write for you and refresh on every run; run `holding setup sync` (or rerun `connect.sh`) to pick up new server commands. Names that clash with the default AI agent CLI built-ins get an `ah-` prefix: `/doctor`, `/help`, `/task plan`, `/status`, `/billing usage`, `/task history`, `/task list`. `/help` (or `help` elsewhere) lists them all.
 
 **Instant commands (no model, no tokens).** Commands that only show data are answered without the AI:
-- In Grok, `holding setup sync` (run by `connect.sh`/`install.sh`) installs a prompt hook (`~/.grok/hooks/agents-holding.json`). When you type `/staff list`, `/key show`, `/billing`, `/billing usage`, `/task list`, `/task history`, `/jira sources`, `/key renew`, `/task plan KEY`, `/doctor`, `/listener`, `/staff add`, `/staff remove`, `/task set`, `/company set convention`, `/company set auto-pr`, `/flow` (show/list), `/skill list --custom`, `/help`, the owner `/key list` and `/token-*` commands, or `/jira-*`, the hook prints the answer and Grok shows "Turn blocked by a hook". That message is expected: it means the prompt never went to the model. Turn this off with `export AH_HOOK=0`, or skip installing it with `holding setup sync --no-hook`.
+- In the default AI agent CLI, `holding setup sync` (run by `connect.sh`/`install.sh`) installs a prompt hook (`~/.grok/hooks/agents-holding.json`). When you type `/staff list`, `/key show`, `/billing`, `/billing usage`, `/task list`, `/task history`, `/jira sources`, `/key renew`, `/task plan KEY`, `/doctor`, `/listener`, `/staff add`, `/staff remove`, `/task set`, `/company set convention`, `/company set auto-pr`, `/flow` (show/list), `/skill list --custom`, `/help`, the owner `/key list` and `/token-*` commands, or `/jira-*`, the hook prints the answer and the default AI agent CLI shows "Turn blocked by a hook". That message is expected: it means the prompt never went to the model. Turn this off with `export AH_HOOK=0`, or skip installing it with `holding setup sync --no-hook`.
 - In a terminal, `holding staff list`, `holding key show`, `holding billing usage 7`, `holding task plan KAN-1`, and so on give the same output. `holding help` lists them. `holding doctor --server` and `holding listener status --server` show the server's side of those checks.
 - These commands still go through the agent because they need it: `/ceo`, `/ceo`, `/task add`, `/task split`, `/approve`, `/jira setup`, `/flow edit`, `/admin`.
 
@@ -90,7 +90,7 @@ holding doctor --repo ~/Code/shop   # in a terminal: checks on this Mac
 
 ## 4. Optional: Jira + background listener
 
-The listener watches your Jira board. When you drag a card to **In Progress**, it plans the work and writes the code with your local **Grok, Claude Code or Codex** CLI. Only this part needs an install (macOS, Node.js 22+):
+The listener watches your Jira board. When you drag a card to **In Progress**, it plans the work and writes the code with your local **default AI agent CLI, Claude Code or Codex**. Only this part needs an install (macOS, Node.js 22+):
 
 ```bash
 brew install node
@@ -107,7 +107,7 @@ holding company set agent claude                       # or codex / grok; no arg
 holding company set agent claude --text-model haiku --model sonnet   # optional model overrides
 ```
 
-Defaults: plan/question stages use a cheap model (Grok `grok-4.7-build-fast`, Claude `haiku`, Codex your default model at low reasoning effort); the coding call uses the CLI's default model. `AH_AGENT`, `AH_TEXT_MODEL` and `AH_MODEL` override for one run. Runs never load your other MCP servers. `/billing usage` shows tokens per task and stage for every agent.
+Defaults: plan/question stages use a cheap model (the default AI agent CLI `grok-4.7-build-fast`, Claude `haiku`, Codex your default model at low reasoning effort); the coding call uses the CLI's default model. `AH_AGENT`, `AH_TEXT_MODEL` and `AH_MODEL` override for one run. Runs never load your other MCP servers. `/billing usage` shows tokens per task and stage for every agent.
 
 1. **Atlassian MCP in your agent** (lets it read your board during setup): add `https://mcp.atlassian.com/v1/mcp` the same way as in step 1 (e.g. `claude mcp add --transport http --scope user atlassian https://mcp.atlassian.com/v1/mcp`) and sign in.
 2. **Connect the project.** In your agent, in your repo:
@@ -127,7 +127,7 @@ Defaults: plan/question stages use a cheap model (Grok `grok-4.7-build-fast`, Cl
    This creates any missing statuses. Jira can't reorder columns by API, so drag them into this order (Board settings → Columns):
    `To Do, In Progress, Product Work, BA Question, Planned, Pre Coding, Coding, QC, In Review, Done`. Done goes last.
 5. **Send Jira events to your Jira Listener** (needs a Jira site admin). Either run `ATLASSIAN_EMAIL=you@example.com holding jira connect-events '<setup_url>'`, or create it by hand from the setup page with these values:
-   - URL: copy it from the setup page. It looks like `https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/jira-webhook?s=<id>&token=<secret>`. Keep it private.
+   - URL: copy it from the setup page. It looks like `<Jira Listener URL>?s=<id>&token=<secret>`. Keep it private.
    - JQL: `project = SHOP`
    - Events: **Issue created**, **Issue updated**, **Comment created**
    - Exclude body: **No**
@@ -175,7 +175,7 @@ security delete-generic-password -s agents-holding-license 2>/dev/null
 security delete-generic-password -s agents-holding-device 2>/dev/null
 security delete-generic-password -s agents-holding-atlassian 2>/dev/null
 claude mcp remove agents-holding --scope user; codex mcp remove agents-holding   # whichever you use
-# Grok: remove [mcp_servers.agents-holding] from ~/.grok/config.toml and the agents-holding line from ~/.zshrc
+# the default AI agent CLI: remove [mcp_servers.agents-holding] from ~/.grok/config.toml and the agents-holding line from ~/.zshrc
 ```
 
 ## Feedback, habits and status (listener)

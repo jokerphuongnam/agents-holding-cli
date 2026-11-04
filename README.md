@@ -20,15 +20,17 @@ See [docs/WHO-DECIDES.md](docs/WHO-DECIDES.md): the default Jira flow, colour-co
 
 No key yet? `full/install.sh` offers **Generate key** (a Free key for this Mac, 1,500 credits a month) or **Import key**. Plans, credits and recovery: [docs/RESILIENCE.md](docs/RESILIENCE.md#keys-and-credits).
 
-Got a license key (`ah_live_...`)? Add the server to your agent and sign in with the key when the browser opens. Works with Claude Code, Codex, Cursor and Grok:
+Got a license key (`ah_live_...`)? Add the server to your agent and sign in with the key when the browser opens. Works with Claude Code, Codex, Cursor and the default AI agent CLI:
+
+`$AH_MCP_URL` is the server URL; set it once with `export AH_MCP_URL="$(curl -fsSL https://raw.githubusercontent.com/jokerphuongnam/agents-holding-free/main/full/connect.sh | bash -s -- --print-url)"`.
 
 ```bash
-claude mcp add --transport http --scope user agents-holding https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp   # Claude Code, then /mcp
-codex mcp add agents-holding --url https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp                           # Codex
-grok mcp add --transport http agents-holding https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp                 # Grok
+claude mcp add --transport http --scope user agents-holding $AH_MCP_URL   # Claude Code, then /mcp
+codex mcp add agents-holding --url $AH_MCP_URL                           # Codex
+grok mcp add --transport http agents-holding $AH_MCP_URL                 # the default AI agent CLI
 ```
 
-Slash commands come from the server as MCP prompts (Grok CLI: as command files in ~/.grok/commands, written by `full/connect.sh` or `holding setup sync`). The installer (`full/install.sh`) is optional: you only need it for the background Jira listener, which runs Grok, Claude Code or Codex on your Mac.
+Slash commands come from the server as MCP prompts (default AI agent CLI: as command files in ~/.grok/commands, written by `full/connect.sh` or `holding setup sync`). The installer (`full/install.sh`) is optional: you only need it for the background Jira listener, which runs the default AI agent CLI, Claude Code or Codex on your Mac.
 
 Then follow **[full/SETUP.md](full/SETUP.md)**. The full version runs on a hosted server, which holds all roles, skills and workflow logic. This repo only has the optional local client (Jira listener and setup scripts) and the sign-in page (`docs/authorize.html`).
 
