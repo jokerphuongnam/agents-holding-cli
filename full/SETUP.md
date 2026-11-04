@@ -148,3 +148,9 @@ security delete-generic-password -s agents-holding-atlassian 2>/dev/null
 claude mcp remove agents-holding --scope user; codex mcp remove agents-holding   # whichever you use
 # Grok: remove [mcp_servers.agents-holding] from ~/.grok/config.toml and the agents-holding line from ~/.zshrc
 ```
+
+## Feedback, habits and status (listener)
+
+- Comment on a card in **Planned**: the plan is revised and stays in Planned. Comment in **In Review** (or drag it back to Coding with a comment): it goes back to Coding, the same developer fixes it on `feature/<KEY>`, QC runs, and it returns to In Review. Only you move cards to Done.
+- `holding habits [show|edit|clear]`: preferences learned from your comments when a task reaches Done (local file, used in later plans and code).
+- `holding status`: listener running?, realtime connection, last webhook event, last heartbeat, current task/stage. `holding notify on|off`: macOS notifications. Cards being worked on carry the `agent-working` label.

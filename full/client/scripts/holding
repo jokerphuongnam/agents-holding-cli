@@ -13,6 +13,9 @@ case "$1" in
   add-project) shift; exec node "$here/projects.mjs" add "$@" ;;
   remove-project) shift; exec node "$here/projects.mjs" remove "$@" ;;
   projects) shift; exec node "$here/projects.mjs" list "$@" ;;
+  status) shift; exec node "$here/status.mjs" status "$@" ;;
+  notify) shift; exec node "$here/status.mjs" notify "$@" ;;
+  habits) shift; exec node "$here/habits.mjs" "$@" ;;
   agent) shift; exec node "$here/agent-cli.mjs" "$@" ;;
   open-setup) shift; exec bash "$here/open-setup.sh" "$@" ;;
   *) cat <<USAGE
@@ -31,6 +34,9 @@ usage:
   holding remove-project [--repo DIR|NAME] [--jira-project KEY]
   holding projects [--json]           list repos and the Jira boards feeding them
   holding agent [grok|claude|codex] [--model M] [--text-model M]   CLI the listener runs for this company (no args = show)
+  holding status                     listener alive?, realtime, last webhook event, last heartbeat, current task/stage
+  holding notify on|off              macOS notifications for agent start/done/fail (default on)
+  holding habits [show|edit|clear]    user habits learned on Done (local; used in plan/tech plan/code prompts)
   holding open-setup '<setup_url>'        open the /connect-jira setup page
 USAGE
      exit 2 ;;

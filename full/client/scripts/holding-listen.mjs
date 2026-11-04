@@ -61,8 +61,10 @@ async function mcp(name, a) {
 
 // ---- server-side last-seen heartbeat (for /listener and /doctor); best effort ----
 const autostartPlist = join(homedir(), "Library/LaunchAgents/com.agentsholding.listener.plist");
-const heartbeat = () => Promise.all(companyList.map((company) => mcp("listener_heartbeat", { company, host: hostname(), pid: process.pid, autostart: existsSync(autostartPlist), version: "2" })
-  .catch((e) => log("heartbeat failed:", e.message))));
+const heartbeat = () => Promise.all(companyList.map((company) => mcp("listener_heartbeat", { company, host: hostname(), pid: process.pid, autostart: existsSync(autostartPlist), version: "3" })
+  .then(() => L.writeStatus(homedir(), { companies: { [company]: { heartbeat_at: new Date().toISOString(), heartbeat_ok: true } } }))
+  .catch((e) => { log("heartbeat failed:", e.message); L.writeStatus(homedir(), { companies: { [company]: { heartbeat_at: new Date().toISOString(), heartbeat_ok: false } } }); })));
+L.writeStatus(homedir(), { pid: process.pid, started_at: new Date().toISOString(), notify: L.notifyOn(homedir()), running: null, companies: {} });
 setInterval(heartbeat, 10 * 60 * 1000);
 process.on("SIGUSR1", () => heartbeat()); // `holding listener autostart on|off` pokes us to report the new state
 
@@ -91,6 +93,15 @@ const leanHome = lean ? L.leanGrokHome(homedir()) : null;
 const listenerJira = dryJira || !!jiraCfg;
 const sessDir = (sid, home = join(homedir(), ".grok")) => join(home, "sessions", encodeURIComponent(repo), sid);
 
+// User events on the same card within AH_DEBOUNCE_SEC (default 15s) are coalesced into ONE run (latest notice wins):
+// e.g. the user drags In Review -> Coding AND comments the feedback = 2 webhooks, but one coding run.
+const DEBOUNCED = new Set(["user_move", "user_comment", "review_feedback"]);
+const debounceMs = Number(process.env.AH_DEBOUNCE_SEC ?? 15) * 1000, timers = new Map();
+function debounce(p) {
+  const k = `${p.company ?? company}/${p.issue ?? p.task_id ?? "?"}`;
+  if (timers.has(k)) { clearTimeout(timers.get(k)); log(`debounce: ${k} ${p.event} replaces the queued notice`); }
+  timers.set(k, setTimeout(() => { timers.delete(k); wake(p); }, debounceMs));
+}
 let running = false, runningIssue = null;
 const pending = new Map(); // issue -> latest notice
 function wake(p) {
@@ -209,10 +220,10 @@ function spawnGrok(gargs, out, issue, sid, o = {}) {
 // ---- lean run: scripts drive the stages, the model only writes text/code (see lean.mjs) ----
 async function leanModel(kind, issue, stage, prompt) {
   const sid = randomUUID(), out = join(logDir, `run-${Date.now()}.log`), buf = [];
-  const text = kind !== "code", schema = kind === "tech" ? L.TECH_SCHEMA : text ? L.TEXT_SCHEMA : L.CODE_SCHEMA, system = kind === "tech" ? L.TECH_SYSTEM : text ? L.TEXT_SYSTEM : null;
+  const text = kind !== "code", schema = kind === "tech" ? L.TECH_SCHEMA : kind === "habits" ? L.HABITS_SCHEMA : text ? L.TEXT_SCHEMA : L.CODE_SCHEMA, system = kind === "tech" ? L.TECH_SYSTEM : kind === "habits" ? L.HABITS_SYSTEM : text ? L.TEXT_SYSTEM : null;
   const { agent, model, bin } = L.resolveAgent({ cfg: { agent: runSettings?.agent, model: runSettings?.model, text_model: runSettings?.text_model, ...L.loadAgentCfg(homedir(), company) }, text });
   let gargs, o = { collect: buf };
-  if (agent === "claude") { gargs = L.claudeArgs({ model, text: text && kind !== "tech", prompt, schema, system, codeTools: kind === "tech" ? "Read,Grep,Glob" : undefined }); o = { ...o, bin, env: { ...process.env } }; }
+  if (agent === "claude") { gargs = L.claudeArgs({ model, text: text && kind !== "tech", prompt, schema, system, codeTools: kind === "tech" ? "Read,Grep,Glob" : undefined, maxTurns: kind === "tech" ? 4 : undefined }); o = { ...o, bin, env: { ...process.env } }; }
   else if (agent === "codex") {
     const schemaFile = join(logDir, `schema-${sid}.json`); writeFileSync(schemaFile, JSON.stringify({ ...schema, additionalProperties: false, required: Object.keys(schema.properties) }));
     gargs = L.codexArgs({ model, text, prompt, schemaFile, system }); o = { ...o, bin, env: { ...process.env, CODEX_HOME: L.leanCodexHome(homedir()) } };
@@ -229,15 +240,34 @@ async function leanModel(kind, issue, stage, prompt) {
     mcp("report_usage", { company, issue, stage, session_id: sid, model: u.model ?? agent, input_tokens: u.input, output_tokens: u.output, cached_tokens: u.cached,
       reasoning_tokens: u.reasoning, model_calls: u.calls, wall_ms: wall, dry: dryJira }).catch((e) => log("report_usage failed:", e.message));
   } else log(`TOKENS ${issue} ${stage}: no usage reported by ${agent}`);
-  if (code !== 0) log(`lean ${kind} call exited ${code} for ${issue}`);
+  if (code !== 0) { log(`lean ${kind} call exited ${code} for ${issue}`);
+    if (!r || !Object.keys(r).length) throw new Error(code === "SIGTERM" || code === "SIGKILL" ? `${kind} call timed out (${runTimeoutMs / 60000} min cap)` : `${kind} call exited ${code}`); }
   return r;
 }
+// Visibility wrapper: Jira "agent-working" label while the run works, "Started <stage>…" once per stage, "Failed <stage>: why" on error,
+// macOS notifications (holding notify on|off), local status file for `holding status`.
 async function leanRun(p, na, depth = 0) {
+  const issue = na.issue ?? p.issue ?? p.task_id; const vis = { labeled: false, started: new Set(), stage: na.stage, staff: L.stageStaff(na, na.stage), worked: false };
+  try { const r = await leanRunInner(p, na, depth, vis);
+    if (vis.worked && depth === 0) { L.desktopNotify(homedir(), `agents-holding: ${issue}`, `Finished ${L.stageTitle(vis.stage)}`); L.writeStatus(homedir(), { last_run: { issue, result: `ok (${vis.stage})`, at: new Date().toISOString() } }); }
+    return r; }
+  catch (e) {
+    log(`lean run ${issue} FAILED in ${vis.stage}: ${e.message}`);
+    if (jira) await jira.comment(issue, L.failedComment(vis.staff, vis.stage, e.message)).catch((x) => log("Jira comment failed:", x.message));
+    L.desktopNotify(homedir(), `agents-holding: ${issue} FAILED`, `${L.stageTitle(vis.stage)}: ${e.message}`);
+    L.writeStatus(homedir(), { last_run: { issue, result: `FAILED ${vis.stage}: ${String(e.message).slice(0, 120)}`, at: new Date().toISOString() } });
+  } finally {
+    if (vis.labeled && jira) await jira.label(issue, "remove").catch((x) => log("Jira label remove failed:", x.message));
+    if (depth === 0) L.writeStatus(homedir(), { running: null });
+  }
+}
+async function leanRunInner(p, na, depth, vis) {
   const issue = na.issue ?? p.issue ?? p.task_id; const st = L.stateDir(homedir(), company); const saved = L.loadPlan(st, issue);
   let iss = { key: issue, summary: na.title ?? "", description: String(na.request ?? "").slice(0, 1500), comments: [] };
   const readKey = opt("--jira-read-as") || process.env.AH_JIRA_READ_AS || issue; // dry replays may read the real issue (GET only)
   if (jira) { try { iss = { key: issue, ...L.compactIssue(await jira.issue(readKey)) }; } catch (e) { log(`lean: Jira read ${readKey} failed (${e.message}); using server title/request`); } }
   const fb = L.feedbackOf(na);
+  const habits = L.loadHabits(homedir(), company);
   const say = async (staff, t0) => { const t = staff === false ? t0 : `${L.staffTag(staff)} ${t0}`; // every comment: [agent-holding] [<staff name>] ...
     if (dryJira && !jira) return log(`JIRA (dry): comment ${issue} "${t.slice(0, 160).replace(/\n/g, " ")}"`);
     if (jira) await jira.comment(issue, t).catch((e) => log("Jira comment failed:", e.message));
@@ -254,13 +284,22 @@ async function leanRun(p, na, depth = 0) {
   };
   log(`lean run ${issue} (${p.event}) segments ${L.segments(na).map((s) => `${s.kind}:${s.stages.join(">")}`).join(" | ") || "none"}`);
   let plan = saved.plan ?? null;
+  const startStage = async (s0, kind) => { // one "Started" comment per stage per run; label on first real work
+    vis.stage = s0; vis.staff = L.stageStaff(na, s0, { kind, developer: L.loadPlan(st, issue).developer }); vis.worked = true;
+    L.writeStatus(homedir(), { running: { issue, stage: s0, at: new Date().toISOString(), pid: process.pid } });
+    if (vis.started.has(s0)) return; vis.started.add(s0);
+    if (jira && !vis.labeled) { vis.labeled = true; await jira.label(issue, "add").catch((e) => log("Jira label add failed:", e.message)); }
+    if (kind !== "script" && !(kind === "code" && na.review_feedback)) await say(false, L.startedComment(vis.staff, s0)); // review: the "back to Coding" comment says it
+    L.desktopNotify(homedir(), `agents-holding: ${issue}`, `Started ${L.stageTitle(s0)}`);
+  };
   for (const seg of L.segments(na)) {
     const s0 = seg.stages[0];
+    if (seg.kind !== "move" && !(seg.kind === "script" && s0 === "done")) await startStage(s0, seg.kind);
     if (seg.kind === "move") { if (!(await advance(s0, seg.moves[0]))) return; continue; }
     if (seg.kind === "text") {
-      const r = await leanModel("text", issue, s0, L.textPrompt(iss, { prevPlan: s0 === "planned" ? plan : null, feedback: fb, allowQuestion: s0 !== "planned" && (na.flow_stages ?? []).includes("ba_question") }));
+      const r = await leanModel("text", issue, s0, L.textPrompt(iss, { habits, prevPlan: s0 === "planned" ? plan : null, feedback: fb, allowQuestion: s0 !== "planned" && (na.flow_stages ?? []).includes("ba_question") }));
       if (r.question && s0 !== "planned") { await record("question", r.question); await say(L.stageStaff(na, s0), `QUESTION\n${r.question}`); await advance(s0, "ba_question"); break; }
-      plan = r.plan || r.summary || ""; if (!plan) { log(`lean: empty plan for ${issue}; stopping`); return; }
+      plan = r.plan || r.summary || ""; if (!plan) { throw new Error("the model returned an empty plan"); }
       await record("plan", plan); await say(L.stageStaff(na, s0), `PLAN\n${plan}`); L.savePlan(st, issue, { plan });
       if (seg.moves[0] && !(await advance(s0, seg.moves[0]))) return;
       continue;
@@ -276,7 +315,8 @@ Jira: ${issue}` });
       if (s0 === "done") { // template comment + local state cleanup; merge only if the flow says so (per auto_pr rules)
         const h = steps.merge ? host(saved2) : { msg: [] };
         await say(false, [L.doneComment(issue, saved2, L.stageStaff(na, "done")), ...h.msg].join("\n"));
-        log(`lean: ${issue} done (script, no model); state ${L.clearState(st, issue) ? "cleared" : "none"}`);
+        await learnHabits(issue, readKey, L.stageStaff(na, "done"));
+        log(`lean: ${issue} done (script); state ${L.clearState(st, issue) ? "cleared" : "none"}`);
         continue;
       }
       if (!steps.open && !steps.merge && !(na.on_enter?.[s0] ?? []).some((a) => a.action === "comment") && !seg.moves[0]) { log(`lean: ${issue} ${s0}: nothing to do (script)`); continue; }
@@ -293,9 +333,9 @@ Jira: ${issue}` });
       const who = L.stageStaff(na, s0, { kind: "techplan" });
       const files = filesOf(repo), hints = L.fileHints(files, `${iss.summary} ${iss.description} ${plan ?? ""}`);
       const listed = files.length <= 40 ? files : hints;
-      const r = await leanModel("tech", issue, s0, L.techPlanPrompt(iss, { plan, feedback: fb, files: listed, snippets: L.fileSnippets(repo, hints.slice(0, 5)), devRoles }));
+      const r = await leanModel("tech", issue, s0, L.techPlanPrompt(iss, { habits, plan, feedback: fb, files: listed, snippets: L.fileSnippets(repo, hints.slice(0, 5)), devRoles }));
       if (r.question && !r.tech_plan) { await record("question", r.question); await say(who, `QUESTION\n${r.question}`); return; }
-      const techPlan = r.tech_plan || r.summary || ""; if (!techPlan) { log(`lean: empty tech plan for ${issue}; stopping`); return; }
+      const techPlan = r.tech_plan || r.summary || ""; if (!techPlan) { throw new Error("the model returned an empty tech plan"); }
       const dev = L.pickDeveloper(devRoles, r.developer, na.assigned_role, `${iss.summary} ${iss.description} ${techPlan}`);
       if (dev !== "tech-lead" && dev !== na.assigned_role) await mcp("assign", { company, task: issue, role: dev }).catch((e) => log(`assign ${dev} failed:`, e.message));
       L.savePlan(st, issue, { tech_plan: techPlan, developer: dev, qc_baseline: null });
@@ -313,7 +353,7 @@ Jira: ${issue}` });
         log(`lean: ${rp} branch ${branch}: ${L.ensureBranch(rp, branch)}`);
         const files = filesOf(rp);
         const multi = runRepos.length > 1 ? `\nThis task spans repos ${runRepos.map(rname).join(", ")}; you are in ${rname(rp)}: change only what belongs here.` : "";
-        const r1 = await leanModel("code", issue, stage, L.codePrompt(iss, { plan: (plan ?? "") + multi, techPlan: o.techPlan, approval, feedback: o.feedback, hints: L.fileHints(files, `${iss.summary} ${iss.description} ${plan ?? ""}`), qc: !!o.selfCheck?.[rp] }));
+        const r1 = await leanModel("code", issue, stage, L.codePrompt(iss, { habits, plan: (plan ?? "") + multi, techPlan: o.techPlan, approval, feedback: o.feedback, hints: L.fileHints(files, `${iss.summary} ${iss.description} ${plan ?? ""}`), qc: !!o.selfCheck?.[rp], preexisting: L.preexistingFails(L.loadPlan(st, issue).qc_baseline?.[rp] ?? o.baselines?.[rp]), review: !!o.review, branch }));
         if (r1.question && !r1.summary) { await record("question", r1.question); await say(o.who, `QUESTION (${rname(rp)})\n${r1.question}`); repo = runRepos[0]; return null; }
         const sha = L.commitAll(rp, `${issue}: ${r1.commit_message || iss.summary || "agent change"}`);
         const h = o.host ? host(r1) : { msg: [] };
@@ -324,20 +364,23 @@ Jira: ${issue}` });
     };
     if (seg.kind === "code") { // Coding: the card is already in Coding (moved by advance), now the developer codes
       const sv = L.loadPlan(st, issue);
-      const dev = sv.developer ?? L.pickDeveloper(devRoles, null, na.assigned_role, `${iss.summary} ${iss.description}`);
+      // review feedback (In Review -> Coding): the SAME developer who coded it fixes it on the existing feature/<KEY> branch
+      const review = !!na.review_feedback;
+      const dev = sv.developer || (review && L.codingDeveloper(sv, na.assigned_role, devRoles)) || L.pickDeveloper(devRoles, null, na.assigned_role, `${iss.summary} ${iss.description}`);
       const who = L.stageStaff(na, s0, { kind: "code", developer: dev });
+      if (review) { await jiraOps(issue); await say(false, L.reviewBackComment(dev)); log(`lean: ${issue} review feedback -> back to Coding, developer ${dev}`); }
       // QC baseline (script, no tokens): run the repo's checks on the untouched tree so QC only blames new failures
       const baselines = { ...(sv.qc_baseline ?? {}) }, selfCheck = {};
       for (const rp of runRepos) {
         L.ensureBranch(rp, branch);
         const checks = qcAhead ? L.detectChecks(rp) : [];
         if (checks.length && !baselines[rp]) { baselines[rp] = L.runChecks(rp, checks).map(({ name, ok }) => ({ name, ok })); log(`lean: ${issue} QC baseline ${rname(rp)}: ${baselines[rp].map((x) => `${x.name}=${x.ok ? "ok" : "fail"}`).join(", ")}`); }
-        selfCheck[rp] = !(baselines[rp] ?? []).some((x) => x.ok); // no usable script check -> the developer runs the cheapest check itself
+        selfCheck[rp] = L.needsSelfCheck(baselines[rp]); // no script check at all -> the developer runs the cheapest check itself (a failing baseline is ignored, not looped on)
       }
-      const r = await codeOnce(s0, { techPlan: sv.tech_plan, feedback: fb, selfCheck, who, host: L.prSteps(na, seg).open || L.prSteps(na, seg).merge });
+      const r = await codeOnce(s0, { techPlan: sv.tech_plan, feedback: review ? na.review_feedback : fb, review, baselines, selfCheck, who, host: L.prSteps(na, seg).open || L.prSteps(na, seg).merge });
       if (!r) return;
       L.savePlan(st, issue, { tech_plan: sv.tech_plan ?? r.tech_plan, summary: r.summary, tests: r.tests, commit: r.commit, branch, repos: runRepos, developer: dev, qc_baseline: baselines, where: r.where });
-      await say(who, ["CODE", !sv.tech_plan && r.tech_plan && `Tech plan:\n${r.tech_plan}`, `Summary: ${r.summary ?? ""}`, r.tests && `Checks: ${r.tests}`, r.where].filter(Boolean).join("\n"));
+      await say(who, [review ? "CODE (review feedback)" : "CODE", !sv.tech_plan && r.tech_plan && `Tech plan:\n${r.tech_plan}`, `Summary: ${r.summary ?? ""}`, r.tests && `Checks: ${r.tests}`, r.where].filter(Boolean).join("\n"));
       const art = (k) => ({ tech_plan: r.tech_plan, pr: `${r.summary}\n${r.where}`, qc_pass: r.tests || r.summary, note: `${r.summary}\n${r.tests ?? ""}\n${r.where}` }[k] ?? r.summary);
       const to = seg.moves[0];
       if (to) { const need = L.neededArtifact(s0, to); if (need) await record(need, art(need)); if (!(await advance(s0, to, art))) return; }
@@ -377,7 +420,20 @@ Jira: ${issue}` });
   }
   await jiraOps(issue);
   let na2 = null; try { na2 = await mcp("next_action", { company, task: issue, listener_jira: true }); } catch {}
-  if (na2 && !na2.waiting && na2.stage !== na.stage && depth < 2) { log(`lean post-run: ${issue} now ${na2.stage}, not waiting; continuing`); return leanRun({ ...p, event: "chain" }, na2, depth + 1); }
+  if (na2 && !na2.waiting && na2.stage !== na.stage && depth < 2) { log(`lean post-run: ${issue} now ${na2.stage}, not waiting; continuing`); return leanRunInner({ ...p, event: "chain" }, na2, depth + 1, vis); }
+}
+
+// Done: distill the user's own comments on the task into general habits (one cheap call, only if there are user comments).
+async function learnHabits(issue, readKey, staff) {
+  if (!jira) return log(`habits: ${issue}: no Jira client, skipped`);
+  let j; try { j = await jira.issue(readKey); } catch (e) { return log(`habits: Jira read ${readKey} failed (${e.message})`); }
+  const cm = L.userComments(j); if (!cm.length) return log(`habits: ${issue}: no user comments, no model call`);
+  const old = L.loadHabits(homedir(), company), iss = { key: issue, ...L.compactIssue(j) };
+  const r = await leanModel("habits", issue, "done", L.habitsPrompt(iss, cm, old));
+  const { all, added } = L.mergeHabits(old, Array.isArray(r?.habits) ? r.habits : []);
+  if (!added.length) return log(`habits: ${issue}: nothing new (${old.length} kept)`);
+  L.saveHabits(homedir(), company, all); log(`habits: ${issue}: +${added.length} (${all.length} total)`);
+  if (jira) await jira.comment(issue, L.learnedComment(staff, added)).catch((e) => log("Jira comment failed:", e.message));
 }
 
 // Deterministic Jira card moves (no AI): transition by target STATUS NAME, fallback stage comment. Dry: print only.
@@ -427,6 +483,17 @@ function grokArgs(prompt, sid, o = {}) {
 
 // ---- Supabase Realtime (Phoenix v1 protocol over native WebSocket) ----
 let ref = 0;
+// Watchdog (every 30s): a socket with nothing received for > AH_STALE_SEC (default 120s; Phoenix heartbeats are answered every 25s)
+// is closed -> the normal reconnect path; the user gets one notification per outage.
+const sockets = {}, lastRx = {}, downNotified = {}, staleMs = Number(process.env.AH_STALE_SEC ?? 120) * 1000;
+setInterval(() => {
+  for (const c of companyList) {
+    if (!L.socketStale(lastRx[c], Date.now(), staleMs)) continue;
+    log(`watchdog: ${c} realtime silent > ${staleMs / 1000}s; reconnecting`);
+    if (!downNotified[c]) { downNotified[c] = true; L.desktopNotify(homedir(), "agents-holding", `Listener lost the server connection (${c}); reconnecting`); }
+    lastRx[c] = Date.now(); try { sockets[c]?.close(); } catch {}
+  }
+}, 30000).unref?.();
 const backoffs = {};
 async function connect(company) {
   backoffs[company] ??= 1000;
@@ -435,24 +502,29 @@ async function connect(company) {
   const topic = `realtime:${sub.topic}`;
   const send = (t, event, payload) => ws.send(JSON.stringify({ topic: t, event, payload, ref: String(++ref) }));
   let hb;
+  sockets[company] = ws; lastRx[company] = Date.now();
+  const rt = (state) => L.writeStatus(homedir(), { companies: { [company]: { realtime: state, realtime_at: new Date().toISOString() } } });
+  rt("connecting");
   ws.onopen = () => {
     send(topic, "phx_join", { config: { broadcast: { self: false, ack: false }, presence: { key: "" }, postgres_changes: [], private: true }, access_token: sub.publishable_key });
     hb = setInterval(() => send("phoenix", "heartbeat", {}), 25000);
   };
   ws.onmessage = (m) => {
-    const msg = JSON.parse(m.data);
-    if (msg.event === "phx_reply" && msg.topic === topic) { log("join", msg.payload.status, "company", company); if (msg.payload.status === "ok") { backoffs[company] = 1000; heartbeat(); } }
+    const msg = JSON.parse(m.data); lastRx[company] = Date.now();
+    if (msg.event === "phx_reply" && msg.topic === topic) { log("join", msg.payload.status, "company", company); if (msg.payload.status === "ok") { backoffs[company] = 1000; heartbeat(); rt("joined"); if (downNotified[company]) { downNotified[company] = false; L.desktopNotify(homedir(), "agents-holding", `Listener reconnected (${company})`); } } else rt(`join ${msg.payload.status}`); }
     if (msg.event === "broadcast" && msg.payload?.event === "next_action") {
       const p = { ...(msg.payload.payload ?? {}), company };
+      L.writeStatus(homedir(), { companies: { [company]: { last_event_at: new Date().toISOString(), last_event: `${p.event} ${p.issue ?? ""}`.trim() } } });
       log("next_action", company, p.event, p.issue ?? p.task_id ?? "", "stage", p.stage, p.waiting ? "(waiting on user)" : "");
       if (p.waiting) return; // user gate
+      if (DEBOUNCED.has(p.event)) return debounce(p); // a drag + comment arrive as 2 webhooks: one run, after both landed
       // agent_move: the agent's own advance. If a run for that issue is still active it is queued and handled
       // after exit (the run may stop right after advancing, e.g. pre_coding -> coding, leaving the new stage undone).
       wake(p);
       return;
     }
   };
-  ws.onclose = () => { clearInterval(hb); const b = backoffs[company]; log("socket closed", company, "; reconnect in", b, "ms"); setTimeout(() => connect(company).catch(fail(company)), b); backoffs[company] = Math.min(b * 2, 60000); };
+  ws.onclose = () => { clearInterval(hb); if (sockets[company] === ws) delete sockets[company]; rt("disconnected"); const b = backoffs[company]; log("socket closed", company, "; reconnect in", b, "ms"); setTimeout(() => connect(company).catch(fail(company)), b); backoffs[company] = Math.min(b * 2, 60000); };
   ws.onerror = () => {};
 }
 const fail = (company) => (e) => { const b = backoffs[company] ?? 1000; log("error", company, e.message); setTimeout(() => connect(company).catch(fail(company)), b); backoffs[company] = Math.min(b * 2, 60000); };

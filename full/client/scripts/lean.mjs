@@ -43,8 +43,23 @@ export function stageStaff(na, stage, { kind, developer } = {}) {
 }
 export const TEXT_STAGES = new Set(["product_work", "ba_question", "planned"]);
 export const SCRIPT_ACTIONS = new Set(["open_pr", "merge", "create_branch", "comment"]); // flow stages done by script, no model
+/** Baseline check names that already failed before any change (the coder is told to ignore them). */
+export const preexistingFails = (baseline) => (baseline ?? []).filter((x) => !x.ok).map((x) => x.name);
+/** Developer self-check only when the repo has NO script checks at all (a failing baseline is not a reason to loop on it). */
+export const needsSelfCheck = (baseline) => !(baseline ?? []).length;
+/** The developer who coded the task: saved state, else the server's assigned dev role, else the tech plan's "Developer:" line, else tech-lead. */
+export function codingDeveloper(saved = {}, assigned = null, devRoles = []) {
+  if (saved.developer) return saved.developer;
+  const ids = devRoles.map((r) => r.role);
+  if (assigned && (!ids.length || ids.includes(assigned))) return assigned;
+  const m = String(saved.tech_plan ?? "").match(/Developer:.*\(([\w-]+)\)/); if (m) return m[1];
+  return "tech-lead";
+}
+export const reviewBackComment = (dev) => `${staffTag(staffName(dev))} Review feedback received, back to Coding`;
 export const ENTER_ONLY = new Set(["planned", "in_review", "done"]);
 // grok --tools names: "Bash" = run_terminal_command ("run_terminal_command" itself is NOT accepted and silently loads ALL ~22 tools, ~9k tokens/turn)
+/** Coding call turn cap (model calls); AH_CODE_MAX_TURNS overrides. Stops runaway loops (KAN-6: 60 calls, 2.26M input tokens). */
+export const codeMaxTurns = (env = process.env) => Math.max(5, Number(env.AH_CODE_MAX_TURNS) || 25);
 export const CODE_TOOLS = "Bash,read_file,search_replace,write,grep,list_dir";
 export const TECH_TOOLS = "read_file,grep,list_dir"; // Pre Coding: read-only, a few turns max, cheap model
 export const TEXT_SCHEMA = { type: "object", properties: { plan: { type: "string" }, question: { type: "string" } } };
@@ -91,16 +106,18 @@ export function feedbackOf(na) {
 const issueBlock = (iss) => [`Task ${iss.key}: ${iss.summary}`, iss.description && `Description:\n${iss.description}`,
   iss.comments?.length && `Comments:\n${iss.comments.map((c) => `- ${c.who}: ${c.t}`).join("\n")}`].filter(Boolean).join("\n");
 export function textPrompt(iss, o = {}) {
-  return [issueBlock(iss), o.context && `Project: ${o.context}`, o.prevPlan && `Current plan:\n${o.prevPlan}`, o.feedback && `User feedback: ${o.feedback}`,
+  return [issueBlock(iss), habitsBlock(o.habits), o.context && `Project: ${o.context}`, o.prevPlan && `Current plan:\n${o.prevPlan}`, o.feedback && `User feedback: ${o.feedback}`,
     o.allowQuestion ? "If something essential is unclear, return {\"question\": \"...\"}. Otherwise return {\"plan\": \"...\"}." : "Return {\"plan\": \"...\"}.",
     "Plan: goal, scope, acceptance criteria, files/steps; max 12 short lines. Reply with the JSON only."].filter(Boolean).join("\n\n");
 }
 export const TEXT_SYSTEM = "You are a senior BA/tech lead. You write short, concrete task plans. Reply with JSON only.";
 export function codePrompt(iss, o = {}) {
-  return [issueBlock(iss), o.plan && `Approved plan:\n${o.plan}`, o.techPlan && `Tech plan (follow it; read only the files it names unless something is missing):\n${o.techPlan}`,
-    o.approval && `User: ${o.approval}`, o.feedback && `Address this feedback: ${o.feedback}`,
+  return [issueBlock(iss), habitsBlock(o.habits), o.plan && `Approved plan:\n${o.plan}`, o.techPlan && `Tech plan (follow it; read only the files it names unless something is missing):\n${o.techPlan}`,
+    o.approval && `User: ${o.approval}`, o.review && `The user reviewed your change on branch ${o.branch ?? "feature/" + iss.key} (already checked out, your earlier commits are on it) and sent it back to Coding.`,
+    o.feedback && `Address this ${o.review ? "review " : ""}feedback: ${o.feedback}`,
+    o.preexisting?.length && `Already failing BEFORE your change (QC baseline): ${o.preexisting.join(", ")}. Ignore these: do not run, investigate or fix them; QC only blames new failures.`,
     !o.techPlan && o.hints?.length && `Likely files: ${o.hints.join(", ")}`,
-    `Implement it in this repo with minimal changes${o.qc ? "; then run the cheapest relevant check (build/tests) and fix failures" : "; do not run tests/builds (QC runs them by script)"}.`,
+    `${o.review ? "Change only what the feedback asks" : "Implement it in this repo with minimal changes"}${o.qc ? "; then run the cheapest relevant check (build/tests) and fix failures" : "; do not run tests/builds (QC runs them by script)"}.`,
     "Do not run git commit/branch/push and do not touch Jira (scripts do that).",
     `Finish with JSON: {${o.techPlan ? "" : "\"tech_plan\": \"files+steps, 3-6 lines\", "}\"summary\": \"what changed\", ${o.qc ? "\"tests\": \"checks run + result\", " : ""}\"commit_message\": \"one line\"}.`].filter(Boolean).join("\n\n");
 }
@@ -108,7 +125,7 @@ export const TECH_SYSTEM = "You are the tech lead. You write short technical pla
 /** Pre Coding prompt: tech plan only (no code), with inline file excerpts so one tool-less turn is enough, and the developer roles to pick from. */
 export function techPlanPrompt(iss, o = {}) {
   const roles = (o.devRoles ?? []).map((r) => `- ${r.role}${r.skills?.length ? `: ${r.skills.join(", ")}` : ""}`).join("\n");
-  return [issueBlock(iss), o.plan && `Approved plan:\n${o.plan}`, o.feedback && `User feedback: ${o.feedback}`, o.context && `Project: ${o.context}`,
+  return [issueBlock(iss), habitsBlock(o.habits), o.plan && `Approved plan:\n${o.plan}`, o.feedback && `User feedback: ${o.feedback}`, o.context && `Project: ${o.context}`,
     o.files?.length && `Repo files (subset): ${o.files.join(", ")}`,
     o.snippets?.length && `File excerpts:\n${o.snippets.map((x) => `--- ${x.path}\n${x.text}`).join("\n")}`,
     roles ? `Developers on the roster (pick the best fit by role/skills):\n${roles}` : "No developer roles on the roster: the tech lead codes it (developer = \"tech-lead\").",
@@ -211,6 +228,10 @@ export function jiraClient(cfg, { dry, log }) {
   return {
     async issue(key) { return req("GET", `/issue/${encodeURIComponent(key)}?fields=summary,description,comment`); },
     async meta(key) { const j = await req("GET", `/issue/${encodeURIComponent(key)}?fields=labels,components`); return { labels: j.fields?.labels ?? [], components: (j.fields?.components ?? []).map((c) => c.name) }; },
+    async label(key, op) {
+      if (dry) return log(`JIRA (dry): label ${key} ${op} ${WORK_LABEL}`);
+      await req("PUT", `/issue/${encodeURIComponent(key)}`, labelBody(op));
+    },
     async comment(key, text) {
       if (dry) return log(`JIRA (dry): comment ${key} "${text.slice(0, 160).replace(/\n/g, " ")}${text.length > 160 ? "…" : ""}"`);
       const content = text.split("\n").map((l) => ({ type: "paragraph", content: l ? [{ type: "text", text: l }] : [] }));
@@ -244,6 +265,7 @@ export function leanGrokHome(home) {
   return d;
 }
 export function leanGrokArgs({ sid, model, text, prompt, schema, system, tools, maxTurns }) {
+  if (!text && !maxTurns) maxTurns = codeMaxTurns();
   return ["--trust", "--always-approve", "--session-id", sid, ...(model ? ["--model", model] : []),
     "--tools", tools ?? (text ? "read_file" : CODE_TOOLS), ...(maxTurns || text ? ["--max-turns", String(maxTurns ?? 1)] : []), "--disable-web-search", "--no-subagents", "--no-plan",
     ...(system ? ["--system-prompt-override", system] : []), "--json-schema", JSON.stringify(schema), "--output-format", "json", "--single", prompt];
@@ -285,5 +307,75 @@ export function gitHost(repo, o, exec = (c, a) => execFileSync(c, a, { cwd: repo
   }
   return r;
 }
+
+// ---------- user habits: local, per company, learned on Done from the user's own comments ----------
+// ~/.config/agents-holding/state/<company>/habits.md (chmod 600): "- <habit>" bullets, capped (HABITS_MAX bullets / HABITS_BYTES),
+// newest kept. One cheap text call per Done task WITH user comments; zero calls otherwise. Injected into plan/tech plan/code prompts.
+export const HABITS_MAX = 40, HABITS_BYTES = 2048;
+export const HABITS_SCHEMA = { type: "object", properties: { habits: { type: "array", items: { type: "string" } } } };
+export const HABITS_SYSTEM = "You distill a user's review comments into short, general, reusable preferences. Reply with JSON only.";
+export const habitsPath = (home, company) => join(stateDir(home, company), "habits.md");
+export const parseHabits = (t) => String(t ?? "").split("\n").map((l) => l.replace(/^\s*[-*]\s*/, "").trim()).filter((l) => l && !l.startsWith("#"));
+export function loadHabits(home, company) { try { return parseHabits(readFileSync(habitsPath(home, company), "utf8")); } catch { return []; } }
+const normH = (h) => h.toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\b(the|a|an|user|prefers?|wants?|should|always)\b/g, "").replace(/\s+/g, " ").trim();
+/** Merge new habits into old: dedupe (normalized), one line each (<=160 chars), cap count/bytes keeping the newest. Returns {all, added}. */
+export function mergeHabits(old = [], add = [], { max = HABITS_MAX, bytes = HABITS_BYTES } = {}) {
+  const seen = new Set(old.map(normH)), added = [];
+  for (let h of add) { h = String(h ?? "").replace(/\s+/g, " ").trim().slice(0, 160); const k = normH(h); if (!k || seen.has(k)) continue; seen.add(k); added.push(h); }
+  let all = [...old, ...added].slice(-max);
+  while (all.length && all.map((h) => `- ${h}\n`).join("").length > bytes) all = all.slice(1);
+  return { all, added: added.filter((h) => all.includes(h)) };
+}
+export function saveHabits(home, company, list) { writeFileSync(habitsPath(home, company), `# agents-holding: learned user habits (edit freely; one "- " bullet each)\n${list.map((h) => `- ${h}`).join("\n")}\n`, { mode: 0o600 }); }
+export const habitsBlock = (h) => h?.length ? `User habits (learned from earlier reviews; follow unless this task says otherwise):\n${h.map((x) => `- ${x}`).join("\n")}` : null;
+/** The user's own comments on a Done task (agent comments dropped). */
+export const userComments = (j) => compactIssue(j, { desc: 600, comments: 15, comment: 500 }).comments;
+export function habitsPrompt(iss, comments, existing = []) {
+  return [`Task ${iss.key}: ${iss.summary}`, iss.description && `Description: ${clip(iss.description, 600)}`,
+    `The user's comments on this task (plan/review feedback, answers):\n${comments.map((c) => `- ${c.t}`).join("\n")}`,
+    existing.length && `Already known habits (do not repeat):\n${existing.map((h) => `- ${h}`).join("\n")}`,
+    "Extract 0-3 GENERAL preferences that would apply to future tasks (e.g. comment \"should use animation\" on a numbers task -> \"User prefers animations when displaying numbers/data\"). Skip task-specific fixes, typos, approvals, thanks.",
+    "Return {\"habits\": [\"...\"]} (empty list if nothing general). JSON only."].filter(Boolean).join("\n\n");
+}
+export const learnedComment = (staff, added) => `${staffTag(staff)} Learned: ${added.join("; ")}`;
+
+// ---------- visibility: Jira "working" label + start/fail comments, macOS notifications, local listener status ----------
+export const WORK_LABEL = "agent-working";
+const STAGE_TITLES = { todo: "To Do", in_progress: "In Progress", product_work: "Product Work", ba_question: "BA Question", planned: "Planned", pre_coding: "Pre Coding", coding: "Coding", qc: "QC", in_review: "In Review", done: "Done" };
+export const stageTitle = (k) => STAGE_TITLES[k] ?? String(k ?? "?").replace(/_/g, " ");
+export const startedComment = (staff, stage) => `${staffTag(staff)} Started ${stageTitle(stage)}…`;
+export const failedComment = (staff, stage, reason) => `${staffTag(staff)} Failed ${stageTitle(stage)}: ${clip(String(reason ?? "error").split("\n")[0], 200)}`;
+/** Jira labels update body (add/remove the working label). */
+export const labelBody = (op, label = WORK_LABEL) => ({ update: { labels: [{ [op === "remove" ? "remove" : "add"]: label }] } });
+const notifyFile = (home) => join(home, ".config/agents-holding/notify.json");
+export function notifyOn(home, env = process.env) { if (env.AH_NOTIFY === "0") return false; try { return JSON.parse(readFileSync(notifyFile(home), "utf8")).on !== false; } catch { return true; } }
+export function setNotify(home, on) { mkdirSync(join(home, ".config/agents-holding"), { recursive: true }); writeFileSync(notifyFile(home), JSON.stringify({ on: !!on }), { mode: 0o600 }); }
+const asq = (t) => String(t ?? "").replace(/[\\"]/g, "").replace(/\s+/g, " ").slice(0, 180);
+/** osascript args for a macOS notification (quotes/backslashes stripped: no AppleScript injection from Jira text). */
+export const notifyArgs = (title, msg) => ["-e", `display notification "${asq(msg)}" with title "${asq(title)}"`];
+export function desktopNotify(home, title, msg, exec = (c, a) => execFileSync(c, a, { stdio: "ignore", timeout: 5000 }), platform = process.platform) {
+  if (!notifyOn(home) || platform !== "darwin") return false;
+  try { exec("osascript", notifyArgs(title, msg)); return true; } catch { return false; }
+}
+export const statusPath = (home) => join(home, ".config/agents-holding/listener-status.json");
+export function readStatus(home) { try { return JSON.parse(readFileSync(statusPath(home), "utf8")); } catch { return null; } }
+export function writeStatus(home, patch) {
+  const cur = readStatus(home) ?? {}; const next = { ...cur, ...patch, companies: { ...(cur.companies ?? {}) }, updated_at: new Date().toISOString() };
+  for (const [c, v] of Object.entries(patch.companies ?? {})) next.companies[c] = { ...(cur.companies?.[c] ?? {}), ...v };
+  mkdirSync(join(home, ".config/agents-holding"), { recursive: true }); writeFileSync(statusPath(home), JSON.stringify(next, null, 1), { mode: 0o600 }); return next;
+}
+const ago = (t, now) => !t ? "never" : `${Math.max(0, Math.round((now - new Date(t).getTime()) / 1000))}s ago (${t})`;
+/** `holding status` text from the status file (+ whether the pid is alive). */
+export function formatStatus(st, alive, now = Date.now()) {
+  if (!st) return "listener: no status file yet (never started? run: holding listener on)";
+  const l = [`listener: ${alive ? `RUNNING pid ${st.pid}` : `NOT RUNNING (last pid ${st.pid ?? "?"})`}, started ${ago(st.started_at, now)}, notifications ${st.notify === false ? "off" : "on"}`];
+  for (const [c, v] of Object.entries(st.companies ?? {}))
+    l.push(`  ${c}: realtime ${v.realtime ?? "?"}${v.realtime_at ? ` since ${ago(v.realtime_at, now)}` : ""}; last webhook event ${v.last_event ? `${v.last_event} ` : ""}${ago(v.last_event_at, now)}; last server heartbeat ${v.heartbeat_ok === false ? "FAILED " : ""}${ago(v.heartbeat_at, now)}`);
+  l.push(st.running ? `  working: ${st.running.issue} ${stageTitle(st.running.stage)} since ${ago(st.running.at, now)}` : "  working: idle");
+  if (st.last_run) l.push(`  last run: ${st.last_run.issue} ${st.last_run.result} ${ago(st.last_run.at, now)}`);
+  return l.join("\n");
+}
+/** Watchdog: a socket with nothing received (incl. heartbeat replies) for longer than limitMs is stale -> reconnect. */
+export const socketStale = (lastRx, now = Date.now(), limitMs = 120000) => !lastRx || now - lastRx > limitMs;
 
 export * from "./agents.mjs";

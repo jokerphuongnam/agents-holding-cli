@@ -33,8 +33,9 @@ export function resolveAgent({ env = process.env, cfg = {}, text }) {
   return { agent, model: model || null, bin };
 }
 
-export function claudeArgs({ model, text, prompt, schema, system, codeTools = CLAUDE_CODE_TOOLS }) {
-  return ["-p", "--output-format", "json", "--no-session-persistence", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--disable-slash-commands",
+export function claudeArgs({ model, text, prompt, schema, system, codeTools = CLAUDE_CODE_TOOLS, maxTurns }) {
+  if (!text && !maxTurns) maxTurns = Math.max(5, Number(process.env.AH_CODE_MAX_TURNS) || 25);
+  return ["-p", ...(maxTurns ? ["--max-turns", String(maxTurns)] : []), "--output-format", "json", "--no-session-persistence", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--disable-slash-commands",
     "--permission-mode", "bypassPermissions", "--tools", text ? "" : codeTools,
     ...(model ? ["--model", model] : []), ...(system ? ["--system-prompt", system] : []), "--json-schema", JSON.stringify(schema), prompt];
 }
