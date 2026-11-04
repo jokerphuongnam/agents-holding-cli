@@ -17,10 +17,11 @@ export const adf = (text) => ({ type: "doc", version: 1, content: String(text).s
 export const norm = (s) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
 
 /** Board for this run: --project KEY, else the registry project whose path contains cwd, else the only board. */
-export function pickBoard(reg, cwd, project) {
+export function pickBoard(reg, cwd, project, company = null) {
   const all = (reg.projects ?? []).flatMap((p) => (p.boards ?? []).map((b) => ({ ...b, path: p.path, name: p.name })));
   if (project) return all.find((b) => b.project_key === project.toUpperCase()) ?? { project_key: project.toUpperCase() };
-  const here = all.filter((b) => b.path && (resolve(cwd) + "/").startsWith(resolve(b.path) + "/"));
+  const mine = company ? all.filter((b) => b.company === company) : [];
+  const here = mine.length ? mine : all.filter((b) => b.path && (resolve(cwd) + "/").startsWith(resolve(b.path) + "/"));
   const pool = here.length ? here : all;
   if (pool.length === 1) return pool[0];
   if (!pool.length) throw new Error("no Jira board registered: holding add-project, or pass --project KEY");
@@ -43,7 +44,7 @@ async function search(req, jql, fields = F) {
     out.push(...(j.issues ?? [])); tok = j.nextPageToken; } while (tok && out.length < 500);
   return out;
 }
-const row = (i) => { const f = i.fields ?? {}; return { key: i.key, title: f.summary ?? "", column: f.status?.name ?? "?", cat: f.status?.statusCategory?.key, who: f.assignee?.displayName ?? "-", working: (f.labels ?? []).includes(WORK_LABEL), updated: f.updated }; };
+const row = (i) => { const f = i.fields ?? {}; return { key: i.key, title: f.summary ?? "", column: f.status?.name ?? "?", cat: f.status?.statusCategory?.key, who: f.assignee?.displayName ?? "-", working: (f.labels ?? []).includes(WORK_LABEL), staff: ((f.labels ?? []).find((l) => /^staff:/.test(l)) ?? "").slice(6) || null, updated: f.updated }; };
 export async function columnsOf(req, key) { // board column order (agile API), else the project's statuses
   try { const b = await req("GET", `@agile/board?projectKeyOrId=${key}`); const id = b.values?.[0]?.id;
     if (id) { const c = await req("GET", `@agile/board/${id}/configuration`); const cols = (c.columnConfig?.columns ?? []).map((x) => x.name); if (cols.length) return cols; } } catch {}
@@ -61,7 +62,7 @@ export async function tasks(req, key, column, now = Date.now()) {
   if (!cols.length) return `${key}: no tasks${column ? ` in "${column}"` : ""} (open, or done in the last 7 days)`;
   const w = Math.min(60, Math.max(...rows.map((r) => r.title.length)));
   return [`${key} tasks${column ? ` in ${column}` : ""} (open + done last 7d)`, ...cols.flatMap((c) => [`\n${c} (${groups[c].length})`,
-    ...groups[c].map((r) => `  ${r.key.padEnd(9)} ${clip(r.title, 60).padEnd(w)}  ${clip(r.who, 18).padEnd(18)} ${r.working ? "⚙ agent-working " : "                "}${ago(r.updated, now)}`)])].join("\n");
+    ...groups[c].map((r) => `  ${r.key.padEnd(9)} ${clip(r.title, 60).padEnd(w)}  ${clip(r.who, 18).padEnd(18)} ${clip(r.staff ? `👤 ${r.staff}` : "", 22).padEnd(22)} ${r.working ? "⚙ agent-working " : "                "}${ago(r.updated, now)}`)])].join("\n");
 }
 export async function board(req, key, now = Date.now(), env = process.env) {
   const rows = (await search(req, `project = ${key} AND (statusCategory != Done OR updated >= -7d)`)).map(row);
@@ -120,7 +121,7 @@ export async function main(argv, { home = homedir(), cwd = process.cwd(), fetchF
   const cfg = JSON.parse(readFileSync(join(home, ".config/agents-holding/jira.json"), "utf8"));
   const req = client(cfg, fetchFn, token);
   const keyOf = (k) => String(k ?? "").toUpperCase();
-  const b = () => pickBoard(loadReg(home), cwd, project);
+  const b = () => pickBoard(loadReg(home), cwd, project, (() => { const i = process.argv.indexOf("--company"); return i >= 0 ? process.argv[i + 1] : null; })());
   switch (cmd) {
     case "jira-tasks": return out(await tasks(req, b().project_key, a.join(" ")));
     case "jira-board": return out(await board(req, b().project_key));

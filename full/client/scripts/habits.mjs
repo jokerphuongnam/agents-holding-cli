@@ -6,10 +6,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import * as L from "./lean.mjs";
+import { resolveCompany } from "./company.mjs";
 const a = process.argv.slice(2), opt = (n) => { const i = a.indexOf(n); return i >= 0 ? a[i + 1] : undefined; };
 const cmd = a.find((x) => ["show", "edit", "clear"].includes(x)) ?? "show";
-const company = opt("--company") ?? (() => { try { return JSON.parse(readFileSync(join(process.cwd(), ".agents/company.json"), "utf8")).company; } catch { return null; } })();
-if (!company) { console.error("run inside a repo with .agents/company.json, or pass --company ID"); process.exit(1); }
+const company = resolveCompany().company;
+if (!company) { console.error("run inside a repo with .agents/company.json, pass --company ID, or holding use <company>"); process.exit(1); }
 const home = process.env.AH_HOME ?? homedir(), p = L.habitsPath(home, company);
 if (cmd === "clear") { L.saveHabits(home, company, []); console.log(`cleared ${p}`); }
 else if (cmd === "edit") {

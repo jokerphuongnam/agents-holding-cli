@@ -4,8 +4,20 @@
 // Models: AH_MODEL / AH_TEXT_MODEL override everything.
 // Every call stays tool-light and MCP-free (the runner talks to the server itself), one fresh session, JSON result + token usage.
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
+// Provider protocol: the CLIs above are built-in adapters in providers/; more come from ~/.config/agents-holding/agents.json
+// { "default": {provider, model, effort}, "providers": {<name>: {type:"openai-compatible", baseURL, model, keychain}}, "staff": {<role>: {provider, model, effort}} }
+// or custom modules ~/.config/agents-holding/providers/<name>.mjs. See docs/PROVIDERS.md.
+const globalPath = (home) => join(home, ".config/agents-holding/agents.json");
+export function loadGlobalCfg(home = process.env.HOME || homedir()) { try { return JSON.parse(readFileSync(globalPath(home), "utf8")); } catch { return {}; } }
+export function saveGlobalCfg(home, o) { mkdirSync(join(home, ".config/agents-holding"), { recursive: true, mode: 0o700 }); writeFileSync(globalPath(home), JSON.stringify({ ...loadGlobalCfg(home), ...o }, null, 1), { mode: 0o600 }); }
+/** Every usable provider id (sync): built-ins + agents.json providers + custom modules. */
+export function providerIds(home = process.env.HOME || homedir(), g = loadGlobalCfg(home)) {
+  let custom = []; try { custom = readdirSync(join(home, ".config/agents-holding/providers")).filter((f) => f.endsWith(".mjs")).map((f) => f.slice(0, -4)); } catch {}
+  return [...new Set([...AGENTS, ...Object.keys(g.providers ?? {}), ...custom])];
+}
 
 export const AGENTS = ["grok", "claude", "codex"];
 /** Cheap model for text stages (plan/question), default model for the coding call (null = the CLI/account default). */
@@ -18,30 +30,59 @@ export const CLAUDE_CODE_TOOLS = "Bash,Read,Edit,Write,Grep,Glob";
 
 const cfgPath = (home, company) => join(home, ".config/agents-holding/state", company, "agent.json");
 export function loadAgentCfg(home, company) { try { return JSON.parse(readFileSync(cfgPath(home, company), "utf8")); } catch { return {}; } }
+/** holding set-staff / unset-staff: per-company mapping staff.<role> = {provider, model, effort} in state/<company>/agent.json. */
+export function setStaff(home, company, role, m) {
+  if (role === "ceo" && m) throw new Error("the CEO is always your current chat session; it has no provider binding");
+  if (m?.provider && !providerIds(home, { providers: { ...(loadGlobalCfg(home).providers ?? {}), ...(loadAgentCfg(home, company).providers ?? {}) } }).includes(m.provider)) throw new Error(`unknown provider ${m.provider} (see holding providers)`);
+  if (m?.effort && !EFFORTS.includes(m.effort)) throw new Error(`effort must be ${EFFORTS.join("|")}`);
+  const cur = loadAgentCfg(home, company), staff = { ...(cur.staff ?? {}) };
+  if (m === null) delete staff[role]; else staff[role] = Object.fromEntries(Object.entries({ ...staff[role], ...m }).filter(([k, v]) => v && k !== "agent"));
+  saveAgentCfg(home, company, { staff });
+  if (staff[role]?.provider) saveDefault(home, role, staff[role]); // remembered per-role preference
+  return staff[role] ?? null;
+}
 export function saveAgentCfg(home, company, o) {
-  if (o.agent && !AGENTS.includes(o.agent)) throw new Error(`agent must be one of ${AGENTS.join("|")}`);
+  if (o.agent && !providerIds(home).includes(o.agent)) throw new Error(`agent must be one of ${providerIds(home).join("|")}`);
   mkdirSync(join(home, ".config/agents-holding/state", company), { recursive: true, mode: 0o700 });
   writeFileSync(cfgPath(home, company), JSON.stringify({ ...loadAgentCfg(home, company), ...o }, null, 1), { mode: 0o600 });
 }
-/** Resolve {agent, model} for a call: env > per-company file > defaults. */
-export function resolveAgent({ env = process.env, cfg = {}, text }) {
-  const agent = (env.AH_AGENT || cfg.agent || "grok").toLowerCase();
-  if (!AGENTS.includes(agent)) throw new Error(`AH_AGENT=${agent}: use ${AGENTS.join("|")}`);
-  const d = DEFAULT_MODELS[agent];
-  const model = text ? (env.AH_TEXT_MODEL || cfg.text_model || d.text) : (env.AH_MODEL || cfg.model || d.code);
-  const bin = env[`AH_${agent.toUpperCase()}_BIN`] || (agent === "grok" ? env.GROK_BIN : null) || agent;
-  return { agent, model: model || null, bin };
+/** Resolve {agent, model} for a call. Agent: AH_AGENT > per-staff override (agent.json staff.<role>.agent) > company agent.json > grok.
+ * Model: AH_MODEL/AH_TEXT_MODEL > per-staff model (staff.<role>.model) > the flow's per-stage model (server flow def stage.model / flow model)
+ * > company model/text_model > CLI defaults. `holding staffs` shows exactly this resolution. */
+export function resolveAgent({ env = process.env, cfg = {}, text, role = null, stageModel = null, global = loadGlobalCfg(env.HOME || homedir()) }) {
+  // per-staff mapping: company agent.json staff.<role> over agents.json staff.<role>; `agent` is the legacy name of `provider`
+  const gs = (role && global.staff?.[role]) || {}, cs = (role && cfg.staff?.[role]) || {};
+  const st = { ...gs, ...cs, provider: cs.provider ?? cs.agent ?? gs.provider ?? gs.agent };
+  const gd = global.default ?? {};
+  const agent = String(env.AH_AGENT || st.provider || cfg.agent || gd.provider || "grok").toLowerCase();
+  const provs = { ...(global.providers ?? {}), ...(cfg.providers ?? {}) }; // company-local provider defs win
+  const ids = providerIds(env.HOME || homedir(), { providers: provs });
+  if (!ids.includes(agent)) throw new Error(`provider ${agent}: use ${ids.join("|")}`);
+  const pd = provs[agent] ?? {};
+  const d = DEFAULT_MODELS[pd.type ?? agent] && !pd.model ? DEFAULT_MODELS[pd.type ?? agent] : { text: pd.textModel ?? pd.model ?? gd.model ?? null, code: pd.model ?? gd.model ?? null };
+  const model = text ? (env.AH_TEXT_MODEL || st.model || stageModel || cfg.text_model || d.text) : (env.AH_MODEL || st.model || stageModel || cfg.model || d.code);
+  // reasoning effort (low|medium|high): AH_EFFORT > staff.<role>.effort > company effort (text_effort for text calls) > codex text default low
+  let effort = String(env.AH_EFFORT || st.effort || (text ? cfg.text_effort || cfg.effort : cfg.effort) || gd.effort || (agent === "codex" && text ? "low" : "")).toLowerCase() || null;
+  if (effort && !EFFORTS.includes(effort)) effort = null;
+  const bin = env[`AH_${agent.toUpperCase().replace(/-/g, "_")}_BIN`] || (agent === "grok" ? env.GROK_BIN : null) || pd.bin || agent;
+  return { agent, model: model || null, effort, bin, providerDef: pd.type ? pd : null };
 }
 
-export function claudeArgs({ model, text, prompt, schema, system, codeTools = CLAUDE_CODE_TOOLS, maxTurns }) {
+export const EFFORTS = ["low", "medium", "high"];
+/** `holding staffs` runtime cell for one staff: "<model> - <effort>" exactly as resolveAgent will run it. */
+export function staffRuntime({ env = process.env, cfg = {}, role, text = true, stageModel = null }) {
+  const r = resolveAgent({ env, cfg, text, role, stageModel });
+  return `${r.model ?? `${r.agent} default`} - ${r.effort ?? "default"}`;
+}
+export function claudeArgs({ model, text, prompt, schema, system, codeTools = CLAUDE_CODE_TOOLS, maxTurns, effort }) {
   if (!text && !maxTurns) maxTurns = Math.max(5, Number(process.env.AH_CODE_MAX_TURNS) || 25);
   return ["-p", ...(maxTurns ? ["--max-turns", String(maxTurns)] : []), "--output-format", "json", "--no-session-persistence", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--disable-slash-commands",
     "--permission-mode", "bypassPermissions", "--tools", text ? "" : codeTools,
-    ...(model ? ["--model", model] : []), ...(system ? ["--system-prompt", system] : []), "--json-schema", JSON.stringify(schema), prompt];
+    ...(model ? ["--model", model] : []), ...(effort ? ["--effort", effort] : []), ...(system ? ["--system-prompt", system] : []), "--json-schema", JSON.stringify(schema), prompt];
 }
-export function codexArgs({ model, text, prompt, schemaFile, system }) {
+export function codexArgs({ model, text, prompt, schemaFile, system, effort }) {
   return ["exec", "--json", "--skip-git-repo-check", "--ephemeral", "-s", text ? "read-only" : "workspace-write", "--output-schema", schemaFile,
-    ...(model ? ["-m", model] : []), ...(text ? ["-c", 'model_reasoning_effort="low"'] : []), system ? `${system}\n\n${prompt}` : prompt];
+    ...(model ? ["-m", model] : []), ...(effort || text ? ["-c", `model_reasoning_effort="${effort ?? "low"}"`] : []), system ? `${system}\n\n${prompt}` : prompt];
 }
 
 /** Lean CODEX_HOME: auth only (symlink), no MCP servers / custom prompts -> small, predictable context. */
@@ -77,3 +118,15 @@ export function parseCodex(stdout, model = null) {
   }
   return { result: error ? {} : firstJson(msg) ?? (msg ? { summary: msg } : {}), usage, error };
 }
+
+/** Remembered per-role bindings (the user's preference), prefilled by holding bind / hire / add-project: ~/.config/agents-holding/agent-defaults.json */
+const defaultsPath = (home) => join(home, ".config/agents-holding/agent-defaults.json");
+export function loadDefaults(home = process.env.HOME || homedir()) { try { return JSON.parse(readFileSync(defaultsPath(home), "utf8")); } catch { return {}; } }
+export function saveDefault(home, role, m) {
+  if (role === "ceo") return;
+  const d = loadDefaults(home);
+  if (m === null) delete d[role]; else d[role] = Object.fromEntries(Object.entries(m).filter(([k, v]) => v && ["provider", "model", "effort"].includes(k)));
+  mkdirSync(join(home, ".config/agents-holding"), { recursive: true, mode: 0o700 });
+  writeFileSync(defaultsPath(home), JSON.stringify(d, null, 1), { mode: 0o600 });
+}
+export const bindingLabel = (role, m) => `${role} - ${m?.provider ?? "?"}/${m?.model ?? "default"} - ${m?.effort ?? "default"}`;

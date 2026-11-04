@@ -10,6 +10,7 @@ if (cmd === "notify") {
 } else {
   const st = L.readStatus(home); let alive = false;
   try { if (st?.pid) { process.kill(st.pid, 0); alive = true; } } catch {}
+  { const { resolveCompany } = await import("./company.mjs"); const c = resolveCompany(); console.log(c.company ? `company: ${c.company} (from ${c.source})` : "company: none (holding use <company>)"); }
   console.log(L.formatStatus(st, alive));
   console.log("server view (webhook + heartbeat as the server sees them): ask your agent /listener or /doctor");
 }

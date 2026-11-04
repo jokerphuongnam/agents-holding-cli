@@ -1,15 +1,34 @@
 #!/usr/bin/env node
-// holding agent [grok|claude|codex] [--model M] [--text-model M] [--company ID]: which CLI the listener's lean runner uses
+// holding agent [grok|claude|codex] [--model M] [--text-model M] [--effort low|medium|high] [--staff ROLE] [--company ID] (--staff: per-staff override of agent/model): which CLI the listener's lean runner uses
 // for this repo's company (no args = show). Stored in ~/.config/agents-holding/state/<company>/agent.json; AH_AGENT env overrides.
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import * as A from "./agents.mjs";
+import { resolveCompany } from "./company.mjs";
 const a = process.argv.slice(2), opt = (n) => { const i = a.indexOf(n); return i >= 0 ? a[i + 1] : undefined; };
-const company = opt("--company") ?? (() => { try { return JSON.parse(readFileSync(join(process.cwd(), ".agents/company.json"), "utf8")).company; } catch { return null; } })();
-if (!company) { console.error("run inside a repo with .agents/company.json, or pass --company ID"); process.exit(1); }
-const agent = a.find((x) => A.AGENTS.includes(x));
-const set = Object.fromEntries(Object.entries({ agent, model: opt("--model"), text_model: opt("--text-model") }).filter(([, v]) => v !== undefined));
+const company = resolveCompany().company;
+if (!company) { console.error("run inside a repo with .agents/company.json, pass --company ID, or holding use <company>"); process.exit(1); }
+if (a[0] === "set-lang") { // holding set-lang <code|auto> [--company X]: output language for this company (auto = follow each card / prompt)
+  const v = a.filter((x, i) => !x.startsWith("--") && a[i - 1] !== "--company")[1];
+  if (!v || !/^(auto|[a-z]{2}(-[a-z]{2})?)$/i.test(v)) { console.error("usage: holding set-lang <code|auto>   e.g. vi, zh, en, auto"); process.exit(1); }
+  A.saveAgentCfg(homedir(), company, { lang: v.toLowerCase() }); console.log(`company ${company}: output language ${v.toLowerCase() === "auto" ? "auto (same as the input)" : v.toLowerCase()}`); process.exit(0);
+}
+if (a[0] === "set-staff" || a[0] === "unset-staff") { // holding set-staff <staff> <provider> <model> [effort] | unset-staff <staff>  [--company X]
+  const [cmd, role, provider, model, effort] = a.filter((x, i) => !x.startsWith("--") && !(a[i - 1] === "--company"));
+  if (!role || (cmd === "set-staff" && !provider)) { console.error("usage: holding set-staff <staff> <provider> <model> [low|medium|high] [--company X] | holding unset-staff <staff>"); process.exit(1); }
+  const r = A.setStaff(homedir(), company, role, cmd === "unset-staff" ? null : { provider, model: model && model !== "-" ? model : undefined, effort });
+  const c = A.resolveAgent({ cfg: A.loadAgentCfg(homedir(), company), text: true, role });
+  console.log(`company ${company}: ${role} - ${c.agent} · ${c.model ?? "default"} - ${c.effort ?? "default"}${r ? "" : " (mapping removed, company/global defaults)"}`);
+  process.exit(0);
+}
+const agent = a.find((x) => A.providerIds().includes(x));
+const set = Object.fromEntries(Object.entries({ agent, model: opt("--model"), text_model: opt("--text-model"), effort: opt("--effort") }).filter(([, v]) => v !== undefined));
+const staff = opt("--staff");
+if (staff) { const cur = A.loadAgentCfg(homedir(), company); const one = { ...(cur.staff?.[staff] ?? {}), ...(set.agent ? { agent: set.agent } : {}), ...(set.model ? { model: set.model } : {}), ...(set.effort ? { effort: set.effort } : {}) };
+  if (Object.keys(set).length) A.saveAgentCfg(homedir(), company, { staff: { ...(cur.staff ?? {}), [staff]: one } });
+  const c = A.resolveAgent({ cfg: A.loadAgentCfg(homedir(), company), text: false, role: staff });
+  console.log(`company ${company}, staff ${staff}: agent ${c.agent}; model ${c.model ?? "CLI default"}; effort ${c.effort ?? "default"}${one.effort || one.model || one.agent ? " (per-staff override)" : ""}`); process.exit(0); }
 if (Object.keys(set).length) A.saveAgentCfg(homedir(), company, set);
 const cfg = A.loadAgentCfg(homedir(), company);
 const t = A.resolveAgent({ cfg, text: true }), c = A.resolveAgent({ cfg, text: false });

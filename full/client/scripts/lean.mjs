@@ -24,22 +24,38 @@ const STAFF_NAMES = { ceo: "CEO", cto: "CTO", "tech-lead": "Tech Lead", "ba-lead
 export const staffName = (role) => !role ? "Agent" : STAFF_NAMES[role] ?? String(role).split(/[-_]/).filter(Boolean).map((w) => /^(fe|be|qa|qc|ui|ux|ios|api|ai|ml|db|sre)$/.test(w) ? w.toUpperCase() : w[0].toUpperCase() + w.slice(1)).join(" ");
 /** "[agent-holding] [<staff name>]" */
 export const staffTag = (name) => `${AGENT_MARK} [${name || "Agent"}]`;
-/** Client mirror of the server's ownerFor (fallback when next_action has no staff map). */
-export function ownerFor(stage, engineer, roster = []) {
+// Stage owners: the server's STAGE_OWNERS (workflow.ts) is the single source; next_action returns it as stage_owners and the
+// listener caches it (~/.config/agents-holding/stage-owners.json) so a run without it (dry/replay) resolves the same way.
+const ownersFile = (home) => join(home, ".config/agents-holding/stage-owners.json");
+export function cacheStageOwners(home, table) { if (!table || typeof table !== "object") return false;
+  try { mkdirSync(join(home, ".config/agents-holding"), { recursive: true }); writeFileSync(ownersFile(home), JSON.stringify(table), { mode: 0o600 }); return true; } catch { return false; } }
+export function cachedStageOwners(home = process.env.HOME ?? "") { try { return JSON.parse(readFileSync(ownersFile(home), "utf8")); } catch { return null; } }
+/** Same resolution as the server's resolveOwner: first candidate on the roster ("@engineer" = assigned role), last = fallback. */
+export function resolveOwner(table, stage, engineer, roster = []) {
+  const list = table?.[stage] ?? table?.["*"] ?? ["@engineer", "tech-lead"];
   const has = (r) => !roster.length || roster.includes(r);
-  if (["todo", "in_progress", "product_work", "ba_question"].includes(stage)) return has("ba-lead") ? "ba-lead" : "po-lead";
-  if (stage === "planned") return has("tech-lead") ? "tech-lead" : "po-lead";
-  if (stage === "qc") return has("qc-lead") ? "qc-lead" : "user-qc";
-  if (stage === "pre_coding") return has("tech-lead") ? "tech-lead" : engineer ?? "tech-lead";
-  if (stage === "done") return "ceo";
+  for (let i = 0; i < list.length; i++) { const c = list[i], last = i === list.length - 1;
+    if (c === "@engineer") { if (engineer) return engineer; continue; } if (last || has(c)) return c; }
   return engineer ?? "tech-lead";
 }
+export function ownerFor(stage, engineer, roster = [], table = cachedStageOwners()) { return resolveOwner(table, stage, engineer, roster); }
+/** Role id acting in a stage (server staff map first). */
+export function stageRole(na, stage, { kind, developer } = {}) {
+  const t = na?.stage_owners ?? cachedStageOwners();
+  if (kind === "code") return developer || "tech-lead";
+  if (kind === "qc" && stage !== "qc") return ownerFor("qc", null, na?.roster ?? [], t);
+  if (kind === "techplan" && stage !== "pre_coding") return ownerFor("pre_coding", null, na?.roster ?? [], t);
+  return na?.staff?.[stage]?.role ?? ownerFor(stage, na?.assigned_role ?? null, na?.roster ?? [], t);
+}
 /** Staff display name for a stage: server staff map, else mirror. kind "code" = the picked developer, "qc" = QC. */
-export function stageStaff(na, stage, { kind, developer } = {}) {
-  if (kind === "code") return staffName(developer || "tech-lead");
-  if (kind === "qc" && stage !== "qc") return staffName(ownerFor("qc", null, na?.roster ?? [])); // custom QC stage
-  if (kind === "techplan" && stage !== "pre_coding") return staffName(ownerFor("pre_coding", null, na?.roster ?? []));
-  return na?.staff?.[stage]?.name ?? staffName(ownerFor(stage, na?.assigned_role ?? null, na?.roster ?? []));
+export function stageStaff(na, stage, o = {}) {
+  if (!o.kind || (o.kind !== "code" && !(o.kind === "qc" && stage !== "qc") && !(o.kind === "techplan" && stage !== "pre_coding"))) { const n = na?.staff?.[stage]?.name; if (n) return n; }
+  return staffName(stageRole(na, stage, o));
+}
+/** Why this staff acts (shown in the Started comment). */
+export function staffWhy(na, stage, { kind, developer, pickedBy } = {}) {
+  if (kind === "code") return developer && developer === na?.assigned_role && na?.route?.why ? `routed: ${na.route.why}` : pickedBy ?? (developer && developer !== "tech-lead" ? "picked by the Tech Lead in the tech plan" : "no developer picked: the Tech Lead codes it");
+  return na?.staff?.[stage]?.why ?? `owner of the ${stageTitle(stage)} stage`;
 }
 export const TEXT_STAGES = new Set(["product_work", "ba_question", "planned"]);
 export const SCRIPT_ACTIONS = new Set(["open_pr", "merge", "create_branch", "comment"]); // flow stages done by script, no model
@@ -55,7 +71,7 @@ export function codingDeveloper(saved = {}, assigned = null, devRoles = []) {
   const m = String(saved.tech_plan ?? "").match(/Developer:.*\(([\w-]+)\)/); if (m) return m[1];
   return "tech-lead";
 }
-export const reviewBackComment = (dev) => `${staffTag(staffName(dev))} Review feedback received, back to Coding`;
+export const reviewBackComment = (dev) => `${staffTag(staffName(dev))} ${T("review")}`;
 export const ENTER_ONLY = new Set(["planned", "in_review", "done"]);
 // grok --tools names: "Bash" = run_terminal_command ("run_terminal_command" itself is NOT accepted and silently loads ALL ~22 tools, ~9k tokens/turn)
 /** Coding call turn cap (model calls); AH_CODE_MAX_TURNS overrides. Stops runaway loops (KAN-6: 60 calls, 2.26M input tokens). */
@@ -104,15 +120,15 @@ export function feedbackOf(na) {
   return null;
 }
 const issueBlock = (iss) => [`Task ${iss.key}: ${iss.summary}`, iss.description && `Description:\n${iss.description}`,
-  iss.comments?.length && `Comments:\n${iss.comments.map((c) => `- ${c.who}: ${c.t}`).join("\n")}`].filter(Boolean).join("\n");
+  iss.comments?.length && `Comments:\n${iss.comments.map((c) => `- ${c.who}: ${c.t}`).join("\n")}`, langInstruction()].filter(Boolean).join("\n");
 export function textPrompt(iss, o = {}) {
-  return [issueBlock(iss), habitsBlock(o.habits), o.context && `Project: ${o.context}`, o.prevPlan && `Current plan:\n${o.prevPlan}`, o.feedback && `User feedback: ${o.feedback}`,
+  return [briefBlock(o.brief), issueBlock(iss), habitsBlock(o.habits), o.context && `Project: ${o.context}`, o.prevPlan && `Current plan:\n${o.prevPlan}`, o.feedback && `User feedback: ${o.feedback}`,
     o.allowQuestion ? "If something essential is unclear, return {\"question\": \"...\"}. Otherwise return {\"plan\": \"...\"}." : "Return {\"plan\": \"...\"}.",
     "Plan: goal, scope, acceptance criteria, files/steps; max 12 short lines. Reply with the JSON only."].filter(Boolean).join("\n\n");
 }
 export const TEXT_SYSTEM = "You are a senior BA/tech lead. You write short, concrete task plans. Reply with JSON only.";
 export function codePrompt(iss, o = {}) {
-  return [issueBlock(iss), habitsBlock(o.habits), o.plan && `Approved plan:\n${o.plan}`, o.techPlan && `Tech plan (follow it; read only the files it names unless something is missing):\n${o.techPlan}`,
+  return [briefBlock(o.brief), issueBlock(iss), habitsBlock(o.habits), o.plan && `Approved plan:\n${o.plan}`, o.techPlan && `Tech plan (follow it; read only the files it names unless something is missing):\n${o.techPlan}`,
     o.approval && `User: ${o.approval}`, o.review && `The user reviewed your change on branch ${o.branch ?? "feature/" + iss.key} (already checked out, your earlier commits are on it) and sent it back to Coding.`,
     o.feedback && `Address this ${o.review ? "review " : ""}feedback: ${o.feedback}`,
     o.preexisting?.length && `Already failing BEFORE your change (QC baseline): ${o.preexisting.join(", ")}. Ignore these: do not run, investigate or fix them; QC only blames new failures.`,
@@ -125,7 +141,7 @@ export const TECH_SYSTEM = "You are the tech lead. You write short technical pla
 /** Pre Coding prompt: tech plan only (no code), with inline file excerpts so one tool-less turn is enough, and the developer roles to pick from. */
 export function techPlanPrompt(iss, o = {}) {
   const roles = (o.devRoles ?? []).map((r) => `- ${r.role}${r.skills?.length ? `: ${r.skills.join(", ")}` : ""}`).join("\n");
-  return [issueBlock(iss), habitsBlock(o.habits), o.plan && `Approved plan:\n${o.plan}`, o.feedback && `User feedback: ${o.feedback}`, o.context && `Project: ${o.context}`,
+  return [briefBlock(o.brief), issueBlock(iss), habitsBlock(o.habits), o.plan && `Approved plan:\n${o.plan}`, o.feedback && `User feedback: ${o.feedback}`, o.context && `Project: ${o.context}`,
     o.files?.length && `Repo files (subset): ${o.files.join(", ")}`,
     o.snippets?.length && `File excerpts:\n${o.snippets.map((x) => `--- ${x.path}\n${x.text}`).join("\n")}`,
     roles ? `Developers on the roster (pick the best fit by role/skills):\n${roles}` : "No developer roles on the roster: the tech lead codes it (developer = \"tech-lead\").",
@@ -228,14 +244,18 @@ export function jiraClient(cfg, { dry, log }) {
   return {
     async issue(key) { return req("GET", `/issue/${encodeURIComponent(key)}?fields=summary,description,comment`); },
     async meta(key) { const j = await req("GET", `/issue/${encodeURIComponent(key)}?fields=labels,components`); return { labels: j.fields?.labels ?? [], components: (j.fields?.components ?? []).map((c) => c.name) }; },
+    async staffLabel(key, role) { // replace the previous staff:<role> label (null = remove)
+      if (dry) return log(`JIRA (dry): label ${key} staff:${role ?? "(remove)"}`);
+      const ops = staffLabelOps((await this.meta(key)).labels, role); if (!ops.length) return;
+      await req("PUT", `/issue/${encodeURIComponent(key)}`, { update: { labels: ops } });
+    },
     async label(key, op) {
       if (dry) return log(`JIRA (dry): label ${key} ${op} ${WORK_LABEL}`);
       await req("PUT", `/issue/${encodeURIComponent(key)}`, labelBody(op));
     },
     async comment(key, text) {
       if (dry) return log(`JIRA (dry): comment ${key} "${text.slice(0, 160).replace(/\n/g, " ")}${text.length > 160 ? "…" : ""}"`);
-      const content = text.split("\n").map((l) => ({ type: "paragraph", content: l ? [{ type: "text", text: l }] : [] }));
-      await req("POST", `/issue/${encodeURIComponent(key)}/comment`, { body: { type: "doc", version: 1, content } }); log(`JIRA: commented ${key}`);
+      await req("POST", `/issue/${encodeURIComponent(key)}/comment`, { body: toAdf(text) }); log(`JIRA: commented ${key}`);
     },
   };
 }
@@ -264,9 +284,9 @@ export function leanGrokHome(home) {
   try { if (!existsSync(tf) && existsSync(rtf)) writeFileSync(tf, readFileSync(rtf)); } catch {}
   return d;
 }
-export function leanGrokArgs({ sid, model, text, prompt, schema, system, tools, maxTurns }) {
+export function leanGrokArgs({ sid, model, text, prompt, schema, system, tools, maxTurns, effort }) {
   if (!text && !maxTurns) maxTurns = codeMaxTurns();
-  return ["--trust", "--always-approve", "--session-id", sid, ...(model ? ["--model", model] : []),
+  return ["--trust", "--always-approve", "--session-id", sid, ...(model ? ["--model", model] : []), ...(effort ? ["--reasoning-effort", effort] : []),
     "--tools", tools ?? (text ? "read_file" : CODE_TOOLS), ...(maxTurns || text ? ["--max-turns", String(maxTurns ?? 1)] : []), "--disable-web-search", "--no-subagents", "--no-plan",
     ...(system ? ["--system-prompt-override", system] : []), "--json-schema", JSON.stringify(schema), "--output-format", "json", "--single", prompt];
 }
@@ -337,14 +357,121 @@ export function habitsPrompt(iss, comments, existing = []) {
     "Extract 0-3 GENERAL preferences that would apply to future tasks (e.g. comment \"should use animation\" on a numbers task -> \"User prefers animations when displaying numbers/data\"). Skip task-specific fixes, typos, approvals, thanks.",
     "Return {\"habits\": [\"...\"]} (empty list if nothing general). JSON only."].filter(Boolean).join("\n\n");
 }
-export const learnedComment = (staff, added) => `${staffTag(staff)} Learned: ${added.join("; ")}`;
+export const learnedComment = (staff, added) => `${staffTag(staff)} ${T("learned")}\n${added.map((h) => `- ${h}`).join("\n")}`;
 
+
+// ---------- output language = input language (card title+description / latest user comment / /ceo prompt) ----------
+// Override per company: `holding set-lang <code|auto>` (agent.json "lang"). Code, identifiers, commit messages follow repo conventions.
+export const LANG_NAMES = { en: "English", vi: "Vietnamese", zh: "Chinese", ja: "Japanese", ko: "Korean", th: "Thai", ru: "Russian", fr: "French", es: "Spanish", de: "German" };
+export function detectLang(text) {
+  const t = String(text ?? ""), n = (re) => (t.match(re) ?? []).length;
+  if (n(/[ăđơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]/gi) >= 2) return "vi";
+  if (n(/[àáâãèéêìíòóôõùúýăđơư]/gi) >= 2 && /\b(khong|cua|va|cho|minh|giup|lam|duoc|nay|nhung|cac|nhe|ban|them|sua)\b/.test(t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d"))) return "vi";
+  if (n(/[\u3040-\u30ff]/g) >= 2) return "ja";
+  if (n(/[\uac00-\ud7af]/g) >= 2) return "ko";
+  if (n(/[\u4e00-\u9fff]/g) >= 2) return "zh";
+  if (n(/[\u0e00-\u0e7f]/g) >= 2) return "th";
+  if (n(/[\u0400-\u04ff]/g) >= 3) return "ru";
+  return "en";
+}
+/** Company override (code) wins unless "auto"/unset; else the first text with a non-English signal, else English. */
+export function pickLang(override, ...texts) {
+  if (override && override !== "auto") return String(override).toLowerCase();
+  for (const t of texts) { const l = detectLang(t); if (l !== "en") return l; }
+  return "en";
+}
+let LANG = "en";
+export const setLang = (l) => { LANG = l || "en"; return LANG; };
+export const getLang = () => LANG;
+const STR = {
+  en: { started: "▶️ Started {stage}…", why: "Why {staff}: {why}", failed: "❌ Failed {stage}: {reason}", review: "🔁 Review feedback received, back to Coding", learned: "🧠 Learned your habits:",
+    gate_planned: "🚦 Plan ready for your approval.\n- Approve: drag the card to Pre Coding, or comment `/approve`\n- Revise: comment what to change (the plan is rewritten, the card stays in Planned)",
+    gate_in_review: "🚦 Ready for review.\n- Request changes: comment what to fix (back to Coding, same developer, then QC)\n- Accept: drag the card to Done",
+    PLAN: "📋 Plan", "TECH PLAN": "🛠️ Tech plan", QUESTION: "❓ Question", CODE: "💻 Code", "CODE (review feedback)": "💻 Code (review feedback)", FIX: "🔧 Fix", "QC PASS": "✅ QC pass", "QC FAIL": "❌ QC fail", DONE: "✅ Done" },
+  vi: { started: "▶️ Bắt đầu {stage}…", why: "Vì sao chọn {staff}: {why}", failed: "❌ Lỗi ở {stage}: {reason}", review: "🔁 Đã nhận góp ý review, quay lại Coding", learned: "🧠 Đã ghi nhớ thói quen của bạn:",
+    gate_planned: "🚦 Kế hoạch đã sẵn sàng để bạn duyệt.\n- Duyệt: kéo thẻ sang Pre Coding, hoặc comment `/approve`\n- Sửa: comment điều cần thay đổi (kế hoạch được viết lại, thẻ vẫn ở Planned)",
+    gate_in_review: "🚦 Sẵn sàng để review.\n- Yêu cầu sửa: comment điều cần sửa (quay lại Coding, cùng developer, rồi QC)\n- Chấp nhận: kéo thẻ sang Done",
+    PLAN: "📋 Kế hoạch", "TECH PLAN": "🛠️ Kế hoạch kỹ thuật", QUESTION: "❓ Câu hỏi", CODE: "💻 Code", "CODE (review feedback)": "💻 Code (theo góp ý review)", FIX: "🔧 Sửa lỗi", "QC PASS": "✅ QC đạt", "QC FAIL": "❌ QC không đạt", DONE: "✅ Hoàn tất" },
+  zh: { started: "▶️ 开始 {stage}…", why: "为什么是 {staff}：{why}", failed: "❌ {stage} 失败：{reason}", review: "🔁 已收到评审意见，返回 Coding", learned: "🧠 已记住你的习惯：",
+    gate_planned: "🚦 计划已就绪，等待你批准。\n- 批准：把卡片拖到 Pre Coding，或评论 `/approve`\n- 修改：评论需要修改的内容（计划会重写，卡片留在 Planned）",
+    gate_in_review: "🚦 可以评审了。\n- 要求修改：评论需要修复的内容（返回 Coding，同一开发者，然后 QC）\n- 接受：把卡片拖到 Done",
+    PLAN: "📋 计划", "TECH PLAN": "🛠️ 技术方案", QUESTION: "❓ 问题", CODE: "💻 代码", "CODE (review feedback)": "💻 代码（评审意见）", FIX: "🔧 修复", "QC PASS": "✅ QC 通过", "QC FAIL": "❌ QC 未通过", DONE: "✅ 完成" },
+  ja: { started: "▶️ {stage} を開始…", why: "{staff} を選んだ理由: {why}", failed: "❌ {stage} 失敗: {reason}", review: "🔁 レビュー指摘を受け取りました。Coding に戻ります", learned: "🧠 あなたの習慣を学びました:",
+    gate_planned: "🚦 計画の承認待ちです。\n- 承認: カードを Pre Coding へ移動、または `/approve` とコメント\n- 修正: 変更点をコメント（計画を書き直し、カードは Planned のまま）",
+    gate_in_review: "🚦 レビュー準備完了。\n- 修正依頼: 直す点をコメント（Coding に戻り、同じ開発者、その後 QC）\n- 承認: カードを Done へ移動",
+    PLAN: "📋 計画", "TECH PLAN": "🛠️ 技術計画", QUESTION: "❓ 質問", CODE: "💻 コード", "CODE (review feedback)": "💻 コード（レビュー対応）", FIX: "🔧 修正", "QC PASS": "✅ QC 合格", "QC FAIL": "❌ QC 不合格", DONE: "✅ 完了" },
+  ko: { started: "▶️ {stage} 시작…", why: "{staff} 선택 이유: {why}", failed: "❌ {stage} 실패: {reason}", review: "🔁 리뷰 피드백을 받아 Coding으로 돌아갑니다", learned: "🧠 습관을 학습했습니다:",
+    gate_planned: "🚦 계획이 승인을 기다립니다.\n- 승인: 카드를 Pre Coding으로 옮기거나 `/approve` 댓글\n- 수정: 바꿀 내용을 댓글로 (계획을 다시 쓰고 카드는 Planned에 유지)",
+    gate_in_review: "🚦 리뷰 준비 완료.\n- 수정 요청: 고칠 내용을 댓글로 (Coding으로, 같은 개발자, 이후 QC)\n- 승인: 카드를 Done으로 이동",
+    PLAN: "📋 계획", "TECH PLAN": "🛠️ 기술 계획", QUESTION: "❓ 질문", CODE: "💻 코드", "CODE (review feedback)": "💻 코드(리뷰 반영)", FIX: "🔧 수정", "QC PASS": "✅ QC 통과", "QC FAIL": "❌ QC 실패", DONE: "✅ 완료" },
+};
+/** Fixed script string in the current language; languages without a table fall back to English (generic). */
+export const T = (key, vars = {}, lang = LANG) => String((STR[lang] ?? STR.en)[key] ?? STR.en[key] ?? key).replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? "");
+export const langInstruction = (lang = LANG) => `Language: write every human-readable field (plan, questions, summaries, notes) in ${LANG_NAMES[lang] ?? lang}, the language of the task. Keep code, identifiers, file paths and commit messages in the repo's own conventions.`;
 // ---------- visibility: Jira "working" label + start/fail comments, macOS notifications, local listener status ----------
 export const WORK_LABEL = "agent-working";
 const STAGE_TITLES = { todo: "To Do", in_progress: "In Progress", product_work: "Product Work", ba_question: "BA Question", planned: "Planned", pre_coding: "Pre Coding", coding: "Coding", qc: "QC", in_review: "In Review", done: "Done" };
 export const stageTitle = (k) => STAGE_TITLES[k] ?? String(k ?? "?").replace(/_/g, " ");
-export const startedComment = (staff, stage) => `${staffTag(staff)} Started ${stageTitle(stage)}…`;
-export const failedComment = (staff, stage, reason) => `${staffTag(staff)} Failed ${stageTitle(stage)}: ${clip(String(reason ?? "error").split("\n")[0], 200)}`;
+export const startedComment = (staff, stage, why) => `${staffTag(staff)} ${T("started", { stage: stageTitle(stage) })}${why ? `\n${T("why", { staff, why })}` : ""}`;
+export const failedComment = (staff, stage, reason) => `${staffTag(staff)} ${T("failed", { stage: stageTitle(stage), reason: clip(String(reason ?? "error").split("\n")[0], 200) })}`;
+// ---------- explicit user gates (posted once when the card enters the gate) ----------
+export const GATE_HINTS = {
+  planned: "🚦 Plan ready for your approval.\n- Approve: drag the card to Pre Coding, or comment `/approve`\n- Revise: comment what to change (the plan is rewritten, the card stays in Planned)",
+  in_review: "🚦 Ready for review.\n- Request changes: comment what to fix (back to Coding, same developer, then QC)\n- Accept: drag the card to Done",
+};
+export const gateComment = (staff, stage) => GATE_HINTS[stage] ? `${staffTag(staff)} ${T(`gate_${stage}`)}` : null;
+// ---------- acting staff on the board: one label staff:<role> (replaced each stage, removed at Done) ----------
+export const STAFF_LABEL = "staff:";
+/** Jira labels update ops: drop every other staff:* label, add staff:<role> (role null = remove all). */
+export function staffLabelOps(labels = [], role) {
+  const want = role ? `${STAFF_LABEL}${String(role).replace(/[^\w.-]/g, "-")}` : null;
+  const ops = labels.filter((l) => l.startsWith(STAFF_LABEL) && l !== want).map((l) => ({ remove: l }));
+  if (want && !labels.includes(want)) ops.push({ add: want });
+  return ops;
+}
+export const staffOfLabels = (labels = []) => (labels.find((l) => l.startsWith(STAFF_LABEL)) ?? "").slice(STAFF_LABEL.length) || null;
+// ---------- staff brief (persona + 2-3 relevant own skills, summaries only) injected into model prompts ----------
+export const BRIEF_MAX = 6000; // chars (~1.5k tokens)
+export function briefBlock(b) {
+  if (!b || (!b.persona && !b.skills?.length)) return null;
+  let t = [`You act as ${staffName(b.role)} (${b.role}).`, b.persona && `Persona:\n${b.persona}`, ...(b.skills ?? []).map((s) => `Skill ${s.id}:\n${s.summary}`)].filter(Boolean).join("\n");
+  return t.length > BRIEF_MAX ? t.slice(0, BRIEF_MAX - 1) + "…" : t;
+}
+// ---------- Jira rich text (ADF): bold staff prefix, headings, lists, code ----------
+const HEADS = { PLAN: "📋 Plan", "TECH PLAN": "🛠️ Tech plan", QUESTION: "❓ Question", CODE: "💻 Code", "CODE (review feedback)": "💻 Code (review feedback)", FIX: "🔧 Fix", "QC PASS": "✅ QC pass", "QC FAIL": "❌ QC fail", DONE: "✅ Done" };
+function inline(t) { // `code` and **bold** -> marks
+  const out = []; const re = /(`[^`]+`|\*\*[^*]+\*\*)/g; let i = 0, m;
+  while ((m = re.exec(t))) { if (m.index > i) out.push({ type: "text", text: t.slice(i, m.index) });
+    out.push(m[0][0] === "`" ? { type: "text", text: m[0].slice(1, -1), marks: [{ type: "code" }] } : { type: "text", text: m[0].slice(2, -2), marks: [{ type: "strong" }] }); i = m.index + m[0].length; }
+  if (i < t.length) out.push({ type: "text", text: t.slice(i) });
+  return out;
+}
+const para = (t) => ({ type: "paragraph", content: inline(t) });
+/** Agent comment text -> ADF doc. First line "[agent-holding] [Staff] rest": bold prefix; a known title (PLAN, QC PASS...) becomes a heading. */
+export function toAdf(text) {
+  const lines = String(text ?? "").replace(/\r/g, "").split("\n"), content = [];
+  const m = /^(\[agent-holding\]\s*\[[^\]]*\]|\[agent-holding\])\s*(.*)$/.exec(lines[0] ?? "");
+  if (m) { lines.shift(); const rest = m[2].trim(), hk = HEADS[rest] ? rest : rest.replace(/\s*\(.*\)$/, ""), head = HEADS[hk] && T(hk);
+    if (head) { content.push({ type: "paragraph", content: [{ type: "text", text: m[1], marks: [{ type: "strong" }] }] }, { type: "heading", attrs: { level: 3 }, content: [{ type: "text", text: HEADS[rest] ?? `${head} ${rest.match(/\(.*\)$/)?.[0] ?? ""}`.trim() }] }); }
+    else content.push({ type: "paragraph", content: [{ type: "text", text: m[1], marks: [{ type: "strong" }] }, ...(rest ? [{ type: "text", text: " " }, ...inline(rest)] : [])] }); }
+  let list = null, code = null;
+  const flush = () => { if (list) { content.push(list); list = null; } };
+  for (const raw of lines) {
+    if (code) { if (/^```/.test(raw.trim())) { content.push({ type: "codeBlock", attrs: code.lang ? { language: code.lang } : {}, content: code.t.length ? [{ type: "text", text: code.t.join("\n") }] : [] }); code = null; } else code.t.push(raw); continue; }
+    const l = raw.trimEnd();
+    if (/^```/.test(l.trim())) { flush(); code = { lang: l.trim().slice(3).trim(), t: [] }; continue; }
+    const b = /^\s*(?:[-*•]|(\d+)[.)])\s+(.*)$/.exec(l);
+    if (b) { const kind = b[1] ? "orderedList" : "bulletList"; if (list && list.type !== kind) flush(); list ??= { type: kind, content: [] }; list.content.push({ type: "listItem", content: [para(b[2])] }); continue; }
+    flush();
+    if (!l.trim()) continue;
+    const h = /^(#{1,3})\s+(.*)$/.exec(l); if (h) { content.push({ type: "heading", attrs: { level: Math.min(6, h[1].length + 2) }, content: [{ type: "text", text: h[2] }] }); continue; }
+    const kv = /^([A-Z][\w ()/-]{0,30}):\s+(.*)$/.exec(l); // "Summary: ..." -> bold label
+    if (kv) { content.push({ type: "paragraph", content: [{ type: "text", text: `${kv[1]}: `, marks: [{ type: "strong" }] }, ...inline(kv[2])] }); continue; }
+    content.push(para(l));
+  }
+  flush(); if (code) content.push({ type: "codeBlock", attrs: {}, content: code.t.length ? [{ type: "text", text: code.t.join("\n") }] : [] });
+  return { type: "doc", version: 1, content: content.length ? content : [{ type: "paragraph", content: [] }] };
+}
 /** Jira labels update body (add/remove the working label). */
 export const labelBody = (op, label = WORK_LABEL) => ({ update: { labels: [{ [op === "remove" ? "remove" : "add"]: label }] } });
 const notifyFile = (home) => join(home, ".config/agents-holding/notify.json");
