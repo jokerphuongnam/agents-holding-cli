@@ -10,7 +10,7 @@ export default {
   async run(o, ctx) {
     const schemaFile = join(ctx.logDir, `schema-${o.sid}.json`);
     writeFileSync(schemaFile, JSON.stringify({ ...o.schema, additionalProperties: false, required: Object.keys(o.schema.properties) }));
-    const args = codexArgs({ model: o.model, effort: o.effort, text: o.text, prompt: o.prompt, schemaFile, system: o.system });
+    const args = codexArgs({ model: o.model, effort: o.effort, text: o.text, prompt: o.prompt, schemaFile, system: o.system, context: o.context });
     const exitCode = await ctx.spawn(args, { bin: o.bin, env: { ...process.env, CODEX_HOME: leanCodexHome(homedir()) } });
     const p = parseCodex(ctx.stdout(), o.model); return { result: p.result, usage: p.usage, error: p.error, exitCode };
   },

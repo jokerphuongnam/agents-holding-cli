@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as L from "./lean.mjs";
 import { runStaff } from "./provider-run.mjs";
-import { resolveCompany } from "./company.mjs";
+import { resolveCompany, localCompanies } from "./company.mjs";
 const a = process.argv.slice(2), flag = (n) => a.includes(n), opt = (n) => { const i = a.indexOf(n); return i >= 0 ? a[i + 1] : undefined; };
 const pos = a.filter((x, i) => !x.startsWith("--") && !(i > 0 && a[i - 1] === "--company"));
 const [staff, ...rest] = pos, task = rest.join(" ");
@@ -28,10 +28,12 @@ const cfg = L.loadAgentCfg(process.env.HOME, company);
 const lang = L.pickLang(cfg.lang, task); L.setLang(lang);
 const code = /-dev$|engineer|developer/.test(staff);
 const b = await mcp("staff_brief", { company, role: staff, text: task, max_skills: 2 }).catch(() => null);
-const r = await runStaff({ company, role: staff, kind: code ? "code" : "text", noTools: !code, cwd: process.cwd(),
+function repoFor(co) { const here = process.cwd(); try { const c = localCompanies().find((x) => x.company === co); const rs = c?.repos ?? []; if (!rs.length || rs.some((r) => here === r || here.startsWith(r + "/"))) return here; return rs[0]; } catch { return here; } }
+const r = await runStaff({ company, role: staff, kind: code ? "code" : "text", noTools: !code, cwd: repoFor(company),
   schema: code ? undefined : { type: "object", properties: { summary: { type: "string" }, steps: { type: "array", items: { type: "string" } } }, required: ["summary", "steps"] },
-  system: code ? `You are ${staff}. Implement the task in this repo, run the tests, summarise files changed.` : `You are ${staff}. You have NO tools (ignore persona instructions about tools, MCP or sessions). Do the task YOURSELF now (no delegating, no handing to other staff) and give the concrete result; never say you will look first.`,
-  prompt: `${L.briefBlock?.(b) ?? ""}\nTask: ${task}\nThe user asked YOU directly (holding run): ignore any persona rule about delegating to other staff or tools; produce the deliverable yourself in this answer.\n${L.langInstruction(lang)}` });
+  system: code ? "Implement the task in this repo, run the tests, summarise files changed." : "No tools in this run (ignore persona rules about tools, MCP, sessions or delegating to other staff): the user asked you directly, produce the deliverable yourself now.",
+  context: L.contextOf({ brief: b, lang }),
+  prompt: task });
 const tag = `${staff} - ${r.provider} · ${r.model ?? "default"} - ${r.effort ?? "default"}`;
 if (flag("--json")) { console.log(JSON.stringify({ staff, company, provider: r.provider, model: r.model, effort: r.effort, result: r.result ?? r.text, error: r.error })); process.exit(r.error ? 1 : 0); }
 if (r.error) { console.error(`[${staff}] (${tag}) failed: ${r.error}`); process.exit(1); }

@@ -13,7 +13,7 @@ export function localize(txt, cfg, env = process.env) {
   return txt.replace(/^([│├└─ ]*)([a-z0-9][a-z0-9-]*) - (\S+) - (\S+)/gm, (all, pre, role, m, e) => {
     if (role === "ceo") return `${pre}ceo - current session`;
     const def = m === "text-default" || m === "code-default";
-    const flag = env.AH_AGENT || cfg.staff?.[role]?.provider || g.staff?.[role]?.provider ? "" : " ⚠ unbound (company default)";
+    const flag = env.AH_AGENT || cfg.staff?.[role]?.provider || cfg.staff?.[role]?.command || cfg.command || g.staff?.[role]?.provider ? "" : " ⚠ unbound (company default)";
     try { return `${pre}${role} - ${A.staffRuntime({ env, cfg, role, text: m !== "code-default", stageModel: def ? null : m })}${flag}`; } catch { return all; }
   });
 }

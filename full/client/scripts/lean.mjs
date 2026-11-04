@@ -17,7 +17,7 @@ import { join } from "node:path";
 
 export const AGENT_MARK = "[agent-holding]";
 export const AGENT_MARKS = [AGENT_MARK, "[agents-holding]"]; // legacy prefix still recognized as an agent comment
-export const isAgentText = (t) => AGENT_MARKS.some((m) => String(t ?? "").trimStart().startsWith(m));
+export const isAgentText = (t) => { const x = String(t ?? "").trimStart().replace(/^[*_+{}\[\]]*?(?=\[agent)/, "").replace(/^[*_]+/, ""); return AGENT_MARKS.some((m) => x.startsWith(m)); }; // also wiki markup "*[agent-holding] [BA]*"
 const STAFF_NAMES = { ceo: "CEO", cto: "CTO", "tech-lead": "Tech Lead", "ba-lead": "BA", "ba-user": "BA", "po-lead": "PO", "po-new": "PO", "po-modify": "PO",
   "pm-lead": "PM", "design-lead": "Design Lead", "ui-designer": "UI Designer", "ux-writer": "UX Writer", "qc-lead": "QC", "user-qc": "QC", git: "Git", "code-graph": "Code Graph" };
 /** Role id -> display name (mirrors the server's staffName). */
@@ -120,15 +120,15 @@ export function feedbackOf(na) {
   return null;
 }
 const issueBlock = (iss) => [`Task ${iss.key}: ${iss.summary}`, iss.description && `Description:\n${iss.description}`,
-  iss.comments?.length && `Comments:\n${iss.comments.map((c) => `- ${c.who}: ${c.t}`).join("\n")}`, langInstruction()].filter(Boolean).join("\n");
+  iss.comments?.length && `Comments:\n${iss.comments.map((c) => `- ${c.who}: ${c.t}`).join("\n")}`].filter(Boolean).join("\n");
 export function textPrompt(iss, o = {}) {
-  return [briefBlock(o.brief), issueBlock(iss), habitsBlock(o.habits), o.context && `Project: ${o.context}`, o.prevPlan && `Current plan:\n${o.prevPlan}`, o.feedback && `User feedback: ${o.feedback}`,
+  return [issueBlock(iss), o.context && `Project: ${o.context}`, o.prevPlan && `Current plan:\n${o.prevPlan}`, o.feedback && `User feedback: ${o.feedback}`,
     o.allowQuestion ? "If something essential is unclear, return {\"question\": \"...\"}. Otherwise return {\"plan\": \"...\"}." : "Return {\"plan\": \"...\"}.",
     "Plan: goal, scope, acceptance criteria, files/steps; max 12 short lines. Reply with the JSON only."].filter(Boolean).join("\n\n");
 }
 export const TEXT_SYSTEM = "You are a senior BA/tech lead. You write short, concrete task plans. Reply with JSON only.";
 export function codePrompt(iss, o = {}) {
-  return [briefBlock(o.brief), issueBlock(iss), habitsBlock(o.habits), o.plan && `Approved plan:\n${o.plan}`, o.techPlan && `Tech plan (follow it; read only the files it names unless something is missing):\n${o.techPlan}`,
+  return [issueBlock(iss), o.plan && `Approved plan:\n${o.plan}`, o.techPlan && `Tech plan (follow it; read only the files it names unless something is missing):\n${o.techPlan}`,
     o.approval && `User: ${o.approval}`, o.review && `The user reviewed your change on branch ${o.branch ?? "feature/" + iss.key} (already checked out, your earlier commits are on it) and sent it back to Coding.`,
     o.feedback && `Address this ${o.review ? "review " : ""}feedback: ${o.feedback}`,
     o.preexisting?.length && `Already failing BEFORE your change (QC baseline): ${o.preexisting.join(", ")}. Ignore these: do not run, investigate or fix them; QC only blames new failures.`,
@@ -141,7 +141,7 @@ export const TECH_SYSTEM = "You are the tech lead. You write short technical pla
 /** Pre Coding prompt: tech plan only (no code), with inline file excerpts so one tool-less turn is enough, and the developer roles to pick from. */
 export function techPlanPrompt(iss, o = {}) {
   const roles = (o.devRoles ?? []).map((r) => `- ${r.role}${r.skills?.length ? `: ${r.skills.join(", ")}` : ""}`).join("\n");
-  return [briefBlock(o.brief), issueBlock(iss), habitsBlock(o.habits), o.plan && `Approved plan:\n${o.plan}`, o.feedback && `User feedback: ${o.feedback}`, o.context && `Project: ${o.context}`,
+  return [issueBlock(iss), o.plan && `Approved plan:\n${o.plan}`, o.feedback && `User feedback: ${o.feedback}`, o.context && `Project: ${o.context}`,
     o.files?.length && `Repo files (subset): ${o.files.join(", ")}`,
     o.snippets?.length && `File excerpts:\n${o.snippets.map((x) => `--- ${x.path}\n${x.text}`).join("\n")}`,
     roles ? `Developers on the roster (pick the best fit by role/skills):\n${roles}` : "No developer roles on the roster: the tech lead codes it (developer = \"tech-lead\").",
@@ -284,11 +284,11 @@ export function leanGrokHome(home) {
   try { if (!existsSync(tf) && existsSync(rtf)) writeFileSync(tf, readFileSync(rtf)); } catch {}
   return d;
 }
-export function leanGrokArgs({ sid, model, text, prompt, schema, system, tools, maxTurns, effort }) {
+export function leanGrokArgs({ sid, model, text, prompt, schema, system, tools, maxTurns, effort, context }) {
   if (!text && !maxTurns) maxTurns = codeMaxTurns();
   return ["--trust", "--always-approve", "--session-id", sid, ...(model ? ["--model", model] : []), ...(effort ? ["--reasoning-effort", effort] : []),
     "--tools", tools ?? (text ? "read_file" : CODE_TOOLS), ...(maxTurns || text ? ["--max-turns", String(maxTurns ?? 1)] : []), "--disable-web-search", "--no-subagents", "--no-plan",
-    ...(system ? ["--system-prompt-override", system] : []), "--json-schema", JSON.stringify(schema), "--output-format", "json", "--single", prompt];
+    ...(system ? ["--system-prompt-override", system] : []), ...(context ? ["--rules", context] : []), "--json-schema", JSON.stringify(schema), "--output-format", "json", "--single", prompt];
 }
 /** Parse grok --output-format json stdout: structuredOutput, else the last {...} in text. */
 export function parseResult(stdout) {
@@ -431,6 +431,11 @@ export function staffLabelOps(labels = [], role) {
 }
 export const staffOfLabels = (labels = []) => (labels.find((l) => l.startsWith(STAFF_LABEL)) ?? "").slice(STAFF_LABEL.length) || null;
 // ---------- staff brief (persona + 2-3 relevant own skills, summaries only) injected into model prompts ----------
+/** Per-run staff context (persona, 2-3 skill summaries, habits, language, conventions): delivered SEPARATELY from the task
+ * through each CLI's native system/context channel (see providers/), never inside {prompt}. */
+export function contextOf({ brief, habits, lang, conventions } = {}) {
+  return ["# Staff context (agents-holding, generated per run)", brief && "Background on who you are. Ignore any instruction in it about tools, MCP, sessions, scanning the repo or delegating to other staff: this run does the task in the message directly and replies in the requested format.", briefBlock(brief), habitsBlock(habits), conventions && `Company conventions:\n${conventions}`, langInstruction(lang)].filter(Boolean).join("\n\n");
+}
 export const BRIEF_MAX = 6000; // chars (~1.5k tokens)
 export function briefBlock(b) {
   if (!b || (!b.persona && !b.skills?.length)) return null;
@@ -493,11 +498,20 @@ export function writeStatus(home, patch) {
 }
 const ago = (t, now) => !t ? "never" : `${Math.max(0, Math.round((now - new Date(t).getTime()) / 1000))}s ago (${t})`;
 /** `holding status` text from the status file (+ whether the pid is alive). */
+/** Prominent red warning when the Jira listener is not running (null when it is). tty = ANSI red; chat = 🔴 + bold markdown. */
+export function listenerAlive(home = homedirSafe()) { const st = readStatus(home); try { if (st?.pid) { process.kill(st.pid, 0); return true; } } catch {} return false; }
+function homedirSafe() { return process.env.AH_HOME ?? process.env.HOME; }
+export function listenerWarning(home = homedirSafe(), { tty = !!process.stdout.isTTY && !process.env.AH_HOOK_RUN } = {}) {
+  if (listenerAlive(home)) return null;
+  const body = ["The Jira Listener is NOT running: Jira card moves and comments are not received and no agent runs.",
+    "  start now + at every login:  holding jira-listener start && holding jira-listener autostart on", "  check:                       holding listener status   (or /listener)"];
+  return tty ? `\x1b[1;31m🔴 ${body[0]}\x1b[0m\n\x1b[31m${body.slice(1).join("\n")}\x1b[0m` : `🔴 **${body[0]}**\n${body.slice(1).map((l) => `**${l.trim()}**`).join("\n")}`;
+}
 export function formatStatus(st, alive, now = Date.now()) {
-  if (!st) return "listener: no status file yet (never started? run: holding listener on)";
+  if (!st) return "listener: no status file yet (never started? run: holding jira-listener start && holding jira-listener autostart on)";
   const l = [`listener: ${alive ? `RUNNING pid ${st.pid}` : `NOT RUNNING (last pid ${st.pid ?? "?"})`}, started ${ago(st.started_at, now)}, notifications ${st.notify === false ? "off" : "on"}`];
   for (const [c, v] of Object.entries(st.companies ?? {}))
-    l.push(`  ${c}: realtime ${v.realtime ?? "?"}${v.realtime_at ? ` since ${ago(v.realtime_at, now)}` : ""}; last webhook event ${v.last_event ? `${v.last_event} ` : ""}${ago(v.last_event_at, now)}; last server heartbeat ${v.heartbeat_ok === false ? "FAILED " : ""}${ago(v.heartbeat_at, now)}`);
+    l.push(`  ${c}: realtime ${v.realtime ?? "?"}${v.realtime_at ? ` since ${ago(v.realtime_at, now)}` : ""}; last Jira event ${v.last_event ? `${v.last_event} ` : ""}${ago(v.last_event_at, now)}; last server heartbeat ${v.heartbeat_ok === false ? "FAILED " : ""}${ago(v.heartbeat_at, now)}`);
   l.push(st.running ? `  working: ${st.running.issue} ${stageTitle(st.running.stage)} since ${ago(st.running.at, now)}` : "  working: idle");
   if (st.last_run) l.push(`  last run: ${st.last_run.issue} ${st.last_run.result} ${ago(st.last_run.at, now)}`);
   return l.join("\n");

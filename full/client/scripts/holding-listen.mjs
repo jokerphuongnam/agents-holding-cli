@@ -22,7 +22,8 @@ const base = process.env.AH_URL ?? "https://mznrffnvmhmiudvfuquk.supabase.co";
 const grokBin = process.env.GROK_BIN ?? "grok";
 const logDir = join(homedir(), "Library/Logs/agents-holding");
 mkdirSync(logDir, { recursive: true });
-const logFile = join(logDir, "listen.log");
+const logFile = join(logDir, "jira-listener.log");
+process.title = "Jira Listener";
 const runTimeoutMs = Number(process.env.AH_RUN_TIMEOUT_MIN ?? 15) * 60 * 1000; // hard cap per agent run
 const stallMs = Number(process.env.AH_STALL_MIN ?? 5) * 60 * 1000;            // no session activity -> loud warning
 const log = (...m) => { const l = `${new Date().toISOString()} ${m.join(" ")}`; appendFileSync(logFile, l + "\n"); console.log(l); };
@@ -65,7 +66,7 @@ async function mcp(name, a) {
 }
 
 // ---- server-side last-seen heartbeat (for /listener and /doctor); best effort ----
-const autostartPlist = join(homedir(), "Library/LaunchAgents/com.agentsholding.listener.plist");
+const autostartPlist = join(homedir(), "Library/LaunchAgents/com.agentsholding.jira-listener.plist");
 const heartbeat = () => Promise.all(companyList.map((company) => mcp("listener_heartbeat", { company, host: hostname(), pid: process.pid, autostart: existsSync(autostartPlist), version: "3" })
   .then(() => L.writeStatus(homedir(), { companies: { [company]: { heartbeat_at: new Date().toISOString(), heartbeat_ok: true } } }))
   .catch((e) => { log("heartbeat failed:", e.message); L.writeStatus(homedir(), { companies: { [company]: { heartbeat_at: new Date().toISOString(), heartbeat_ok: false } } }); })));
@@ -81,7 +82,7 @@ process.on("SIGUSR1", () => heartbeat()); // `holding listener autostart on|off`
 //  * per-stage model hint from the company flow (--model), overridable with AH_MODEL;
 //  * deterministic Jira moves: the listener moves the card after the run (Jira REST with ~/.config/agents-holding/jira.json),
 //    no AI tokens; --dry-jira prints every Jira action instead and denies the Jira MCP to the agent;
-//  * tokens per run from the grok session usage.json -> listen.log + report_usage (/usage per task/stage).
+//  * tokens per run from the grok session usage.json -> jira-listener.log + report_usage (/usage per task/stage).
 const dryJira = args.includes("--dry-jira");
 let sessFile, sessions;
 const loadSessions = () => { sessFile = join(homedir(), ".config/agents-holding", `sessions-${company}.json`); try { sessions = JSON.parse(readFileSync(sessFile, "utf8")); } catch { sessions = {}; } };
@@ -224,17 +225,17 @@ function spawnGrok(gargs, out, issue, sid, o = {}) {
 
 // ---- lean run: scripts drive the stages, the model only writes text/code (see lean.mjs) ----
 let stageModels = {}; // flow per-stage models of the current run (next_action model/chain[].model), honored by leanModel
-async function leanModel(kind, issue, stage, prompt, role = null) {
+async function leanModel(kind, issue, stage, prompt, role = null, context = null) {
   const sid = randomUUID(), out = join(logDir, `run-${Date.now()}.log`), buf = [];
   const text = kind !== "code", schema = kind === "tech" ? L.TECH_SCHEMA : kind === "habits" ? L.HABITS_SCHEMA : text ? L.TEXT_SCHEMA : L.CODE_SCHEMA, system = kind === "tech" ? L.TECH_SYSTEM : kind === "habits" ? L.HABITS_SYSTEM : text ? L.TEXT_SYSTEM : null;
-  const { agent, model, effort, bin } = L.resolveAgent({ cfg: { agent: runSettings?.agent, model: runSettings?.model, text_model: runSettings?.text_model, ...L.loadAgentCfg(homedir(), company) }, text, role, stageModel: stageModels[stage] ?? null });
-  const prov = await P.getProvider(agent, homedir());
+  const { agent, model, effort, bin, command, binding } = L.resolveAgent({ cfg: { agent: runSettings?.agent, model: runSettings?.model, text_model: runSettings?.text_model, ...L.loadAgentCfg(homedir(), company) }, text, role, stageModel: stageModels[stage] ?? null });
+  const prov = command ? (await import("./providers/command.mjs")).commandProvider(binding) : await P.getProvider(agent, homedir());
   log(`lean ${kind} call for ${issue} ${stage}${role ? ` staff ${role}` : ""} agent ${agent} session ${sid} ${model ?? "default model"}${effort ? ` effort ${effort}` : ""} prompt ${prompt.length} chars -> ${out}`);
   // AgentProvider protocol (providers/): built-in CLIs spawn via ctx.spawn; HTTP providers (openai-compatible, custom) run their own loop
   const ctx = { spawn: (args, so = {}) => { if (so.env) delete so.env.AGENTS_HOLDING_KEY; return spawnGrok(args, out, issue, sid, { collect: buf, ...so }); },
     stdout: () => Buffer.concat(buf).toString("utf8"), grokUsage: (s) => usageOf(s, leanHome), leanHome, logDir, log: (m) => log(`lean ${kind} ${issue}: ${m}`) };
   const t0 = Date.now();
-  const res = await prov.run({ prompt, system, schema, kind, text, cwd: repo, model, effort, sid, bin }, ctx).catch((e) => ({ result: {}, usage: null, exitCode: 1, error: e.message }));
+  const res = await prov.run({ prompt, system, context, schema, kind, text, cwd: repo, model, effort, sid, bin }, ctx).catch((e) => ({ result: {}, usage: null, exitCode: 1, error: e.message }));
   const wall = Date.now() - t0, code = res.exitCode ?? 0;
   if (res.text) appendFileSync(out, res.text); // HTTP providers: keep the answer in the run log too
   const r = res.result, u = res.usage;
@@ -316,7 +317,7 @@ async function leanRunInner(p, na, depth, vis) {
     if (seg.kind !== "move" && !(seg.kind === "script" && s0 === "done")) await startStage(s0, seg.kind);
     if (seg.kind === "move") { if (!(await advance(s0, seg.moves[0]))) return; continue; }
     if (seg.kind === "text") {
-      const r = await leanModel("text", issue, s0, L.textPrompt(iss, { brief: await brief(L.stageRole(na, s0)), habits, prevPlan: s0 === "planned" ? plan : null, feedback: fb, allowQuestion: s0 !== "planned" && (na.flow_stages ?? []).includes("ba_question") }), L.stageRole(na, s0));
+      const r = await leanModel("text", issue, s0, L.textPrompt(iss, {  prevPlan: s0 === "planned" ? plan : null, feedback: fb, allowQuestion: s0 !== "planned" && (na.flow_stages ?? []).includes("ba_question") }), L.stageRole(na, s0), L.contextOf({ brief: await brief(L.stageRole(na, s0)), habits }));
       if (r.question && s0 !== "planned") { await record("question", r.question); await say(L.stageStaff(na, s0), `QUESTION\n${r.question}`); await advance(s0, "ba_question"); break; }
       plan = r.plan || r.summary || ""; if (!plan) { throw new Error("the model returned an empty plan"); }
       await record("plan", plan); await say(L.stageStaff(na, s0), `PLAN\n${plan}`); L.savePlan(st, issue, { plan });
@@ -353,7 +354,7 @@ Jira: ${issue}` });
       const who = L.stageStaff(na, s0, { kind: "techplan" });
       const files = filesOf(repo), hints = L.fileHints(files, `${iss.summary} ${iss.description} ${plan ?? ""}`);
       const listed = files.length <= 40 ? files : hints;
-      const r = await leanModel("tech", issue, s0, L.techPlanPrompt(iss, { brief: await brief(L.stageRole(na, s0, { kind: "techplan" })), habits, plan, feedback: fb, files: listed, snippets: L.fileSnippets(repo, hints.slice(0, 5)), devRoles }), L.stageRole(na, s0, { kind: "techplan" }));
+      const r = await leanModel("tech", issue, s0, L.techPlanPrompt(iss, {  plan, feedback: fb, files: listed, snippets: L.fileSnippets(repo, hints.slice(0, 5)), devRoles }), L.stageRole(na, s0, { kind: "techplan" }), L.contextOf({ brief: await brief(L.stageRole(na, s0, { kind: "techplan" })), habits }));
       if (r.question && !r.tech_plan) { await record("question", r.question); await say(who, `QUESTION\n${r.question}`); return; }
       const techPlan = r.tech_plan || r.summary || ""; if (!techPlan) { throw new Error("the model returned an empty tech plan"); }
       const dev = L.pickDeveloper(devRoles, r.developer, na.assigned_role, `${iss.summary} ${iss.description} ${techPlan}`);
@@ -373,7 +374,7 @@ Jira: ${issue}` });
         log(`lean: ${rp} branch ${branch}: ${L.ensureBranch(rp, branch)}`);
         const files = filesOf(rp);
         const multi = runRepos.length > 1 ? `\nThis task spans repos ${runRepos.map(rname).join(", ")}; you are in ${rname(rp)}: change only what belongs here.` : "";
-        const r1 = await leanModel("code", issue, stage, L.codePrompt(iss, { brief: await brief(o.dev), habits, plan: (plan ?? "") + multi, techPlan: o.techPlan, approval, feedback: o.feedback, hints: L.fileHints(files, `${iss.summary} ${iss.description} ${plan ?? ""}`), qc: !!o.selfCheck?.[rp], preexisting: L.preexistingFails(L.loadPlan(st, issue).qc_baseline?.[rp] ?? o.baselines?.[rp]), review: !!o.review, branch }), o.dev);
+        const r1 = await leanModel("code", issue, stage, L.codePrompt(iss, {  plan: (plan ?? "") + multi, techPlan: o.techPlan, approval, feedback: o.feedback, hints: L.fileHints(files, `${iss.summary} ${iss.description} ${plan ?? ""}`), qc: !!o.selfCheck?.[rp], preexisting: L.preexistingFails(L.loadPlan(st, issue).qc_baseline?.[rp] ?? o.baselines?.[rp]), review: !!o.review, branch }), o.dev, L.contextOf({ brief: await brief(o.dev), habits }));
         if (r1.question && !r1.summary) { await record("question", r1.question); await say(o.who, `QUESTION (${rname(rp)})\n${r1.question}`); repo = runRepos[0]; return null; }
         const sha = L.commitAll(rp, `${issue}: ${r1.commit_message || iss.summary || "agent change"}`);
         const h = o.host ? host(r1) : { msg: [] };

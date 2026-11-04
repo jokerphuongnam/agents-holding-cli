@@ -155,3 +155,61 @@ Output follows the input language. `holding set-lang <code|auto>` overrides it p
 ## Which company
 
 Bindings are per company. Company = `--company X` > nearest `.agents/company.json` from the current folder > active company (`holding use <company>`). `holding companies` lists them; `holding current` prints what this shell resolves to.
+
+## One /ceo, two modes
+
+`/ceo` routes on its own. If one company resolves (`--company`, `@slug`, the company named in the prompt, the repo `.agents/company.json`, or the active company), it runs in company mode and the reply starts with `[ceo @ <slug>]`. Otherwise, or when the request spans companies, it runs in holding mode and the reply starts with `[holding]`. `/holding-ceo` is an alias.
+
+## Staff launch command (the simple way)
+
+Give a staff one fixed command. When that staff gets work, agents-holding runs exactly that command in the company repo (the path in projects.json).
+
+```sh
+holding set-staff developer 'claude -p --model {model} --effort {effort} --output-format json "{prompt}"' --model sonnet --effort low --timeout 900
+holding set-staff ba-lead   'grok --single "{prompt}" --model grok-4.7-build-fast --reasoning-effort low --max-turns 1 --output-format json --no-subagents'
+holding set-staff tech-lead 'codex exec --json --skip-git-repo-check -s read-only -m {model} "{prompt}"' --model gpt-5 --effort medium
+holding set-staff qa        'ollama run qwen2.5-coder'        # no {prompt}: the task goes to stdin
+holding set-staff default   'claude -p --output-format json "{prompt}"'   # company default for staff without a command
+holding staff test developer     # dry run: argv, cwd, how prompt and context are passed, no model call
+holding unset-staff developer
+```
+
+Fields (all optional except `command`). The binding step in `holding hire` / `add-project` asks for the same fields under **Custom**. **Default** is the remembered one in `agent-defaults.json`. A commented example of every field is written to `~/.config/agents-holding/staff.example.jsonc` the first time.
+
+| field | example | used by |
+|---|---|---|
+| command | `claude -p --model {model} "{prompt}"` | the exact command run |
+| model | `sonnet` | `{model}` |
+| effort | `low` | `{effort}` |
+| max_turns | `25` | `{max_turns}` |
+| cwd | empty = company repo | `{cwd}` and the process cwd |
+| context | `auto` \| `none` \| `/path/ctx.md` | staff context (see below) |
+| timeout | `900` (seconds) | kill after |
+| env | `{"K":"V"}` / `--env K=V` | extra env (the server key is never passed) |
+
+Placeholders:
+- `{prompt}`: the task text, as one argv entry. No shell runs, so quotes, `$` and backticks stay literal. Over 200 KB it is refused; use `{prompt_file}` instead.
+- `{prompt_file}`: a 0600 temp file with the task.
+- `{model}`, `{effort}`, `{max_turns}`: taken from the fields above. If a field is empty, it is dropped together with the flag in front of it (for example, `--model {model}` disappears).
+- `{cwd}`: the working directory.
+- `{context}`, `{context_file}`: the staff context, as text or as a temp file.
+
+### Task vs staff context
+
+`{prompt}` carries **only the task**. The staff context is built per run as a separate file and never stuffed into the prompt. It holds the persona, the 2-3 relevant skill summaries, learned habits, company conventions and the output language, plus the stage instructions. It is delivered through each CLI's own channel (checked against `--help` of grok 1.0.70, claude 2.1.177 and codex 0.133):
+
+- claude: `--append-system-prompt-file <ctx>` (built-in adapter: `--append-system-prompt`)
+- codex: `-c developer_instructions="<ctx>"`
+- grok: `--rules <ctx>`
+- openai-compatible / Ollama HTTP: system message
+- any other command: `{context}` / `{context_file}` if present, else env `AH_CONTEXT_FILE`
+
+Repo files (AGENTS.md etc.) are never written.
+
+Output parsing is picked from the first word:
+- `claude`: JSON result and usage
+- `codex`: JSONL events and usage
+- `grok`: JSON
+- anything else: plain text (a trailing `{...}` JSON is used if present)
+
+`holding providers` prints each built-in's full effective template, then the company's default command and per-staff commands. `/staffs` shows `<staff> - $ <command…>`.

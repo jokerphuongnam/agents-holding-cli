@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // holding <status|tasks|jira-board|jira-tasks|usage|staffs|history> --all : one view over EVERY local company and board,
 // so a single AI session / terminal can watch all companies. jira-* run once per board (--project KEY).
+import * as L0 from "./lean.mjs";
 import { spawnSync } from "node:child_process";
 import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -11,7 +12,7 @@ const cs = C.localCompanies(home), act = C.getActive(home);
 if (!cs.length) { console.log("no local companies (holding add-project)"); process.exit(0); }
 const holding = (args) => spawnSync("sh", [join(here, "holding"), ...args], { encoding: "utf8", env: { ...process.env, AH_COMPANY: "" } });
 const show = (r) => process.stdout.write((r.stdout || "") + (r.status ? r.stderr || "" : ""));
-if (cmd === "status") { // listener once (it serves every board), then per company: open local runs, working, stuck
+if (cmd === "status") { { const w = L0.listenerWarning(); if (w) console.log(w + "\n"); } // listener once (it serves every board), then per company: open local runs, working, stuck
   const r = spawnSync("node", [join(here, "status.mjs"), "status"], { encoding: "utf8" }); console.log((r.stdout || "").split("\n").filter((l) => !l.startsWith("company:")).join("\n").trim());
   const stuckMin = Number(process.env.AH_RUN_TIMEOUT_MIN ?? 15) * 2;
   for (const c of cs) {

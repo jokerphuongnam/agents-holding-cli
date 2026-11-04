@@ -3,6 +3,7 @@
 // projects.json settings.agent (holding add-project --agent A), else grok. `holding agent <grok|claude|codex> [--model M] [--text-model M]` writes agent.json.
 // Models: AH_MODEL / AH_TEXT_MODEL override everything.
 // Every call stays tool-light and MCP-free (the runner talks to the server itself), one fresh session, JSON result + token usage.
+import { loadJsonc, writeJsonc } from "./staff-config.mjs";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -29,22 +30,32 @@ export const DEFAULT_MODELS = {
 export const CLAUDE_CODE_TOOLS = "Bash,Read,Edit,Write,Grep,Glob";
 
 const cfgPath = (home, company) => join(home, ".config/agents-holding/state", company, "agent.json");
-export function loadAgentCfg(home, company) { try { return JSON.parse(readFileSync(cfgPath(home, company), "utf8")); } catch { return {}; } }
+export function loadAgentCfg(home, company) {
+  let c = {}; try { c = JSON.parse(readFileSync(cfgPath(home, company), "utf8")); } catch {}
+  const j = loadJsonc(home, company); // state/<company>/agents.jsonc (commented, hand-editable) wins for staff + default command
+  if (j) { if (j.staff && typeof j.staff === "object") c.staff = { ...(c.staff ?? {}), ...j.staff }; if (typeof j.default === "string") c.command = j.default || c.command; }
+  return c;
+}
 /** holding set-staff / unset-staff: per-company mapping staff.<role> = {provider, model, effort} in state/<company>/agent.json. */
 export function setStaff(home, company, role, m) {
   if (role === "ceo" && m) throw new Error("the CEO is always your current chat session; it has no provider binding");
+  if (m?.command) m = Object.fromEntries(Object.entries(m).filter(([k, v]) => CMD_FIELDS.includes(k) && v !== undefined && v !== null && v !== "")); // fixed command binding
+  if (m?.command) m.command = String(m.command).trim();
+  else if (m?.provider) m = { ...m, command: undefined };
   if (m?.provider && !providerIds(home, { providers: { ...(loadGlobalCfg(home).providers ?? {}), ...(loadAgentCfg(home, company).providers ?? {}) } }).includes(m.provider)) throw new Error(`unknown provider ${m.provider} (see holding providers)`);
   if (m?.effort && !EFFORTS.includes(m.effort)) throw new Error(`effort must be ${EFFORTS.join("|")}`);
   const cur = loadAgentCfg(home, company), staff = { ...(cur.staff ?? {}) };
-  if (m === null) delete staff[role]; else staff[role] = Object.fromEntries(Object.entries({ ...staff[role], ...m }).filter(([k, v]) => v && k !== "agent"));
+  if (m === null) delete staff[role]; else staff[role] = Object.fromEntries(Object.entries({ ...staff[role], ...m }).filter(([k, v]) => v && k !== "agent" && !(m.command && !CMD_FIELDS.includes(k))));
   saveAgentCfg(home, company, { staff });
-  if (staff[role]?.provider) saveDefault(home, role, staff[role]); // remembered per-role preference
+  if (staff[role]?.provider || staff[role]?.command) saveDefault(home, role, staff[role]); // remembered per-role preference
   return staff[role] ?? null;
 }
 export function saveAgentCfg(home, company, o) {
   if (o.agent && !providerIds(home).includes(o.agent)) throw new Error(`agent must be one of ${providerIds(home).join("|")}`);
   mkdirSync(join(home, ".config/agents-holding/state", company), { recursive: true, mode: 0o700 });
-  writeFileSync(cfgPath(home, company), JSON.stringify({ ...loadAgentCfg(home, company), ...o }, null, 1), { mode: 0o600 });
+  const next = { ...loadAgentCfg(home, company), ...o };
+  writeFileSync(cfgPath(home, company), JSON.stringify(next, null, 1), { mode: 0o600 });
+  if (o.staff || "command" in o || o.lang) writeJsonc(home, company, next); // keep the commented agents.jsonc in sync
 }
 /** Resolve {agent, model} for a call. Agent: AH_AGENT > per-staff override (agent.json staff.<role>.agent) > company agent.json > grok.
  * Model: AH_MODEL/AH_TEXT_MODEL > per-staff model (staff.<role>.model) > the flow's per-stage model (server flow def stage.model / flow model)
@@ -65,24 +76,29 @@ export function resolveAgent({ env = process.env, cfg = {}, text, role = null, s
   let effort = String(env.AH_EFFORT || st.effort || (text ? cfg.text_effort || cfg.effort : cfg.effort) || gd.effort || (agent === "codex" && text ? "low" : "")).toLowerCase() || null;
   if (effort && !EFFORTS.includes(effort)) effort = null;
   const bin = env[`AH_${agent.toUpperCase().replace(/-/g, "_")}_BIN`] || (agent === "grok" ? env.GROK_BIN : null) || pd.bin || agent;
-  return { agent, model: model || null, effort, bin, providerDef: pd.type ? pd : null };
+  const command = env.AH_AGENT ? null : (st.command || (!st.provider && cfg.command) || null); // fixed launch command: staff > company default
+  const binding = command ? { ...(st.command ? st : {}), command } : null;
+  return { binding, agent: command ? "command" : agent, model: command ? null : model || null, effort: command ? null : effort, bin, command, providerDef: pd.type ? pd : null };
 }
 
+/** Fields of a fixed-command staff binding; {model} {effort} {cwd} {max_turns} placeholders resolve from them. */
+export const CMD_FIELDS = ["command", "model", "effort", "cwd", "context", "max_turns", "timeout", "env"];
 export const EFFORTS = ["low", "medium", "high"];
 /** `holding staffs` runtime cell for one staff: "<model> - <effort>" exactly as resolveAgent will run it. */
 export function staffRuntime({ env = process.env, cfg = {}, role, text = true, stageModel = null }) {
   const r = resolveAgent({ env, cfg, text, role, stageModel });
+  if (r.command) return `$ ${r.command.length > 40 ? r.command.slice(0, 39) + "…" : r.command}`;
   return `${r.model ?? `${r.agent} default`} - ${r.effort ?? "default"}`;
 }
-export function claudeArgs({ model, text, prompt, schema, system, codeTools = CLAUDE_CODE_TOOLS, maxTurns, effort }) {
+export function claudeArgs({ model, text, prompt, schema, system, codeTools = CLAUDE_CODE_TOOLS, maxTurns, effort, context }) {
   if (!text && !maxTurns) maxTurns = Math.max(5, Number(process.env.AH_CODE_MAX_TURNS) || 25);
   return ["-p", ...(maxTurns ? ["--max-turns", String(maxTurns)] : []), "--output-format", "json", "--no-session-persistence", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--disable-slash-commands",
     "--permission-mode", "bypassPermissions", "--tools", text ? "" : codeTools,
-    ...(model ? ["--model", model] : []), ...(effort ? ["--effort", effort] : []), ...(system ? ["--system-prompt", system] : []), "--json-schema", JSON.stringify(schema), prompt];
+    ...(model ? ["--model", model] : []), ...(effort ? ["--effort", effort] : []), ...(system ? ["--system-prompt", system] : []), ...(context ? ["--append-system-prompt", context] : []), "--json-schema", JSON.stringify(schema), prompt];
 }
-export function codexArgs({ model, text, prompt, schemaFile, system, effort }) {
+export function codexArgs({ model, text, prompt, schemaFile, system, effort, context }) {
   return ["exec", "--json", "--skip-git-repo-check", "--ephemeral", "-s", text ? "read-only" : "workspace-write", "--output-schema", schemaFile,
-    ...(model ? ["-m", model] : []), ...(effort || text ? ["-c", `model_reasoning_effort="${effort ?? "low"}"`] : []), system ? `${system}\n\n${prompt}` : prompt];
+    ...(model ? ["-m", model] : []), ...(effort || text ? ["-c", `model_reasoning_effort="${effort ?? "low"}"`] : []), ...(context || system ? ["-c", `developer_instructions=${JSON.stringify([system, context].filter(Boolean).join("\n\n"))}`] : []), prompt];
 }
 
 /** Lean CODEX_HOME: auth only (symlink), no MCP servers / custom prompts -> small, predictable context. */
@@ -125,8 +141,8 @@ export function loadDefaults(home = process.env.HOME || homedir()) { try { retur
 export function saveDefault(home, role, m) {
   if (role === "ceo") return;
   const d = loadDefaults(home);
-  if (m === null) delete d[role]; else d[role] = Object.fromEntries(Object.entries(m).filter(([k, v]) => v && ["provider", "model", "effort"].includes(k)));
+  if (m === null) delete d[role]; else d[role] = Object.fromEntries(Object.entries(m).filter(([k, v]) => v && ["provider", ...CMD_FIELDS].includes(k)));
   mkdirSync(join(home, ".config/agents-holding"), { recursive: true, mode: 0o700 });
   writeFileSync(defaultsPath(home), JSON.stringify(d, null, 1), { mode: 0o600 });
 }
-export const bindingLabel = (role, m) => `${role} - ${m?.provider ?? "?"}/${m?.model ?? "default"} - ${m?.effort ?? "default"}`;
+export const bindingLabel = (role, m) => m?.command ? `${role} - $ ${m.command.length > 40 ? m.command.slice(0, 39) + "…" : m.command}` : `${role} - ${m?.provider ?? "?"}/${m?.model ?? "default"} - ${m?.effort ?? "default"}`;

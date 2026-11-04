@@ -17,6 +17,12 @@ if (a[0] === "set-lang") { // holding set-lang <code|auto> [--company X]: output
 if (a[0] === "set-staff" || a[0] === "unset-staff") { // holding set-staff <staff> <provider> <model> [effort] | unset-staff <staff>  [--company X]
   const [cmd, role, provider, model, effort] = a.filter((x, i) => !x.startsWith("--") && !(a[i - 1] === "--company"));
   if (!role || (cmd === "set-staff" && !provider)) { console.error("usage: holding set-staff <staff> <provider> <model> [low|medium|high] [--company X] | holding unset-staff <staff>"); process.exit(1); }
+  const cmdArg = opt("--command") ?? (provider && /\s|\{/.test(provider) ? provider : null);
+  if (cmd === "set-staff" && cmdArg) { const { render } = await import("./providers/command.mjs"); render(cmdArg, { prompt: "x", dir: "/tmp", b: {} }); // validates quoting
+    if (role === "default") { A.saveAgentCfg(homedir(), company, { command: cmdArg }); console.log(`company ${company}: default command $ ${cmdArg}`); process.exit(0); }
+    const envs = a.flatMap((x, i) => (x === "--env" ? [a[i + 1]] : [])).filter(Boolean), env = envs.length ? Object.fromEntries(envs.map((kv) => [kv.split("=")[0], kv.split("=").slice(1).join("=")])) : undefined;
+    A.setStaff(homedir(), company, role, { command: cmdArg, model: opt("--model"), effort: opt("--effort"), cwd: opt("--cwd"), context: opt("--context"), max_turns: opt("--max-turns") ? Number(opt("--max-turns")) : undefined, timeout: opt("--timeout") ? Number(opt("--timeout")) : undefined, env }); console.log(`company ${company}: ${role} - $ ${cmdArg}${/\{prompt(_file)?\}/.test(cmdArg) ? "" : "  (no {prompt}: the prompt goes to stdin)"}`); process.exit(0); }
+  if (cmd === "unset-staff" && role === "default") { A.saveAgentCfg(homedir(), company, { command: "" }); console.log(`company ${company}: default command removed`); process.exit(0); }
   const r = A.setStaff(homedir(), company, role, cmd === "unset-staff" ? null : { provider, model: model && model !== "-" ? model : undefined, effort });
   const c = A.resolveAgent({ cfg: A.loadAgentCfg(homedir(), company), text: true, role });
   console.log(`company ${company}: ${role} - ${c.agent} · ${c.model ?? "default"} - ${c.effort ?? "default"}${r ? "" : " (mapping removed, company/global defaults)"}`);

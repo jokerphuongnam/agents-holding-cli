@@ -51,7 +51,7 @@ export function createProvider(name, def = {}) {
     async run(o, ctx = {}) {
       const code = !o.text, names = code ? ["read_file", "list_dir", "write_file", "run_tests"] : o.kind === "tech" ? ["read_file", "list_dir"] : [];
       const maxTurns = o.maxTurns ?? (code ? def.maxTurns ?? 15 : o.kind === "tech" ? 4 : 1);
-      const sys = [o.system, names.length ? "Use the tools to inspect/change files in the repo (paths relative to repo root)." : "",
+      const sys = [o.system, o.context, names.length ? "Use the tools to inspect/change files in the repo (paths relative to repo root)." : "",
         `When finished, reply with ONLY one JSON object matching this JSON schema:\n${JSON.stringify(o.schema)}`].filter(Boolean).join("\n\n");
       const msgs = [{ role: "system", content: sys }, { role: "user", content: o.prompt }];
       const usage = { input: 0, output: 0, cached: 0, reasoning: 0, calls: 0, model: o.model ?? def.model ?? null };

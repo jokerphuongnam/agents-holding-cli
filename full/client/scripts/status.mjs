@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// holding status: is the listener alive, realtime joined, last webhook event, last server heartbeat, what it is working on.
+// holding status: is the listener alive, realtime joined, last Jira event, last server heartbeat, what it is working on.
 // holding notify on|off: macOS notifications for start/done/fail (default on; AH_NOTIFY=0 also turns them off).
 import { homedir } from "node:os";
 import * as L from "./lean.mjs";
@@ -11,6 +11,7 @@ if (cmd === "notify") {
   const st = L.readStatus(home); let alive = false;
   try { if (st?.pid) { process.kill(st.pid, 0); alive = true; } } catch {}
   { const { resolveCompany } = await import("./company.mjs"); const c = resolveCompany(); console.log(c.company ? `company: ${c.company} (from ${c.source})` : "company: none (holding use <company>)"); }
+  { const w = L.listenerWarning(home); if (w) console.log(w + "\n"); }
   console.log(L.formatStatus(st, alive));
-  console.log("server view (webhook + heartbeat as the server sees them): ask your agent /listener or /doctor");
+  console.log("server view (Jira listener + events as the server sees them): ask your agent /listener or /doctor");
 }

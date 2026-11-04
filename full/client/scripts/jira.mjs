@@ -124,7 +124,7 @@ export async function main(argv, { home = homedir(), cwd = process.cwd(), fetchF
   const b = () => pickBoard(loadReg(home), cwd, project, (() => { const i = process.argv.indexOf("--company"); return i >= 0 ? process.argv[i + 1] : null; })());
   switch (cmd) {
     case "jira-tasks": return out(await tasks(req, b().project_key, a.join(" ")));
-    case "jira-board": return out(await board(req, b().project_key));
+    case "jira-board": { const { listenerWarning } = await import("./lean.mjs"); const w = listenerWarning(); if (w) console.log(w + "\n"); return out(await board(req, b().project_key)); }
     case "jira-task": { const k = keyOf(a[0]); if (!k) throw new Error("usage: jira-task KEY"); let st = {}, bd = {};
       try { bd = pickBoard(loadReg(home), cwd, k.split("-")[0]); st = JSON.parse(readFileSync(join(home, ".config/agents-holding/state", bd.company ?? "-", `${k}.json`), "utf8")); } catch {}
       return out(await task(req, k, { state: st, usage: fetchFn === fetch && bd.company ? await serverUsage(bd.company, k) : null })); }

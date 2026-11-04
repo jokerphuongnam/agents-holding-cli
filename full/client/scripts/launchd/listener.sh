@@ -1,18 +1,20 @@
 #!/bin/bash
-# holding listener on|off|status|logs|autostart on|off
+# holding jira-listener start|stop|status|logs|autostart on|off   (alias: holding jira-listener start|off|...)
 #   on        : start now (launchd job, restarted if it crashes). Auto-start stays as it was (off after a fresh 'off').
 #   off       : stop now AND force auto-start off.
 #   autostart : on = also start at login (allowed only while running); off = don't start at login (keeps running now).
 # Running = job loaded in launchd. Auto-start = plist present in ~/Library/LaunchAgents (launchd loads those at login).
 set -euo pipefail
 SERVER_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
-LABEL=com.agentsholding.listener
+LABEL=com.agentsholding.jira-listener
+OLD_LABEL=com.agentsholding.listener   # pre-rename label, migrated automatically
 DOMAIN="gui/$(id -u)"
 BIN_DIR="$HOME/Library/Application Support/agents-holding"   # outside ~/Documents (TCC-protected for launchd jobs)
 MASTER="$BIN_DIR/$LABEL.plist"
 AUTO="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOG_DIR="$HOME/Library/Logs/agents-holding"
-LOG="$LOG_DIR/listen.log"
+LOG="$LOG_DIR/jira-listener.log"
+ERR="$LOG_DIR/jira-listener.err.log"
 
 running_pid() { launchctl print "$DOMAIN/$LABEL" 2>/dev/null | awk '/^\tpid = /{print $3; exit}'; }
 loaded() { launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; }
@@ -26,16 +28,35 @@ write_plist() { # $1 repo
   plutil -lint -s "$MASTER.tmp" && mv "$MASTER.tmp" "$MASTER"
 }
 
+# one-time migration from the old "listener" launchd job: stop + remove it, keep autostart as it was (returns 0 if it was auto-starting)
+migrate_old() {
+  local old_auto="$HOME/Library/LaunchAgents/$OLD_LABEL.plist" was=1
+  [ -f "$old_auto" ] && was=0
+  if launchctl print "$DOMAIN/$OLD_LABEL" >/dev/null 2>&1 || [ -f "$old_auto" ] || [ -f "$BIN_DIR/$OLD_LABEL.plist" ]; then
+    MIG_REPO="$(plist_repo "$BIN_DIR/$OLD_LABEL.plist")"; [ -z "$MIG_REPO" ] && MIG_REPO="$(plist_repo "$old_auto")"
+    launchctl bootout "$DOMAIN/$OLD_LABEL" 2>/dev/null || true
+    rm -f "$old_auto" "$BIN_DIR/$OLD_LABEL.plist"; MIGRATED=1
+    echo "migrated: old 'listener' job removed; it is now the Jira Listener ($LABEL)"
+  fi
+  return $was
+}
+MIGRATED=0; MIG_REPO=""; OLD_AUTO=0
+case "${1:-status}" in on|start|status|autostart) if migrate_old; then OLD_AUTO=1; fi ;; esac
+if [ "$MIGRATED" = 1 ] && [ "${1:-status}" = status ]; then # keep it running + autostart as before
+  "$0" start ${MIG_REPO:+--repo "$MIG_REPO"} >/dev/null 2>&1 || true
+  [ "$OLD_AUTO" = 1 ] && "$0" autostart on >/dev/null 2>&1 || true
+fi
+
 cmd_status() {
   local pid repo last
   repo="$(plist_repo "$MASTER")"; [ -z "$repo" ] && repo="$(plist_repo "$AUTO")"
-  if loaded; then pid="$(running_pid)"; echo "listener : ON  (running${pid:+, PID $pid})"; else echo "listener : OFF (not running)"; fi
-  if [ -f "$AUTO" ]; then echo "autostart: ON  (starts at login: $AUTO)"; else echo "autostart: OFF"; fi
-  echo "repo     : ${repo:-<not installed; run: holding listener on --repo DIR>}"
+  if loaded; then pid="$(running_pid)"; echo "Jira Listener: ON  (running${pid:+, PID $pid})"; else printf '\033[1;31m🔴 Jira Listener: OFF (not running): Jira moves and comments are not received, no agent runs.\n   start + autostart: holding jira-listener start && holding jira-listener autostart on\033[0m\n'; fi
+  if [ -f "$AUTO" ]; then echo "autostart    : ON  (starts at login: $AUTO)"; else echo "autostart    : OFF"; fi
+  echo "repo         : ${repo:-<not installed; run: holding jira-listener start --repo DIR>}"
   last="$(grep -E ' join ' "$LOG" 2>/dev/null | tail -1 || true)"
-  echo "last join: ${last:-never}"
-  grep -q "Operation not permitted" "$LOG_DIR/launchd.err.log" 2>/dev/null && \
-    echo "WARNING  : macOS blocked file access (launchd.err.log). Allow node in System Settings > Privacy & Security > Files and Folders (Documents) or Full Disk Access, then: holding listener off && holding listener on" || true
+  echo "last join    : ${last:-never}"
+  grep -q "Operation not permitted" "$ERR" 2>/dev/null && \
+    echo "WARNING  : macOS blocked file access (jira-listener.err.log). Allow node in System Settings > Privacy & Security > Files and Folders (Documents) or Full Disk Access, then: holding jira-listener stop && holding jira-listener start" || true
 }
 
 cmd_on() {
@@ -44,20 +65,21 @@ cmd_on() {
   [ -z "$repo" ] && repo="$(plist_repo "$MASTER")"
   [ -z "$repo" ] && repo="$(plist_repo "$AUTO")"
   [ -z "$repo" ] && [ -f "$PWD/.agents/company.json" ] && repo="$PWD"
-  [ -z "$repo" ] && { echo "error: which repo? run: holding listener on --repo /path/to/company-repo (the folder with .agents/company.json)"; exit 2; }
+  [ -z "$repo" ] && { echo "error: which repo? run: holding jira-listener start --repo /path/to/company-repo (the folder with .agents/company.json)"; exit 2; }
   repo="$(cd "$repo" && pwd)"
   [ -f "$repo/.agents/company.json" ] || { echo "error: $repo/.agents/company.json not found (run /holding-ceo in that repo first)"; exit 2; }
   write_plist "$repo"
+  [ "$OLD_AUTO" = 1 ] && cp "$MASTER" "$AUTO"   # migrated: keep autostart ON
   [ -f "$AUTO" ] && cp "$MASTER" "$AUTO"   # keep the login copy in sync
   if loaded; then echo "already running; restarting with current config"; launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true; sleep 1; fi
   launchctl bootstrap "$DOMAIN" "$MASTER"
-  echo "listener ON for $repo; waiting for 'join ok'..."
+  echo "Jira Listener ON for $repo; waiting for 'join ok'..."
   local start; start=$(date -u +%Y-%m-%dT%H:%M:%S)
   for _ in $(seq 1 20); do
     sleep 1
     if awk -v s="$start" '$1>=s && / join ok /' "$LOG" 2>/dev/null | grep -q .; then echo "join ok ✔"; cmd_status; return 0; fi
   done
-  echo "no 'join ok' yet after 20s — check: holding listener logs   (macOS permission? see holding doctor)"; cmd_status; return 1
+  echo "no 'join ok' yet after 20s — check: holding jira-listener logs   (macOS permission? see holding doctor)"; cmd_status; return 1
 }
 
 cmd_off() {
@@ -65,25 +87,25 @@ cmd_off() {
   launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
   sleep 1
   if loaded; then echo "error: still loaded"; exit 1; fi
-  echo "listener OFF and autostart OFF."
+  echo "Jira Listener OFF and autostart OFF."
 }
 
-poke() { local pid; pid="$(running_pid)"; [ -n "$pid" ] && kill -USR1 "$pid" 2>/dev/null || true; } # listener re-sends its heartbeat
+poke() { local pid; pid="$(running_pid)"; [ -n "$pid" ] && kill -USR1 "$pid" 2>/dev/null || true; } # Jira Listener re-sends its heartbeat
 cmd_autostart() {
   case "${1:-}" in
-    on) loaded || { echo "error: the listener is off. Turn it on first: holding listener on   (then: holding listener autostart on)"; exit 1; }
+    on) loaded || { echo "error: the Jira Listener is off. Turn it on first: holding jira-listener start   (then: holding jira-listener autostart on)"; exit 1; }
         [ -f "$MASTER" ] || write_plist "$(plist_repo "$AUTO")"
         mkdir -p "$(dirname "$AUTO")"; cp "$MASTER" "$AUTO"; poke; echo "autostart ON (starts at login)." ;;
     off) rm -f "$AUTO"; poke; echo "autostart OFF (still running now: $(loaded && echo yes || echo no))." ;;
-    *) echo "usage: holding listener autostart on|off"; exit 2 ;;
+    *) echo "usage: holding jira-listener autostart on|off"; exit 2 ;;
   esac
 }
 
 case "${1:-status}" in
   status) cmd_status ;;
-  on) shift; cmd_on "$@" ;;
-  off) cmd_off ;;
+  on|start) shift; cmd_on "$@" ;;
+  off|stop) cmd_off ;;
   autostart) shift; cmd_autostart "${1:-}" ;;
-  logs) shift; if [ "${1:-}" = "-f" ]; then tail -f "$LOG"; else tail -n 30 "$LOG"; echo "--- launchd.err.log"; tail -n 10 "$LOG_DIR/launchd.err.log" 2>/dev/null || true; fi ;;
-  *) echo "usage: holding listener on [--repo DIR] | off | autostart on|off | status | logs [-f]"; exit 2 ;;
+  logs) shift; if [ "${1:-}" = "-f" ]; then tail -f "$LOG"; else tail -n 30 "$LOG"; echo "--- jira-listener.err.log"; tail -n 10 "$ERR" 2>/dev/null || true; fi ;;
+  *) echo "usage: holding jira-listener start [--repo DIR] | off | autostart on|off | status | logs [-f]"; exit 2 ;;
 esac
