@@ -14,10 +14,14 @@ This is the free company: two people, one plan, one build. The full edition adds
 
 ## Full version (license key)
 
-Got a license key (`ah_live_...`)? Install the full version on your Mac with one line:
+Got a license key (`ah_live_...`)? Add the server to your agent and sign in with the key when the browser opens. Works with Claude Code, Codex, Cursor and Grok:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jokerphuongnam/agents-holding-free/main/full/install.sh | bash
+claude mcp add --transport http --scope user agents-holding https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp   # Claude Code, then /mcp
+codex mcp add agents-holding --url https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp                           # Codex
+grok mcp add --transport http agents-holding https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp                 # Grok
 ```
 
-Then follow **[full/SETUP.md](full/SETUP.md)**. The full version runs on a hosted server, which holds all roles, skills and workflow logic. This repo only has the small local client: the Jira listener and the setup scripts.
+Slash commands come from the server as MCP prompts. The installer (`full/install.sh`) is optional: you only need it for the background Jira listener, which runs Grok, Claude Code or Codex on your Mac.
+
+Then follow **[full/SETUP.md](full/SETUP.md)**. The full version runs on a hosted server, which holds all roles, skills and workflow logic. This repo only has the optional local client (Jira listener and setup scripts) and the sign-in page (`docs/authorize.html`).

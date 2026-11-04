@@ -10,6 +10,10 @@ case "$1" in
   jira-keychain) shift; exec bash "$here/jira-keychain-setup.sh" "$@" ;;
   jira-workflow) shift; exec bash "$here/jira-setup-workflow.sh" "$@" ;;
   jira-webhook) shift; exec bash "$here/jira-register-webhook.sh" "$@" ;;
+  add-project) shift; exec node "$here/projects.mjs" add "$@" ;;
+  remove-project) shift; exec node "$here/projects.mjs" remove "$@" ;;
+  projects) shift; exec node "$here/projects.mjs" list "$@" ;;
+  agent) shift; exec node "$here/agent-cli.mjs" "$@" ;;
   open-setup) shift; exec bash "$here/open-setup.sh" "$@" ;;
   *) cat <<USAGE
 usage:
@@ -19,10 +23,14 @@ usage:
   holding listener status            running? PID, autostart, last 'join ok'
   holding listener logs [-f]         recent listener log
   holding doctor [--repo DIR]        check every local setup step
-  holding listen [--repo DIR] [--once]   run the listener in the foreground
+  holding listen [--repo DIR] [--once]   run the listener in the foreground (all registered projects, or only DIR)
   holding jira-keychain <site> <email>     store your Atlassian API token in the macOS Keychain (hidden prompt)
   holding jira-workflow <site> <email> <KEY> [--dry-run]   create missing Jira statuses/columns
   holding jira-webhook '<setup_url>'      register the Jira webhook (token from the Keychain)
+  holding add-project --jira-project KEY [--jira-project KEY2] [--company ID] [--name N] [--auto-pr on|off] [--agent A]   (inside a repo)
+  holding remove-project [--repo DIR|NAME] [--jira-project KEY]
+  holding projects [--json]           list repos and the Jira boards feeding them
+  holding agent [grok|claude|codex] [--model M] [--text-model M]   CLI the listener runs for this company (no args = show)
   holding open-setup '<setup_url>'        open the /connect-jira setup page
 USAGE
      exit 2 ;;

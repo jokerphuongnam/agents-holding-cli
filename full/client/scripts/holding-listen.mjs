@@ -1,17 +1,21 @@
 #!/usr/bin/env node
 // holding listen: wake the LOCAL agent when the server broadcasts a next_action for this repo's company.
-// Usage: holding listen [--repo DIR] [--once] [--dry-jira] | [--run ISSUE --event E --stage S [--dry-jira]]   (license: $AGENTS_HOLDING_KEY or ~/.config/agents-holding/license.txt|test-license.txt)
+// Multi-project: one process for every repo in ~/.config/agents-holding/projects.json (see registry.mjs; --repo DIR = only that repo).
+// Usage: holding listen [--repo DIR] [--once] [--dry-jira] | [--run ISSUE --event E --stage S [--dry-jira]]   (license: $AGENTS_HOLDING_KEY or Keychain agents-holding-license|agents-holding-test-license)
 // One agent run at a time; events arriving during a run are coalesced into one follow-up run. Logs: ~/Library/Logs/agents-holding/.
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { homedir, hostname } from "node:os";
 import { join, resolve } from "node:path";
 import * as L from "./lean.mjs";
+import * as R from "./registry.mjs";
 
 const args = process.argv.slice(2);
 const opt = (n, d) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : d; };
-const repo = resolve(opt("--repo", process.cwd()));
+const onlyRepo = opt("--repo") ? resolve(opt("--repo")) : null;
+let repo = onlyRepo ?? process.cwd(); // current run's repo (one run at a time; set per run by useCtx)
+let runRepos = [repo];
 const once = args.includes("--once");
 const base = process.env.AH_URL ?? "https://mznrffnvmhmiudvfuquk.supabase.co";
 const grokBin = process.env.GROK_BIN ?? "grok";
@@ -23,12 +27,29 @@ const stallMs = Number(process.env.AH_STALL_MIN ?? 5) * 60 * 1000;            //
 const log = (...m) => { const l = `${new Date().toISOString()} ${m.join(" ")}`; appendFileSync(logFile, l + "\n"); console.log(l); };
 
 function license() {
+  // Env override, then macOS Keychain (agents-holding-license, then agents-holding-test-license). Never plaintext files.
   if (process.env.AGENTS_HOLDING_KEY) return process.env.AGENTS_HOLDING_KEY.trim();
-  for (const f of ["license.txt", "test-license.txt"]) { const p = join(homedir(), ".config/agents-holding", f); if (existsSync(p)) return readFileSync(p, "utf8").trim(); }
-  throw new Error("no license: set AGENTS_HOLDING_KEY or ~/.config/agents-holding/license.txt");
+  for (const svc of ["agents-holding-license", "agents-holding-test-license"]) {
+    try { const v = execFileSync("security", ["find-generic-password", "-s", svc, "-a", process.env.USER ?? "", "-w"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); if (v) return v; } catch {}
+  }
+  throw new Error('no license: set AGENTS_HOLDING_KEY or: security add-generic-password -U -s agents-holding-license -a "$USER" -w');
 }
 const key = license();
-const company = JSON.parse(readFileSync(join(repo, ".agents/company.json"), "utf8")).company;
+// ---- project registry (many-to-many Jira boards <-> repos); old single-repo setup is migrated once ----
+const jiraSite = (() => { try { return JSON.parse(readFileSync(join(homedir(), ".config/agents-holding/jira.json"), "utf8")).site ?? null; } catch { return null; } })();
+let registry = R.load(homedir());
+if (!registry) {
+  registry = R.migrate(homedir(), onlyRepo ?? process.env.AH_REPO_DIR ?? process.cwd(), { site: jiraSite });
+  if (!registry) throw new Error("no projects: run `holding add-project --jira-project KEY` inside a repo");
+  R.save(homedir(), registry); log(`registry: migrated ${registry.projects[0].path} into ${R.registryPath(homedir())}`);
+}
+if (onlyRepo) {
+  registry = { ...registry, projects: registry.projects.filter((p) => p.path === onlyRepo) };
+  if (!registry.projects.length) { const m = R.migrate(homedir(), onlyRepo, { site: jiraSite }); if (!m) throw new Error(`${onlyRepo}: no .agents/company.json and not in projects.json`); registry = m; }
+}
+const companyList = R.companies(registry);
+let company = companyList[0];
+for (const p of registry.projects) log(`project ${p.name} ${p.path} boards ${p.boards.map((b) => `${b.project_key}@${b.company}`).join(",")} settings ${JSON.stringify(p.settings ?? {})}`);
 
 async function mcp(name, a) {
   const r = await fetch(`${base}/functions/v1/mcp`, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", Authorization: `Bearer ${key}` },
@@ -40,8 +61,8 @@ async function mcp(name, a) {
 
 // ---- server-side last-seen heartbeat (for /listener and /doctor); best effort ----
 const autostartPlist = join(homedir(), "Library/LaunchAgents/com.agentsholding.listener.plist");
-const heartbeat = () => mcp("listener_heartbeat", { company, host: hostname(), pid: process.pid, autostart: existsSync(autostartPlist), version: "1" })
-  .catch((e) => log("heartbeat failed:", e.message));
+const heartbeat = () => Promise.all(companyList.map((company) => mcp("listener_heartbeat", { company, host: hostname(), pid: process.pid, autostart: existsSync(autostartPlist), version: "2" })
+  .catch((e) => log("heartbeat failed:", e.message))));
 setInterval(heartbeat, 10 * 60 * 1000);
 process.on("SIGUSR1", () => heartbeat()); // `holding listener autostart on|off` pokes us to report the new state
 
@@ -55,8 +76,9 @@ process.on("SIGUSR1", () => heartbeat()); // `holding listener autostart on|off`
 //    no AI tokens; --dry-jira prints every Jira action instead and denies the Jira MCP to the agent;
 //  * tokens per run from the grok session usage.json -> listen.log + report_usage (/usage per task/stage).
 const dryJira = args.includes("--dry-jira");
-const sessFile = join(homedir(), ".config/agents-holding", `sessions-${company}.json`);
-const sessions = (() => { try { return JSON.parse(readFileSync(sessFile, "utf8")); } catch { return {}; } })();
+let sessFile, sessions;
+const loadSessions = () => { sessFile = join(homedir(), ".config/agents-holding", `sessions-${company}.json`); try { sessions = JSON.parse(readFileSync(sessFile, "utf8")); } catch { sessions = {}; } };
+loadSessions();
 const saveSessions = () => { try { writeFileSync(sessFile, JSON.stringify(sessions, null, 1), { mode: 0o600 }); } catch (e) { log("session store failed:", e.message); } };
 // ~/.config/agents-holding/jira.json (chmod 600): {"site","email","keychain_service"} -- NO token. The API token lives in the macOS
 // Keychain (security add-generic-password -s <keychain_service> -a <email> -w) and is read per request, kept in memory only.
@@ -72,7 +94,7 @@ const sessDir = (sid, home = join(homedir(), ".grok")) => join(home, "sessions",
 let running = false, runningIssue = null;
 const pending = new Map(); // issue -> latest notice
 function wake(p) {
-  const k = p.issue ?? p.task_id ?? "?";
+  const k = `${p.company ?? company}/${p.issue ?? p.task_id ?? "?"}`;
   if (running) {
     if (p.event === "agent_move" && k === runningIssue) { log(`chain: ignoring agent_move ${k} -> ${p.stage} (the active run continues it)`); return; }
     const had = pending.has(k); pending.delete(k); pending.set(k, p);
@@ -87,8 +109,29 @@ function wake(p) {
   });
 }
 
+// Route one notice to its repo(s): sets company/repo/runRepos for this run. Several candidate repos and no
+// repo:<name> label / component -> one Jira comment asking which, nothing runs (never guess).
+async function useCtx(p) {
+  const issue = p.issue ?? p.task_id ?? "";
+  company = p.company ?? company; loadSessions();
+  let meta = { labels: [], components: [] };
+  const cands = R.candidates(registry, { company, issue, site: jiraSite });
+  if (cands.length > 1 && jira) { try { meta = await jira.meta(issue); } catch (e) { log(`route: Jira labels for ${issue} failed (${e.message})`); } }
+  const r = R.route(registry, { company, issue, site: jiraSite, ...meta });
+  if (r.none) { log(`route: ${issue} (${company}) matches no registered repo; skipped`); return false; }
+  if (r.ask) {
+    const st = L.stateDir(homedir(), company);
+    if (!L.loadPlan(st, issue).repo_asked) { const t = R.askComment(issue, r.ask); if (jira) await jira.comment(issue, t).catch((e) => log("Jira comment failed:", e.message)); else log(`JIRA (no client): ${t.replace(/\n/g, " ")}`); L.savePlan(st, issue, { repo_asked: r.ask }); }
+    log(`route: ${issue} feeds ${r.ask.join(",")}; no repo:<name> label/component -> asked on Jira, waiting`); return false;
+  }
+  runRepos = r.repos.map((x) => x.path); repo = runRepos[0]; runSettings = r.repos[0].settings ?? {};
+  log(`route: ${issue} (${company}) -> ${r.repos.map((x) => x.name).join(", ")}`); return true;
+}
+let runSettings = {};
+
 async function run(p, depth = 0) {
   const issue = p.issue ?? p.task_id ?? "";
+  if (depth === 0 && !(await useCtx(p))) return;
   let na = null; try { na = await mcp("next_action", { company, task: issue, listener_jira: listenerJira }); } catch (e) { log("next_action failed:", e.message); }
   if (na?.waiting && p.event !== "manual") { log(`skip ${issue}: waiting (${na.stage})`); return; }
   if (lean && na) return leanRun(p, na, depth);
@@ -136,14 +179,15 @@ function usageOf(sid, home) { try { return JSON.parse(readFileSync(join(sessDir(
 
 function spawnGrok(gargs, out, issue, sid, o = {}) {
   return new Promise((res) => {
-    const env = o.home ? { ...process.env, GROK_HOME: o.home } : { ...process.env, AGENTS_HOLDING_KEY: key };
+    const env = o.env ?? (o.home ? { ...process.env, GROK_HOME: o.home } : { ...process.env, AGENTS_HOLDING_KEY: key });
     if (o.home) delete env.AGENTS_HOLDING_KEY; // lean runs need no server access
-    const ch = spawn("nice", ["-n", "10", grokBin, ...gargs], { cwd: repo, env, stdio: ["ignore", "pipe", "pipe"] });
-    ch.stdout.on("data", (d) => { appendFileSync(out, d); if (o.collect) o.collect.push(d); }); ch.stderr.on("data", (d) => appendFileSync(out, d));
+    const ch = spawn("nice", ["-n", "10", o.bin ?? grokBin, ...gargs], { cwd: repo, env, stdio: ["ignore", "pipe", "pipe"] });
+    let lastOut = Date.now(); // claude/codex have no grok events file: stdout activity counts as progress
+    ch.stdout.on("data", (d) => { lastOut = Date.now(); appendFileSync(out, d); if (o.collect) o.collect.push(d); }); ch.stderr.on("data", (d) => { lastOut = Date.now(); appendFileSync(out, d); });
     const t0 = Date.now(); let warned = "";
     const events = join(sessDir(sid, o.home), "events.jsonl");
     const watch = setInterval(() => {
-      let lines = []; let mtime = t0;
+      let lines = []; let mtime = o.env ? lastOut : t0;
       try { lines = readFileSync(events, "utf8").trim().split("\n"); mtime = Math.max(t0, statSync(events).mtimeMs); } catch {}
       const last = (() => { try { return JSON.parse(lines.at(-1)); } catch { return {}; } })();
       const idle = Date.now() - mtime;
@@ -165,18 +209,26 @@ function spawnGrok(gargs, out, issue, sid, o = {}) {
 // ---- lean run: scripts drive the stages, the model only writes text/code (see lean.mjs) ----
 async function leanModel(kind, issue, stage, prompt) {
   const sid = randomUUID(), out = join(logDir, `run-${Date.now()}.log`), buf = [];
-  const text = kind === "text";
-  const model = text ? (process.env.AH_TEXT_MODEL ?? "grok-4.7-build-fast") : (process.env.AH_MODEL || null);
-  const gargs = L.leanGrokArgs({ sid, model, text, prompt, schema: text ? L.TEXT_SCHEMA : L.CODE_SCHEMA, system: text ? L.TEXT_SYSTEM : null });
-  log(`lean ${kind} call for ${issue} ${stage} session ${sid} ${model ?? "default model"} prompt ${prompt.length} chars -> ${out}`);
-  const t0 = Date.now(); const code = await spawnGrok(gargs, out, issue, sid, { home: leanHome, collect: buf }); const wall = Date.now() - t0;
-  const u = usageOf(sid, leanHome);
+  const text = kind === "text", schema = text ? L.TEXT_SCHEMA : L.CODE_SCHEMA, system = text ? L.TEXT_SYSTEM : null;
+  const { agent, model, bin } = L.resolveAgent({ cfg: { agent: runSettings?.agent, model: runSettings?.model, text_model: runSettings?.text_model, ...L.loadAgentCfg(homedir(), company) }, text });
+  let gargs, o = { collect: buf };
+  if (agent === "claude") { gargs = L.claudeArgs({ model, text, prompt, schema, system }); o = { ...o, bin, env: { ...process.env } }; }
+  else if (agent === "codex") {
+    const schemaFile = join(logDir, `schema-${sid}.json`); writeFileSync(schemaFile, JSON.stringify({ ...schema, additionalProperties: false, required: Object.keys(schema.properties) }));
+    gargs = L.codexArgs({ model, text, prompt, schemaFile, system }); o = { ...o, bin, env: { ...process.env, CODEX_HOME: L.leanCodexHome(homedir()) } };
+  } else { gargs = L.leanGrokArgs({ sid, model, text, prompt, schema, system }); o = { ...o, home: leanHome, bin }; }
+  if (o.env) delete o.env.AGENTS_HOLDING_KEY; // lean runs need no server access
+  log(`lean ${kind} call for ${issue} ${stage} agent ${agent} session ${sid} ${model ?? "default model"} prompt ${prompt.length} chars -> ${out}`);
+  const t0 = Date.now(); const code = await spawnGrok(gargs, out, issue, sid, o); const wall = Date.now() - t0;
+  const stdout = Buffer.concat(buf).toString("utf8");
+  let r, u = null;
+  if (agent === "grok") { r = L.parseResult(stdout); const g = usageOf(sid, leanHome); if (g) u = { input: g.inputTokens, output: g.outputTokens, cached: g.cachedReadTokens, reasoning: g.reasoningTokens ?? 0, calls: g.modelCalls, model: g.primaryModelId }; }
+  else { const p = agent === "claude" ? L.parseClaude(stdout, model) : L.parseCodex(stdout, model); r = p.result; u = p.usage; if (p.error) log(`lean ${kind} ${agent} error for ${issue}: ${p.error.slice(0, 200)}`); }
   if (u) {
-    log(`TOKENS ${issue} ${stage}: input ${u.inputTokens} output ${u.outputTokens} cached ${u.cachedReadTokens} reasoning ${u.reasoningTokens ?? 0} calls ${u.modelCalls} model ${u.primaryModelId} wall ${Math.round(wall / 1000)}s session ${sid} (lean ${kind})`);
-    mcp("report_usage", { company, issue, stage, session_id: sid, model: u.primaryModelId, input_tokens: u.inputTokens, output_tokens: u.outputTokens, cached_tokens: u.cachedReadTokens,
-      reasoning_tokens: u.reasoningTokens ?? 0, model_calls: u.modelCalls, wall_ms: wall, dry: dryJira }).catch((e) => log("report_usage failed:", e.message));
-  }
-  const r = L.parseResult(Buffer.concat(buf).toString("utf8"));
+    log(`TOKENS ${issue} ${stage}: input ${u.input} output ${u.output} cached ${u.cached} reasoning ${u.reasoning} calls ${u.calls} model ${u.model ?? agent} wall ${Math.round(wall / 1000)}s session ${sid} (lean ${kind}, ${agent})`);
+    mcp("report_usage", { company, issue, stage, session_id: sid, model: u.model ?? agent, input_tokens: u.input, output_tokens: u.output, cached_tokens: u.cached,
+      reasoning_tokens: u.reasoning, model_calls: u.calls, wall_ms: wall, dry: dryJira }).catch((e) => log("report_usage failed:", e.message));
+  } else log(`TOKENS ${issue} ${stage}: no usage reported by ${agent}`);
   if (code !== 0) log(`lean ${kind} call exited ${code} for ${issue}`);
   return r;
 }
@@ -213,7 +265,7 @@ async function leanRun(p, na, depth = 0) {
     }
     const branch = `feature/${issue}`;
     const host = (r) => { const steps = L.prSteps(na, seg);
-      const h = L.gitHost(repo, { ...steps, autoPr: !!na.auto_pr && !dryJira, branch, title: `${issue}: ${iss.summary}`.slice(0, 120), body: `${r?.summary ?? ""}
+      const h = L.gitHost(repo, { ...steps, autoPr: !!na.auto_pr && runSettings.auto_pr !== false && !dryJira, branch, title: `${issue}: ${iss.summary}`.slice(0, 120), body: `${r?.summary ?? ""}
 
 Jira: ${issue}` });
       if (steps.open || steps.merge) log(`lean git host (${na.auto_pr ? "auto_pr ON" : "auto_pr OFF"}${dryJira ? ", dry: no push" : ""}): ${h.msg.join("; ")}`); return h; };
@@ -232,15 +284,24 @@ Jira: ${issue}` });
       for (let i = 0; i < seg.stages.length; i++) { const to = seg.moves[i]; if (!to) break; await record("note", note); if (!(await advance(seg.stages[i], to))) return; }
       continue;
     }
-    // code segment: one coding call covers pre_coding .. in_review log(`lean: branch ${branch}: ${L.ensureBranch(repo, branch)}`);
-    let files = []; try { files = L.git(repo, "ls-files").split("\n").filter(Boolean); } catch {}
+    // code segment: one coding call covers pre_coding .. in_review; a task targeting several repos gets feature/<KEY> + one call per repo
     const approval = seg.stages.includes("pre_coding") || p.event === "user_approved" ? "Plan approved; go ahead." : null;
-    const r = await leanModel("code", issue, seg.stages.join(">"), L.codePrompt(iss, { plan, approval, feedback: fb, hints: L.fileHints(files, `${iss.summary} ${iss.description} ${plan ?? ""}`), qc: seg.stages.includes("qc") }));
-    if (r.question && !r.tech_plan) { await record("question", r.question); await say(`${L.AGENT_MARK} QUESTION\n${r.question}`); return; }
-    const sha = L.commitAll(repo, `${issue}: ${r.commit_message || iss.summary || "agent change"}`);
-    const h = host(r);
-    const where = `Branch ${branch}${sha ? ` @ ${sha}` : " (no changes)"}${h.url ? ` PR ${h.url}${h.merged ? " (merged)" : ""}` : " (local, not pushed)"}${h.msg.length && !h.url ? ` - ${h.msg.join("; ")}` : ""}`;
-    L.savePlan(st, issue, { tech_plan: r.tech_plan, summary: r.summary, tests: r.tests, commit: sha, branch });
+    let r = null; const wheres = [];
+    for (const rp of runRepos) {
+      repo = rp;
+      log(`lean: ${rp} branch ${branch}: ${L.ensureBranch(rp, branch)}`);
+      let files = []; try { files = L.git(rp, "ls-files").split("\n").filter(Boolean); } catch {}
+      const multi = runRepos.length > 1 ? `\nThis task spans repos ${runRepos.map((x) => x.split("/").pop()).join(", ")}; you are in ${rp.split("/").pop()}: change only what belongs here.` : "";
+      const r1 = await leanModel("code", issue, seg.stages.join(">"), L.codePrompt(iss, { plan: (plan ?? "") + multi, approval, feedback: fb, hints: L.fileHints(files, `${iss.summary} ${iss.description} ${plan ?? ""}`), qc: seg.stages.includes("qc") }));
+      if (r1.question && !r1.tech_plan) { await record("question", r1.question); await say(`${L.AGENT_MARK} QUESTION (${rp.split("/").pop()})\n${r1.question}`); repo = runRepos[0]; return; }
+      const sha = L.commitAll(rp, `${issue}: ${r1.commit_message || iss.summary || "agent change"}`);
+      const h = host(r1);
+      wheres.push(`${runRepos.length > 1 ? rp.split("/").pop() + ": " : ""}Branch ${branch}${sha ? ` @ ${sha}` : " (no changes)"}${h.url ? ` PR ${h.url}${h.merged ? " (merged)" : ""}` : " (local, not pushed)"}${h.msg.length && !h.url ? ` - ${h.msg.join("; ")}` : ""}`);
+      if (!r) r = { ...r1, commit: sha }; else r = { ...r, summary: `${r.summary ?? ""}\n${r1.summary ?? ""}`, tests: [r.tests, r1.tests].filter(Boolean).join("\n"), tech_plan: [r.tech_plan, r1.tech_plan].filter(Boolean).join("\n") };
+    }
+    repo = runRepos[0];
+    const where = wheres.join("\n"), sha = r.commit;
+    L.savePlan(st, issue, { tech_plan: r.tech_plan, summary: r.summary, tests: r.tests, commit: sha, branch, repos: runRepos });
     const art = (k) => ({ tech_plan: r.tech_plan, pr: `${r.summary}\n${where}`, qc_pass: r.tests || r.summary, note: `${r.summary}\n${r.tests ?? ""}\n${where}` }[k] ?? r.summary);
     await say([`${L.AGENT_MARK} DONE`, r.tech_plan && `Tech plan:\n${r.tech_plan}`, `Summary: ${r.summary ?? ""}`, r.tests && `Checks: ${r.tests}`, where].filter(Boolean).join("\n"));
     for (let i = 0; i < seg.stages.length; i++) {
@@ -298,8 +359,10 @@ function grokArgs(prompt, sid, o = {}) {
 }
 
 // ---- Supabase Realtime (Phoenix v1 protocol over native WebSocket) ----
-let ref = 0, backoff = 1000;
-async function connect() {
+let ref = 0;
+const backoffs = {};
+async function connect(company) {
+  backoffs[company] ??= 1000;
   const sub = await mcp("realtime_subscription", { company });
   const ws = new WebSocket(`${sub.url.replace(/^http/, "ws")}/realtime/v1/websocket?apikey=${sub.publishable_key}&vsn=1.0.0`);
   const topic = `realtime:${sub.topic}`;
@@ -311,10 +374,10 @@ async function connect() {
   };
   ws.onmessage = (m) => {
     const msg = JSON.parse(m.data);
-    if (msg.event === "phx_reply" && msg.topic === topic) { log("join", msg.payload.status, "company", company); if (msg.payload.status === "ok") { backoff = 1000; heartbeat(); } }
+    if (msg.event === "phx_reply" && msg.topic === topic) { log("join", msg.payload.status, "company", company); if (msg.payload.status === "ok") { backoffs[company] = 1000; heartbeat(); } }
     if (msg.event === "broadcast" && msg.payload?.event === "next_action") {
-      const p = msg.payload.payload ?? {};
-      log("next_action", p.event, p.issue ?? p.task_id ?? "", "stage", p.stage, p.waiting ? "(waiting on user)" : "");
+      const p = { ...(msg.payload.payload ?? {}), company };
+      log("next_action", company, p.event, p.issue ?? p.task_id ?? "", "stage", p.stage, p.waiting ? "(waiting on user)" : "");
       if (p.waiting) return; // user gate
       // agent_move: the agent's own advance. If a run for that issue is still active it is queued and handled
       // after exit (the run may stop right after advancing, e.g. pre_coding -> coding, leaving the new stage undone).
@@ -322,13 +385,13 @@ async function connect() {
       return;
     }
   };
-  ws.onclose = () => { clearInterval(hb); log("socket closed; reconnect in", backoff, "ms"); setTimeout(() => connect().catch(fail), backoff); backoff = Math.min(backoff * 2, 60000); };
+  ws.onclose = () => { clearInterval(hb); const b = backoffs[company]; log("socket closed", company, "; reconnect in", b, "ms"); setTimeout(() => connect(company).catch(fail(company)), b); backoffs[company] = Math.min(b * 2, 60000); };
   ws.onerror = () => {};
 }
-const fail = (e) => { log("error", e.message); setTimeout(() => connect().catch(fail), backoff); backoff = Math.min(backoff * 2, 60000); };
+const fail = (company) => (e) => { const b = backoffs[company] ?? 1000; log("error", company, e.message); setTimeout(() => connect(company).catch(fail(company)), b); backoffs[company] = Math.min(b * 2, 60000); };
 // Manual one-shot replay of a missed/killed run: holding listen --run PROJ-1 --event user_comment --stage todo
-if (opt("--run")) { log("manual run", opt("--run")); wake({ issue: opt("--run"), event: opt("--event", "manual"), stage: opt("--stage", "?") }); }
+if (opt("--run")) { log("manual run", opt("--run")); wake({ company: opt("--company", company), issue: opt("--run"), event: opt("--event", "manual"), stage: opt("--stage", "?") }); }
 else {
-log("holding listen: repo", repo, lean ? "LEAN" : "legacy", dryJira ? "DRY-JIRA" : listenerJira ? "jira-by-listener" : "jira-by-agent", "mcp", mcpServers().join(","), "timeout", runTimeoutMs / 60000, "min");
-connect().catch(fail);
+log("holding listen:", registry.projects.length, "project(s),", companyList.length, "company subscription(s)", lean ? "LEAN" : "legacy", dryJira ? "DRY-JIRA" : listenerJira ? "jira-by-listener" : "jira-by-agent", "mcp", mcpServers().join(","), "timeout", runTimeoutMs / 60000, "min");
+for (const c of companyList) connect(c).catch(fail(c));
 }

@@ -1,0 +1,24 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer"><title>agents-holding · sign in</title>
+<style>body{font:15px/1.5 system-ui,sans-serif;max-width:440px;margin:64px auto;padding:0 16px;color:#172b4d}h1{font-size:21px}
+input{width:100%;box-sizing:border-box;padding:9px;font:14px ui-monospace,monospace;margin:6px 0 14px}button{padding:9px 16px;font-size:15px;cursor:pointer}
+.err{color:#c9372c;background:#ffeceb;padding:8px 10px;border-radius:6px}.muted{color:#626f86;font-size:13px}</style></head>
+<body><h1>Connect <span id="client">your agent</span> to agents-holding</h1>
+<p>Enter the license key you were given (<code>ah_live_…</code>). Your agent receives an access token for this license; the key itself is not given to the agent.</p>
+<p id="err" class="err" hidden></p>
+<form id="f" method="post"><label for="k">License key</label>
+<input id="k" name="license_key" type="password" autocomplete="current-password" required autofocus placeholder="ah_live_...">
+<button type="submit">Connect</button> <button type="submit" name="cancel" value="1" formnovalidate>Cancel</button></form>
+<p class="muted">No key? See <a href="https://github.com/jokerphuongnam/agents-holding-free">agents-holding-free</a>.</p>
+<script>
+const q = new URLSearchParams(location.search), f = document.getElementById("f");
+const action = q.get("action") || "";
+if (!/^https:\/\/[a-z0-9-]+\.supabase\.co\/functions\/v1\/mcp\/authorize$/.test(action)) { document.body.innerHTML = "<h1>Invalid sign-in link</h1><p>Start again from your agent.</p>"; }
+f.action = action;
+for (const k of ["client_id","redirect_uri","response_type","code_challenge","code_challenge_method","state","scope","resource"]) {
+  if (!q.has(k)) continue; const i = document.createElement("input"); i.type = "hidden"; i.name = k; i.value = q.get(k); f.appendChild(i); }
+if (q.get("client_name")) document.getElementById("client").textContent = q.get("client_name");
+const msg = { invalid_key: "That license key was not accepted. Check it and try again.", too_many_attempts: "Too many failed attempts. Wait 15 minutes and try again.",
+  license_expired: "This license has expired. Use /renew or contact the person who gave you the key.", license_revoked: "This license is revoked." }[q.get("error")] || (q.get("error") ? "Sign-in failed: " + q.get("error") : "");
+if (msg) { const e = document.getElementById("err"); e.textContent = msg; e.hidden = false; }
+</script></body></html>

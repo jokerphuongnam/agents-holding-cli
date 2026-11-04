@@ -3,7 +3,8 @@
 // transitions (via jiraOps), branch + commit. The model is called only for the text it must write:
 //   * text stages (product_work / ba_question / plan revision): ONE tool-less call, cheap model, JSON {plan|question}
 //   * code stages (pre_coding .. in_review chain): ONE coding call, JSON {tech_plan, summary, tests, commit_message}
-// Every model call is a FRESH session (no resume) in a lean GROK_HOME (no plugins, no MCP servers, no vendor skills),
+// Every model call is a FRESH session (no resume) with no MCP servers (lean GROK_HOME / CODEX_HOME, claude --strict-mcp-config);
+// the CLI is grok (default), claude or codex, see agents.mjs (AH_AGENT or per-company agent.json),
 // with a short saved plan (state dir) + the user's approval/feedback instead of the old conversation.
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -115,6 +116,7 @@ export function jiraClient(cfg, { dry, log }) {
     if (!r.ok) throw new Error(`Jira ${m} ${path.split("?")[0]} -> ${r.status}`); return r.status === 204 ? null : r.json(); };
   return {
     async issue(key) { return req("GET", `/issue/${encodeURIComponent(key)}?fields=summary,description,comment`); },
+    async meta(key) { const j = await req("GET", `/issue/${encodeURIComponent(key)}?fields=labels,components`); return { labels: j.fields?.labels ?? [], components: (j.fields?.components ?? []).map((c) => c.name) }; },
     async comment(key, text) {
       if (dry) return log(`JIRA (dry): comment ${key} "${text.slice(0, 160).replace(/\n/g, " ")}${text.length > 160 ? "…" : ""}"`);
       const content = text.split("\n").map((l) => ({ type: "paragraph", content: l ? [{ type: "text", text: l }] : [] }));
@@ -189,3 +191,5 @@ export function gitHost(repo, o, exec = (c, a) => execFileSync(c, a, { cwd: repo
   }
   return r;
 }
+
+export * from "./agents.mjs";

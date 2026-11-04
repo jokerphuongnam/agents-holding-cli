@@ -10,8 +10,8 @@ for p in "$MASTER" "$AUTO"; do [ -z "$repo" ] && [ -f "$p" ] && repo="$(/usr/lib
 left=0
 ok()  { echo "[x] $1"; }
 bad() { echo "[ ] $1"; echo "      How: $2"; left=$((left+1)); }
-if [ -n "${AGENTS_HOLDING_KEY:-}" ] || [ -f "$CFG/license.txt" ] || [ -f "$CFG/test-license.txt" ]; then ok "License key available (env or ~/.config/agents-holding/license.txt)"
-else bad "License key for the background listener" "printf %s 'ah_live_…' > ~/.config/agents-holding/license.txt && chmod 600 ~/.config/agents-holding/license.txt"; fi
+if [ -n "${AGENTS_HOLDING_KEY:-}" ] || security find-generic-password -s agents-holding-license -a "$USER" >/dev/null 2>&1 || security find-generic-password -s agents-holding-test-license -a "$USER" >/dev/null 2>&1; then ok "License key available (env or Keychain agents-holding-license)"
+else bad "License key for the background listener" "security add-generic-password -U -s agents-holding-license -a \"\$USER\" -w   (paste at the hidden prompt)"; fi
 command -v node >/dev/null && [ "$(node -p 'typeof WebSocket' 2>/dev/null)" = function ] && ok "node $(node -v) with WebSocket ($(command -v node))" || bad "node >= 22 on PATH" "brew install node"
 if [ -n "$repo" ] && [ -f "$repo/.agents/company.json" ]; then ok "Company repo: $repo"; else bad "Company repo with .agents/company.json" "run /holding-ceo in your repo, then: holding listener on --repo <repo>"; fi
 if grep -qs "mcp.atlassian.com" "$HOME/.grok/config.toml" ${repo:+"$repo/.grok/config.toml"}; then
