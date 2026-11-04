@@ -35,6 +35,10 @@ function license() {
   throw new Error('no license: set AGENTS_HOLDING_KEY or: security add-generic-password -U -s agents-holding-license -a "$USER" -w');
 }
 const key = license();
+// 1 key = 1 machine: per-machine id generated once by connect.sh/install.sh into the Keychain (agents-holding-device).
+const device = (() => { if (process.env.AGENTS_HOLDING_DEVICE) return process.env.AGENTS_HOLDING_DEVICE.trim();
+  try { return execFileSync("security", ["find-generic-password", "-s", "agents-holding-device", "-a", process.env.USER ?? "", "-w"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { return ""; } })();
+const deviceHeaders = device ? { "X-AH-Device": device, "X-AH-Device-Name": (process.env.AGENTS_HOLDING_DEVICE_NAME || hostname()).slice(0, 80) } : {};
 // ---- project registry (many-to-many Jira boards <-> repos); old single-repo setup is migrated once ----
 const jiraSite = (() => { try { return JSON.parse(readFileSync(join(homedir(), ".config/agents-holding/jira.json"), "utf8")).site ?? null; } catch { return null; } })();
 let registry = R.load(homedir());
@@ -52,7 +56,7 @@ let company = companyList[0];
 for (const p of registry.projects) log(`project ${p.name} ${p.path} boards ${p.boards.map((b) => `${b.project_key}@${b.company}`).join(",")} settings ${JSON.stringify(p.settings ?? {})}`);
 
 async function mcp(name, a) {
-  const r = await fetch(`${base}/functions/v1/mcp`, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", Authorization: `Bearer ${key}` },
+  const r = await fetch(`${base}/functions/v1/mcp`, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", Authorization: `Bearer ${key}`, ...deviceHeaders },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: a } }) });
   const j = await r.json(); const t = j.result?.content?.[0]?.text;
   if (!t || j.result.isError) throw new Error(`${name} failed: ${t ?? JSON.stringify(j.error)}`);

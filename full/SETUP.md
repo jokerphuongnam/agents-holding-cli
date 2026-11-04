@@ -12,7 +12,17 @@ The examples use sample values. Replace them with your own:
 | `you@example.com` | your Atlassian login email |
 | `SHOP` | your Jira project key |
 
-## 1. Connect your agent (2 minutes, no install)
+## 1. Connect your agent (2 minutes)
+
+**One command (recommended, macOS, no Node needed):**
+```bash
+curl -fsSL https://raw.githubusercontent.com/jokerphuongnam/agents-holding-free/main/full/connect.sh | bash
+```
+It asks your key at a hidden prompt and keeps it only in the macOS Keychain, creates this Mac's device id, adds agents-holding to Grok (and Claude Code / Codex if installed), adds two Keychain loader lines to `~/.zshrc`, and runs `grok mcp doctor agents-holding`. Open a new terminal afterwards.
+
+**1 key = 1 machine.** A key binds to the first machine that uses it (the `X-AH-Device` header from the Keychain id, or the sign-in page's browser id). Another machine gets "bound to another machine"; ask the owner to run `/token-reset-device`, then connect the new machine.
+
+Manual alternative (OAuth sign-in page):
 
 Add the server URL to your agent. The first time it connects, your browser opens a small sign-in page: paste your license key and click **Connect**. The agent gets its own access token for your license (renewed automatically); the key is not stored in any config file.
 
@@ -44,8 +54,10 @@ If your Grok version does not open the sign-in page, use the key header instead,
 ```bash
 security add-generic-password -U -s agents-holding-license -a "$USER" -w     # paste the key at the hidden prompt
 echo 'export AGENTS_HOLDING_KEY="$(security find-generic-password -s agents-holding-license -a "$USER" -w 2>/dev/null)"' >> ~/.zshrc
+security add-generic-password -U -s agents-holding-device -a "$USER" -w "mac-$(uuidgen | tr -d -)"   # this machine's id, once
+echo 'export AGENTS_HOLDING_DEVICE="$(security find-generic-password -s agents-holding-device -a "$USER" -w 2>/dev/null)"' >> ~/.zshrc
 ```
-then add `headers = { "Authorization" = "Bearer ${AGENTS_HOLDING_KEY}" }` under `[mcp_servers.agents-holding]` in `~/.grok/config.toml` (the installer below does this for you).
+then add `headers = { "Authorization" = "Bearer ${AGENTS_HOLDING_KEY}", "X-AH-Device" = "${AGENTS_HOLDING_DEVICE}" }` under `[mcp_servers.agents-holding]` in `~/.grok/config.toml` (`connect.sh` above does all of this for you).
 
 **Slash commands** come from the server as MCP prompts, so there is nothing to copy. Grok: `/ceo`, `/doctor`. Claude Code: `/mcp__agents-holding__ceo`. Codex and Cursor list them under the server's prompts. `help` lists them all.
 
@@ -144,6 +156,7 @@ The assistant warns you 7 days before the key expires. `/whoami` shows the plan 
 holding listener off
 rm -rf ~/.agents-holding ~/.local/bin/holding ~/.config/agents-holding
 security delete-generic-password -s agents-holding-license 2>/dev/null
+security delete-generic-password -s agents-holding-device 2>/dev/null
 security delete-generic-password -s agents-holding-atlassian 2>/dev/null
 claude mcp remove agents-holding --scope user; codex mcp remove agents-holding   # whichever you use
 # Grok: remove [mcp_servers.agents-holding] from ~/.grok/config.toml and the agents-holding line from ~/.zshrc

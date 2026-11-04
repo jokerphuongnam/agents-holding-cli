@@ -37,7 +37,12 @@ if [ -z "$NOKEY" ]; then
     say "Paste your license key (ah_live_...) twice at the hidden Keychain prompt:"
     security add-generic-password -U -s "$SVC" -a "$USER" -l "agents-holding license" -w < /dev/tty
   fi
-  code=$( { printf 'header = "Authorization: Bearer '; security find-generic-password -s "$SVC" -a "$USER" -w | tr -d '\n'; printf '"\n'; } | curl -s -o /dev/null -w '%{http_code}' -K - \
+  # 1 key = 1 machine: per-machine device id (sha256 of the hardware UUID) in the Keychain, sent as X-AH-Device
+  if ! security find-generic-password -s agents-holding-device -a "$USER" >/dev/null 2>&1; then
+    hw="$(ioreg -rd1 -c IOPlatformExpertDevice | awk -F'"' '/IOPlatformUUID/{print $4}')"; [ -n "$hw" ] || hw="$(uuidgen)"
+    security add-generic-password -U -s agents-holding-device -a "$USER" -l "agents-holding device id" -w "mac-$(printf 'agents-holding:%s' "$hw" | shasum -a 256 | cut -c1-32)"
+  fi
+  code=$( { printf 'header = "X-AH-Device: '; security find-generic-password -s agents-holding-device -a "$USER" -w | tr -d '\n'; printf '"\n'; printf 'header = "Authorization: Bearer '; security find-generic-password -s "$SVC" -a "$USER" -w | tr -d '\n'; printf '"\n'; } | curl -s -o /dev/null -w '%{http_code}' -K - \
     -X POST "$MCP_URL" -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" --data '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' || true)
   [ "$code" = 200 ] && say "License key accepted by the server" || warn "The server answered $code for the stored key. Fix it: security add-generic-password -U -s $SVC -a \"\$USER\" -w"
 fi
@@ -52,10 +57,11 @@ for a in ${LIST[@]+"${LIST[@]}"}; do case "$a" in
     else codex mcp add agents-holding --url "$MCP_URL" < /dev/tty || warn "codex mcp add failed"; say "Codex: if no browser opened, run: codex mcp login agents-holding"; fi ;;
   grok) GC="$HOME/.grok/config.toml"; mkdir -p "$HOME/.grok"
     if grep -qs '^\[mcp_servers.agents-holding\]' "$GC"; then say "Grok already has agents-holding"
-    else printf '\n[mcp_servers.agents-holding]\nurl = "%s"\nheaders = { "Authorization" = "Bearer ${AGENTS_HOLDING_KEY}" }\n' "$MCP_URL" >> "$GC"; say "Grok: added agents-holding to $GC (key from the Keychain via \$AGENTS_HOLDING_KEY)"; fi
+    else printf '\n[mcp_servers.agents-holding]\nurl = "%s"\nheaders = { "Authorization" = "Bearer ${AGENTS_HOLDING_KEY}", "X-AH-Device" = "${AGENTS_HOLDING_DEVICE}" }\n' "$MCP_URL" >> "$GC"; say "Grok: added agents-holding to $GC (key + device id from the Keychain via env)"; fi
     PROFILE="$HOME/.zshrc"; [ "${SHELL##*/}" = bash ] && PROFILE="$HOME/.bashrc"
     LINE='export AGENTS_HOLDING_KEY="$(security find-generic-password -s agents-holding-license -a "$USER" -w 2>/dev/null)"'
-    grep -qsF 'agents-holding-license' "$PROFILE" || { printf '\n# agents-holding (Grok MCP header; key stays in the Keychain)\n%s\n' "$LINE" >> "$PROFILE"; say "Added the Keychain loader to $PROFILE"; } ;;
+    grep -qsF 'agents-holding-license' "$PROFILE" || { printf '\n# agents-holding (Grok MCP header; key stays in the Keychain)\n%s\n' "$LINE" >> "$PROFILE"; say "Added the Keychain loader to $PROFILE"; }
+    grep -qsF 'AGENTS_HOLDING_DEVICE=' "$PROFILE" || printf '%s\n' 'export AGENTS_HOLDING_DEVICE="$(security find-generic-password -s agents-holding-device -a "$USER" -w 2>/dev/null)"' >> "$PROFILE" ;;
   *) warn "unknown agent '$a' (grok|claude|codex)";; esac; done
 
 cat <<NEXT
