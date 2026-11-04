@@ -59,7 +59,7 @@ echo 'export AGENTS_HOLDING_DEVICE="$(security find-generic-password -s agents-h
 ```
 then add `headers = { "Authorization" = "Bearer ${AGENTS_HOLDING_KEY}", "X-AH-Device" = "${AGENTS_HOLDING_DEVICE}" }` under `[mcp_servers.agents-holding]` in `~/.grok/config.toml` (`connect.sh` above does all of this for you).
 
-**Slash commands** come from the server as MCP prompts, so there is nothing to copy. Grok: `/ceo`, `/doctor`. Claude Code: `/mcp__agents-holding__ceo`. Codex and Cursor list them under the server's prompts. `help` lists them all.
+**Slash commands.** The server defines them (MCP prompts). Claude Code lists them as `/mcp__agents-holding__ceo`; Codex and Cursor list them under the server's prompts. **Grok CLI does not show MCP prompts**: it loads command files from `~/.grok/commands/*.md`, which `connect.sh` (and `install.sh`) write for you and refresh on every run; run `holding sync-commands` (or rerun `connect.sh`) to pick up new server commands. Names that clash with Grok built-ins get an `ah-` prefix: `/ah-doctor`, `/ah-help`, `/ah-plan`, `/ah-status`, `/ah-usage`, `/ah-history`, `/ah-tasks`. `/ah-help` (or `help` elsewhere) lists them all.
 
 ## 2. Create your company
 

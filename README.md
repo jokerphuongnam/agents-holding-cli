@@ -22,6 +22,6 @@ codex mcp add agents-holding --url https://mznrffnvmhmiudvfuquk.supabase.co/func
 grok mcp add --transport http agents-holding https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp                 # Grok
 ```
 
-Slash commands come from the server as MCP prompts. The installer (`full/install.sh`) is optional: you only need it for the background Jira listener, which runs Grok, Claude Code or Codex on your Mac.
+Slash commands come from the server as MCP prompts (Grok CLI: as command files in ~/.grok/commands, written by `full/connect.sh` or `holding sync-commands`). The installer (`full/install.sh`) is optional: you only need it for the background Jira listener, which runs Grok, Claude Code or Codex on your Mac.
 
 Then follow **[full/SETUP.md](full/SETUP.md)**. The full version runs on a hosted server, which holds all roles, skills and workflow logic. This repo only has the optional local client (Jira listener and setup scripts) and the sign-in page (`docs/authorize.html`).

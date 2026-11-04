@@ -64,6 +64,8 @@ for a in ${LIST[@]+"${LIST[@]}"}; do case "$a" in
     grep -qsF 'AGENTS_HOLDING_DEVICE=' "$PROFILE" || printf '%s\n' 'export AGENTS_HOLDING_DEVICE="$(security find-generic-password -s agents-holding-device -a "$USER" -w 2>/dev/null)"' >> "$PROFILE" ;;
   *) warn "unknown agent '$a' (grok|claude|codex)";; esac; done
 
+case ",$AGENTS," in *,grok,*) bash "$DEST/scripts/sync-commands.sh" && say "Grok slash commands synced into ~/.grok/commands (refresh: holding sync-commands)" || warn "holding sync-commands failed; rerun it later";; esac
+
 cat <<NEXT
 
 Done. Next (guide: https://github.com/$REPO/blob/main/full/SETUP.md):

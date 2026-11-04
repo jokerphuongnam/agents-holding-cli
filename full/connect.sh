@@ -4,7 +4,7 @@
 # 1) asks your license key at a hidden Keychain prompt (never echoed, never in a file)  2) creates this machine's device id
 # (1 key = 1 machine) in the Keychain  3) adds agents-holding to Grok (~/.grok/config.toml), Claude Code and Codex if installed,
 # reading the key/device from env vars  4) adds the Keychain loader to ~/.zshrc (idempotent)  5) health check.
-# Env: AH_MCP_URL, AH_AGENTS=grok,claude,codex (default: installed ones), AH_NO_DOCTOR=1.
+# Env: AH_MCP_URL, AH_AGENTS=grok,claude,codex (default: installed ones), AH_NO_DOCTOR=1, AH_OWNER=1 (owner Mac: also owner commands).
 set -euo pipefail
 MCP_URL="${AH_MCP_URL:-https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp}"
 KSVC="agents-holding-license"; DSVC="agents-holding-device"
@@ -72,11 +72,18 @@ add 'AGENTS_HOLDING_DEVICE=' 'export AGENTS_HOLDING_DEVICE="$(security find-gene
 add 'AGENTS_HOLDING_DEVICE_NAME=' "export AGENTS_HOLDING_DEVICE_NAME=\"$AGENTS_HOLDING_DEVICE_NAME\""
 say "Shell profile: $PROFILE loads the key and device id from the Keychain"
 
-# 6. health check
+# 6. Grok slash commands: Grok does not list MCP prompts, it loads ~/.grok/commands/*.md -> sync them (refreshed on every run)
+if [[ ",$AGENTS," == *",grok,"* ]]; then
+  SYNC="${AH_SRC:+$AH_SRC/full/client/scripts/sync-commands.sh}"
+  if [ -z "$SYNC" ]; then SYNC="$(mktemp)"; curl -fsSL "https://raw.githubusercontent.com/jokerphuongnam/agents-holding-free/${AH_BRANCH:-main}/full/client/scripts/sync-commands.sh" -o "$SYNC"; fi
+  bash "$SYNC" ${AH_OWNER:+--owner} && say "Grok slash commands synced into ~/.grok/commands (refresh: rerun this, or holding sync-commands)" || warn "could not sync slash commands"
+fi
+
+# 6b. health check
 GROK="$(command -v grok || echo "$HOME/.grok/bin/grok")"
 if [ -z "${AH_NO_DOCTOR:-}" ] && [ -x "$GROK" ] && [[ ",$AGENTS," == *",grok,"* ]]; then
   out="$(cd "$HOME" && "$GROK" mcp doctor agents-holding 2>&1 || true)"
   if printf '%s' "$out" | grep -q 'handshake OK'; then say "OK  grok mcp doctor agents-holding: $(printf '%s' "$out" | grep -Eo '[0-9]+ tools discovered' | head -1)"
   else printf '%s\n' "$out" | tail -8; die "grok mcp doctor agents-holding is not healthy (see above)"; fi
 fi
-printf '\nDone. Open a NEW terminal (or: source %s), then in your repo run: grok   and type /help\n' "$PROFILE"
+printf '\nDone. Open a NEW terminal (or: source %s), then in your repo run: grok   and type /ah-help\n' "$PROFILE"
