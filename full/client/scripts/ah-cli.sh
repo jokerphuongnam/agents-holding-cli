@@ -24,7 +24,7 @@ osascript -l JavaScript -e 'function run(a){return JSON.stringify({jsonrpc:"2.0"
   "$1" "$2" "$CO" "$SESS" > "$tmp/body.json"
 code="$({ printf 'header = "Authorization: Bearer %s"\n' "$KEY"; [ -n "$DEV" ] && printf 'header = "X-AH-Device: %s"\n' "$DEV"; true; } |
   curl -sS --retry 2 --retry-delay 1 -K - -X POST "$MCP_URL" -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" -H "X-AH-Client: ah-cli" \
-  --data-binary "@$tmp/body.json" -o "$tmp/out.json" -w '%{http_code}')" || { echo "server unreachable" >&2; exit 1; }
+  --max-time "${AH_CLI_TIMEOUT:-45}" --data-binary "@$tmp/body.json" -o "$tmp/out.json" -w '%{http_code}')" || { stale "server unreachable"; exit 1; }
 osascript -l JavaScript -e 'function run(a){ObjC.import("Foundation");const s=$.NSString.stringWithContentsOfFileEncodingError(a[0],4,null).js;let j;
   try{j=JSON.parse(s)}catch(e){return "HTTP "+a[1]+": "+s.slice(0,300)}
   if(j.error)return "ERR "+j.error.message; const r=j.result||{};const t=(r.content||[]).map(c=>c.text).join("\n");
@@ -42,8 +42,19 @@ pickup() {
   echo "Send it PRIVATELY. Read it again later: security find-generic-password -s agents-holding-issued-$id -w | pbcopy"; k=""
 }
 args="${A[*]:-}"
+# read-only commands keep the last good answer; on server down / 5xx / timeout they print it marked STALE (never for writes)
+RO=0; case "$cmd" in status|board|tasks|task|usage|staffs|staff|team|flow|flows|listener|help|skills|habits|setup-status|ceo) RO=1;; esac
+CACHE="$HOME/.config/agents-holding/cache/cli-${CO:-none}-$cmd-$(printf '%s' "$args" | shasum | cut -c1-10).txt"
+QUOTA="MCP server quota exceeded (plan limit / too many requests). Work pauses; nothing is lost. Check: holding status · upgrade or wait for the reset."
+stale() { # stale <why>: print the cached answer marked STALE (read-only cmds) or the error
+  [ "$1" = quota ] && echo "$QUOTA" >&2 || echo "$1" >&2
+  if [ "$RO" = 1 ] && [ -f "$CACHE" ]; then echo "⚠️  STALE (cached $(date -r "$CACHE" '+%Y-%m-%d %H:%M'); server unavailable: $1)"; cat "$CACHE"; exit 0; fi
+}
 if [ "$cmd" = token-show ]; then pickup "${A[0]:-}"; exit $?; fi
 call "$cmd" "$args"
+case "$code" in 402|429) stale quota; exit 1;; 5*|000) stale "server error HTTP $code"; exit 1;; esac
+grep -qi '^ERR .*\(quota\|limit \(reached\|exceeded\)\)' "$tmp/txt" && { stale quota; exit 1; }
 cat "$tmp/txt"; grep -q '^ERR \|^HTTP ' "$tmp/txt" && exit 1
+[ "$RO" = 1 ] && { mkdir -p "$(dirname "$CACHE")"; chmod 700 "$(dirname "$CACHE")"; cp "$tmp/txt" "$CACHE"; }
 case "$cmd" in token-add|token-renew) id="$(sed -nE 's/.*holding token-show ([0-9a-f-]{36}).*/\1/p' "$tmp/txt" | head -1)"; [ -n "$id" ] && { echo; pickup "$id" || true; } ;; esac
 exit 0

@@ -11,6 +11,7 @@ import { join, resolve } from "node:path";
 import * as L from "./lean.mjs";
 import * as P from "./providers/index.mjs";
 import * as R from "./registry.mjs";
+import * as X from "./resilience.mjs";
 
 const args = process.argv.slice(2);
 const opt = (n, d) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : d; };
@@ -57,10 +58,31 @@ const companyList = R.companies(registry);
 let company = companyList[0];
 for (const p of registry.projects) log(`project ${p.name} ${p.path} boards ${p.boards.map((b) => `${b.project_key}@${b.company}`).join(",")} settings ${JSON.stringify(p.settings ?? {})}`);
 
+// Server health: down / 5xx / timeout / quota -> red warning + one notification; recovery -> reconcile missed Jira changes.
+const server = { down: null };
+function serverDown(c) {
+  if (server.down?.cause === c.cause) return; const first = !server.down; server.down = { cause: c.cause, since: server.down?.since ?? new Date().toISOString() };
+  log(`\x1b[31mSERVER ${c.cause.toUpperCase()}: ${c.msg}\x1b[0m`);
+  L.writeStatus(homedir(), { server: { state: c.cause, msg: c.msg, since: server.down.since } });
+  if (first || c.cause === "quota") L.desktopNotify(homedir(), "agents-holding", c.cause === "quota" ? X.QUOTA_MSG : `Server problem: ${c.msg}. Work pauses; missed Jira changes are replayed on recovery.`);
+}
+function serverUp() {
+  if (!server.down) return; const was = server.down; server.down = null;
+  log(`server back after ${was.cause} since ${was.since}; reconciling missed Jira changes`);
+  L.writeStatus(homedir(), { server: { state: "ok", msg: "", since: null, recovered_at: new Date().toISOString() } });
+  L.desktopNotify(homedir(), "agents-holding", "Server is back; replaying missed Jira changes");
+  for (const c of companyList) reconcile(c, was.since).catch((e) => log("reconcile failed:", e.message));
+}
 async function mcp(name, a) {
-  const r = await fetch(`${base}/functions/v1/mcp`, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", Authorization: `Bearer ${key}`, ...deviceHeaders },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: a } }) });
-  const j = await r.json(); const t = j.result?.content?.[0]?.text;
+  let r, body;
+  try { r = await fetch(`${base}/functions/v1/mcp`, { method: "POST", signal: AbortSignal.timeout(Number(process.env.AH_MCP_TIMEOUT_MS ?? 60000)), headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", Authorization: `Bearer ${key}`, ...deviceHeaders },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: a } }) }); body = await r.text(); }
+  catch (e) { const c = X.classifyServer({ err: e }); serverDown(c); throw new X.ServerError(c); }
+  const c = X.classifyServer({ status: r.status, body });
+  if (c.cause !== "ok" && c.cause !== "auth") { serverDown(c); throw new X.ServerError(c); }
+  if (r.ok) serverUp();
+  let j; try { j = JSON.parse(body); } catch { throw new Error(`${name} failed: HTTP ${r.status}`); } const t = j.result?.content?.[0]?.text;
+  if (j.result?.isError && /quota|limit (reached|exceeded)/i.test(t ?? "")) { const q = { cause: "quota", msg: X.QUOTA_MSG }; serverDown(q); throw new X.ServerError(q); }
   if (!t || j.result.isError) throw new Error(`${name} failed: ${t ?? JSON.stringify(j.error)}`);
   return JSON.parse(t);
 }
@@ -228,7 +250,26 @@ let stageModels = {}; // flow per-stage models of the current run (next_action m
 async function leanModel(kind, issue, stage, prompt, role = null, context = null) {
   const sid = randomUUID(), out = join(logDir, `run-${Date.now()}.log`), buf = [];
   const text = kind !== "code", schema = kind === "tech" ? L.TECH_SCHEMA : kind === "habits" ? L.HABITS_SCHEMA : text ? L.TEXT_SCHEMA : L.CODE_SCHEMA, system = kind === "tech" ? L.TECH_SYSTEM : kind === "habits" ? L.HABITS_SYSTEM : text ? L.TEXT_SYSTEM : null;
-  const { agent, model, effort, bin, command, binding } = L.resolveAgent({ cfg: { agent: runSettings?.agent, model: runSettings?.model, text_model: runSettings?.text_model, ...L.loadAgentCfg(homedir(), company) }, text, role, stageModel: stageModels[stage] ?? null });
+  const rsv = L.resolveAgent({ cfg: { agent: runSettings?.agent, model: runSettings?.model, text_model: runSettings?.text_model, ...L.loadAgentCfg(homedir(), company) }, text, role, stageModel: stageModels[stage] ?? null });
+  const CM = await import("./providers/command.mjs");
+  const cmds = [{ label: rsv.command ? CM.shortCmd(rsv.command) : rsv.agent, rsv }, ...(rsv.fallback ?? []).map((c) => ({ label: CM.shortCmd(c), rsv: { ...rsv, agent: "command", command: c, binding: { command: c }, model: null, effort: null } }))];
+  const cliKind = (r) => r.command ? CM.kindOf(r.command) : r.agent;
+  const lang = L.getLang(), stp = L.stateDir(homedir(), company);
+  try {
+    const { value, used } = await X.runWithFallback(cmds, async (cm, { resume }) => {
+      try { return { ok: true, value: await leanModelOnce(kind, issue, stage, resume ? `${prompt}\n\n${L.resumeHint(L.loadPlan(stp, issue), X.ckptLoad(stp, issue))}` : prompt, role, context, cm.rsv, { sid, out, buf, text, schema, system }) }; }
+      catch (e) { if (!e.agentOut) throw e; return { ok: false, out: e.agentOut, code: e.agentCode, kind: cliKind(cm.rsv) }; }
+    }, {
+      onRetry: async (cm, c, ms) => { log(`lean ${kind} ${issue}: ${cm.label} ${c.cause}${ms ? `; backoff ${Math.round(ms / 1000)}s` : "; retrying fresh from the checkpoint"}`); X.ckptSave(stp, issue, { last_error: c.cause }); },
+      onSwitch: async (from, to, c) => { log(`lean ${kind} ${issue}: ${from.label} ${c.cause} -> fallback ${to.label}`); if (jira) await jira.comment(issue, `[agent-holding] ${X.switchNote(lang, from.label, to.label, c)}`).catch(() => {}); },
+    });
+    if (used !== cmds[0]) log(`lean ${kind} ${issue}: done by fallback ${used.label}`);
+    return value;
+  } catch (e) { if (e.agent) e.cmd = cmds.at(-1).label; throw e; }
+}
+async function leanModelOnce(kind, issue, stage, prompt, role, context, rsv, { sid, out, buf, text, schema, system }) {
+  buf.length = 0;
+  const { agent, model, effort, bin, command, binding } = rsv;
   const prov = command ? (await import("./providers/command.mjs")).commandProvider(binding) : await P.getProvider(agent, homedir());
   log(`lean ${kind} call for ${issue} ${stage}${role ? ` staff ${role}` : ""} agent ${agent} session ${sid} ${model ?? "default model"}${effort ? ` effort ${effort}` : ""} prompt ${prompt.length} chars -> ${out}`);
   // AgentProvider protocol (providers/): built-in CLIs spawn via ctx.spawn; HTTP providers (openai-compatible, custom) run their own loop
@@ -245,8 +286,12 @@ async function leanModel(kind, issue, stage, prompt, role = null, context = null
     mcp("report_usage", { company, issue, stage, session_id: sid, model: u.model ?? agent, input_tokens: u.input, output_tokens: u.output, cached_tokens: u.cached,
       reasoning_tokens: u.reasoning, model_calls: u.calls, wall_ms: wall, dry: dryJira }).catch((e) => log("report_usage failed:", e.message));
   } else log(`TOKENS ${issue} ${stage}: no usage reported by ${agent}`);
+  const outTxt = () => { let t = ""; try { t = readFileSync(out, "utf8").slice(-6000); } catch {} return `${t}\n${ctx.stdout().slice(-4000)}\n${res.error ?? ""}`; };
   if (code !== 0) { log(`lean ${kind} call exited ${code} for ${issue}`);
-    if (!r || !Object.keys(r).length) throw new Error(code === "SIGTERM" || code === "SIGKILL" ? `${kind} call timed out (${runTimeoutMs / 60000} min cap)` : `${kind} call exited ${code}`); }
+    if (!r || !Object.keys(r).length) { const e = new Error(code === "SIGTERM" || code === "SIGKILL" ? `${kind} call timed out (${runTimeoutMs / 60000} min cap)` : `${kind} call exited ${code}`); e.agentOut = outTxt(); e.agentCode = code; throw e; } }
+  const sig = L.compactionSignal(outTxt());
+  if (sig && (!r || !Object.keys(r).length)) { const e = new Error(`${kind} call lost its context (${sig})`); e.agentOut = `compacted conversation: ${sig}`; e.agentCode = 1; throw e; }
+  if (sig) log(`lean ${kind} ${issue}: compaction signal "${sig}" (answer kept; checkpoint saved)`);
   return r;
 }
 // Visibility wrapper: Jira "agent-working" label while the run works, "Started <stage>…" once per stage, "Failed <stage>: why" on error,
@@ -254,10 +299,21 @@ async function leanModel(kind, issue, stage, prompt, role = null, context = null
 async function leanRun(p, na, depth = 0) {
   const issue = na.issue ?? p.issue ?? p.task_id; const vis = { labeled: false, started: new Set(), stage: na.stage, staff: L.stageStaff(na, na.stage), worked: false };
   try { const r = await leanRunInner(p, na, depth, vis);
+    { const stp = L.stateDir(homedir(), company), ck = X.ckptLoad(stp, issue); if (ck?.blocked || ck?.failed) { X.ckptSave(stp, issue, { blocked: null, failed: null }); if (jira && ck.blocked) await jira.labels(issue, [], [X.BLOCKED_LABEL]).catch(() => {}); } }
     if (vis.worked && depth === 0) { L.desktopNotify(homedir(), `agents-holding: ${issue}`, `Finished ${L.stageTitle(vis.stage)}`); L.writeStatus(homedir(), { last_run: { issue, result: `ok (${vis.stage})`, at: new Date().toISOString() } }); }
     return r; }
   catch (e) {
     log(`lean run ${issue} FAILED in ${vis.stage}: ${e.message}`);
+    const stp = L.stateDir(homedir(), company);
+    X.ckptSave(stp, issue, { stage: X.ckptLoad(stp, issue)?.stage ?? vis.stage, failed: e.message.slice(0, 200), blocked: e.agent?.cause ?? null });
+    if (e.server) { L.writeStatus(homedir(), { last_run: { issue, result: `PAUSED ${vis.stage}: ${e.message.slice(0, 120)}`, at: new Date().toISOString() } }); return; } // server problem: already warned; resumes from the checkpoint on the replay
+    if (e.agent) {
+      if (jira) { await jira.labels(issue, [X.BLOCKED_LABEL]).catch((x) => log("Jira label failed:", x.message));
+        await jira.comment(issue, `${L.staffTag(vis.staff)} ${X.blockedComment(L.getLang(), e.agent, { cmd: e.cmd, stage: L.stageTitle(vis.stage), tried: e.tried ?? [] })}`).catch((x) => log("Jira comment failed:", x.message)); }
+      L.desktopNotify(homedir(), `agents-holding: ${issue} agent blocked`, `${e.agent.kind} ${e.agent.cause}${e.agent.fix ? ` - fix: ${e.agent.fix}` : ""}`);
+      L.writeStatus(homedir(), { last_run: { issue, result: `BLOCKED ${vis.stage}: ${e.agent.kind} ${e.agent.cause}`, at: new Date().toISOString() } });
+      return;
+    }
     if (jira) await jira.comment(issue, L.failedComment(vis.staff, vis.stage, e.message)).catch((x) => log("Jira comment failed:", x.message));
     L.desktopNotify(homedir(), `agents-holding: ${issue} FAILED`, `${L.stageTitle(vis.stage)}: ${e.message}`);
     L.writeStatus(homedir(), { last_run: { issue, result: `FAILED ${vis.stage}: ${String(e.message).slice(0, 120)}`, at: new Date().toISOString() } });
@@ -293,6 +349,8 @@ async function leanRunInner(p, na, depth, vis) {
     for (let i = 0; i < 2; i++) {
       try { const r = await mcp("advance", { company, task: issue, to_stage: to, listener_jira: true }); log(`lean: ${issue} ${from} -> ${r.stage}`);
         await jiraOps(issue); // move the card NOW, before the next stage's work starts (the board shows what is actually happening)
+        if (jira && r.stage !== "done") { const role = L.stageRole(na, r.stage, { developer: L.loadPlan(st, issue).developer }); if (role && vis.staffRole !== role) { vis.staffRole = role; await jira.staffLabel(issue, role).catch((e) => log("Jira staff label failed:", e.message)); } } // staff:<id> = owner of the stage just entered
+        X.ckptSave(st, issue, { stage: r.stage, done: [] });
         vis.gates ??= new Set();
         if (r.stage === to && L.GATE_HINTS[to] && !vis.gates.has(to)) { vis.gates.add(to); await say(false, L.gateComment(L.stageStaff(na, to), to)); } // explicit gate: how to approve / revise
         return true; }
@@ -301,11 +359,14 @@ async function leanRunInner(p, na, depth, vis) {
   };
   log(`lean run ${issue} (${p.event}) segments ${L.segments(na).map((s) => `${s.kind}:${s.stages.join(">")}`).join(" | ") || "none"}`);
   let plan = saved.plan ?? null;
+  const ck0 = X.ckptLoad(st, issue), resumable = (s0, step) => !fb && X.ckptDone(ck0, s0, step) && (ck0.running || ck0.failed); // died / failed mid-stage -> resume
+  const stepDone = (s0, step) => { const ck = X.ckptLoad(st, issue) ?? {}; X.ckptSave(st, issue, { stage: s0, done: [...new Set([...(ck.stage === s0 ? ck.done ?? [] : []), step])] }); };
   const startStage = async (s0, kind) => { // one "Started" comment per stage per run; label on first real work
     const dev0 = L.loadPlan(st, issue).developer;
     vis.stage = s0; vis.staff = L.stageStaff(na, s0, { kind, developer: dev0 }); vis.worked = true;
     const role = L.stageRole(na, s0, { kind, developer: dev0 });
     L.writeStatus(homedir(), { running: { issue, stage: s0, at: new Date().toISOString(), pid: process.pid } });
+    { const ck = X.ckptLoad(st, issue); if (ck?.stage !== s0) X.ckptSave(st, issue, { stage: s0, done: [], code_done: [], running: true }); else X.ckptSave(st, issue, { running: true }); }
     if (vis.started.has(s0)) return; vis.started.add(s0);
     if (jira && !vis.labeled) { vis.labeled = true; await jira.label(issue, "add").catch((e) => log("Jira label add failed:", e.message)); }
     if (jira && kind !== "script" && vis.staffRole !== role) { vis.staffRole = role; await jira.staffLabel(issue, role).catch((e) => log("Jira staff label failed:", e.message)); }
@@ -317,10 +378,11 @@ async function leanRunInner(p, na, depth, vis) {
     if (seg.kind !== "move" && !(seg.kind === "script" && s0 === "done")) await startStage(s0, seg.kind);
     if (seg.kind === "move") { if (!(await advance(s0, seg.moves[0]))) return; continue; }
     if (seg.kind === "text") {
+      if (resumable(s0, "plan") && saved.plan) { plan = saved.plan; log(`lean: ${issue} ${s0}: resume from checkpoint (plan already done, no model call)`); if (seg.moves[0] && !(await advance(s0, seg.moves[0]))) return; continue; }
       const r = await leanModel("text", issue, s0, L.textPrompt(iss, {  prevPlan: s0 === "planned" ? plan : null, feedback: fb, allowQuestion: s0 !== "planned" && (na.flow_stages ?? []).includes("ba_question") }), L.stageRole(na, s0), L.contextOf({ brief: await brief(L.stageRole(na, s0)), habits }));
       if (r.question && s0 !== "planned") { await record("question", r.question); await say(L.stageStaff(na, s0), `QUESTION\n${r.question}`); await advance(s0, "ba_question"); break; }
       plan = r.plan || r.summary || ""; if (!plan) { throw new Error("the model returned an empty plan"); }
-      await record("plan", plan); await say(L.stageStaff(na, s0), `PLAN\n${plan}`); L.savePlan(st, issue, { plan });
+      await record("plan", plan); await say(L.stageStaff(na, s0), `PLAN\n${plan}`); L.savePlan(st, issue, { plan }); stepDone(s0, "plan");
       if (seg.moves[0] && !(await advance(s0, seg.moves[0]))) return;
       continue;
     }
@@ -337,7 +399,7 @@ Jira: ${issue}` });
         await say(false, [L.doneComment(issue, saved2, L.stageStaff(na, "done")), ...h.msg].join("\n"));
         if (jira) await jira.staffLabel(issue, null).catch((e) => log("Jira staff label remove failed:", e.message));
         await learnHabits(issue, readKey, L.stageStaff(na, "done"));
-        log(`lean: ${issue} done (script); state ${L.clearState(st, issue) ? "cleared" : "none"}`);
+        X.ckptClear(st, issue); log(`lean: ${issue} done (script); state ${L.clearState(st, issue) ? "cleared" : "none"}`);
         continue;
       }
       if (!steps.open && !steps.merge && !(na.on_enter?.[s0] ?? []).some((a) => a.action === "comment") && !seg.moves[0]) { log(`lean: ${issue} ${s0}: nothing to do (script)`); continue; }
@@ -352,6 +414,7 @@ Jira: ${issue}` });
     const approval = plan || p.event === "user_approved" ? "Plan approved; go ahead." : null;
     if (seg.kind === "techplan") { // Pre Coding: tech plan + pick the developer. NO code changes here.
       const who = L.stageStaff(na, s0, { kind: "techplan" });
+      if (resumable(s0, "tech_plan") && saved.tech_plan) { log(`lean: ${issue} ${s0}: resume from checkpoint (tech plan already done)`); if (seg.moves[0] && !(await advance(s0, seg.moves[0], () => saved.tech_plan))) return; continue; }
       const files = filesOf(repo), hints = L.fileHints(files, `${iss.summary} ${iss.description} ${plan ?? ""}`);
       const listed = files.length <= 40 ? files : hints;
       const r = await leanModel("tech", issue, s0, L.techPlanPrompt(iss, {  plan, feedback: fb, files: listed, snippets: L.fileSnippets(repo, hints.slice(0, 5)), devRoles }), L.stageRole(na, s0, { kind: "techplan" }), L.contextOf({ brief: await brief(L.stageRole(na, s0, { kind: "techplan" })), habits }));
@@ -361,7 +424,7 @@ Jira: ${issue}` });
       if (dev !== "tech-lead" && dev !== na.assigned_role) await mcp("assign", { company, task: issue, role: dev }).catch((e) => log(`assign ${dev} failed:`, e.message));
       L.savePlan(st, issue, { tech_plan: techPlan, developer: dev, qc_baseline: null });
       await record("tech_plan", techPlan);
-      await say(who, `TECH PLAN\n${techPlan}\nDeveloper: ${L.staffName(dev)} (${dev})`);
+      await say(who, `TECH PLAN\n${techPlan}\nDeveloper: ${L.staffName(dev)} (${dev})`); stepDone(s0, "tech_plan");
       log(`lean: ${issue} ${s0}: tech plan recorded, developer ${dev} (no code in this stage)`);
       if (seg.moves[0] && !(await advance(s0, seg.moves[0], (k) => k === "tech_plan" ? techPlan : techPlan))) return;
       continue;
@@ -376,7 +439,7 @@ Jira: ${issue}` });
         const multi = runRepos.length > 1 ? `\nThis task spans repos ${runRepos.map(rname).join(", ")}; you are in ${rname(rp)}: change only what belongs here.` : "";
         const r1 = await leanModel("code", issue, stage, L.codePrompt(iss, {  plan: (plan ?? "") + multi, techPlan: o.techPlan, approval, feedback: o.feedback, hints: L.fileHints(files, `${iss.summary} ${iss.description} ${plan ?? ""}`), qc: !!o.selfCheck?.[rp], preexisting: L.preexistingFails(L.loadPlan(st, issue).qc_baseline?.[rp] ?? o.baselines?.[rp]), review: !!o.review, branch }), o.dev, L.contextOf({ brief: await brief(o.dev), habits }));
         if (r1.question && !r1.summary) { await record("question", r1.question); await say(o.who, `QUESTION (${rname(rp)})\n${r1.question}`); repo = runRepos[0]; return null; }
-        const sha = L.commitAll(rp, `${issue}: ${r1.commit_message || iss.summary || "agent change"}`);
+        const sha = L.commitAll(rp, `${o.wip ? `WIP(${issue}) ${o.wip}: ` : `${issue}: `}${r1.commit_message || iss.summary || "agent change"}`);
         const h = o.host ? host(r1) : { msg: [] };
         wheres.push(`${runRepos.length > 1 ? rname(rp) + ": " : ""}Branch ${branch}${sha ? ` @ ${sha}` : " (no changes)"}${h.url ? ` PR ${h.url}${h.merged ? " (merged)" : ""}` : " (local, not pushed)"}${h.msg.length && !h.url ? ` - ${h.msg.join("; ")}` : ""}`);
         if (!r) r = { ...r1, commit: sha }; else r = { ...r, summary: `${r.summary ?? ""}\n${r1.summary ?? ""}`, tests: [r.tests, r1.tests].filter(Boolean).join("\n"), tech_plan: [r.tech_plan, r1.tech_plan].filter(Boolean).join("\n") };
@@ -398,7 +461,23 @@ Jira: ${issue}` });
         if (checks.length && !baselines[rp]) { baselines[rp] = L.runChecks(rp, checks).map(({ name, ok }) => ({ name, ok })); log(`lean: ${issue} QC baseline ${rname(rp)}: ${baselines[rp].map((x) => `${x.name}=${x.ok ? "ok" : "fail"}`).join(", ")}`); }
         selfCheck[rp] = L.needsSelfCheck(baselines[rp]); // no script check at all -> the developer runs the cheapest check itself (a failing baseline is ignored, not looped on)
       }
-      const r = await codeOnce(s0, { techPlan: sv.tech_plan, feedback: review ? na.review_feedback : fb, review, baselines, selfCheck, who, dev, host: L.prSteps(na, seg).open || L.prSteps(na, seg).merge });
+      const steps = review ? [sv.tech_plan ?? ""] : X.splitSteps(sv.tech_plan, Number(process.env.AH_CODE_STEPS ?? 3)), host1 = L.prSteps(na, seg).open || L.prSteps(na, seg).merge;
+      let r = null;
+      if (steps.length === 1) r = await codeOnce(s0, { techPlan: sv.tech_plan, feedback: review ? na.review_feedback : fb, review, baselines, selfCheck, who, dev, host: host1 });
+      else { // sub-steps: one WIP commit each on feature/<KEY>, checkpoint + progress note after each; a rerun skips finished steps
+        const ck = X.ckptLoad(st, issue) ?? {}, done = ck.stage === s0 && (ck.running || ck.failed) ? [...(ck.code_done ?? [])] : [];
+        if (done.length) log(`lean: ${issue} coding: resume at sub-step ${done.length + 1}/${steps.length}`);
+        const parts = [];
+        for (let i = 0; i < steps.length; i++) {
+          if (done.includes(i)) continue;
+          const last = i === steps.length - 1;
+          const ri = await codeOnce(s0, { techPlan: `${sv.tech_plan}\n\nDo ONLY sub-step ${i + 1}/${steps.length} now${done.length ? ` (steps ${done.map((d) => d + 1).join(", ")} are already committed)` : ""}:\n${steps[i]}`, feedback: fb, baselines, selfCheck: last ? selfCheck : {}, who, dev, host: last && host1, wip: last ? null : `${i + 1}/${steps.length}` });
+          if (!ri) return;
+          parts.push(ri); done.push(i); X.ckptSave(st, issue, { stage: s0, code_done: done, last_commit: ri.commit ?? null });
+          if (!last) await say(who, X.progressNote(L.getLang(), L.stageTitle(s0), steps, done));
+        }
+        r = parts.length ? { ...parts.at(-1), summary: parts.map((x) => x.summary).filter(Boolean).join("\n"), tests: parts.map((x) => x.tests).filter(Boolean).join("\n") } : { summary: sv.summary ?? "resumed: all sub-steps were already committed", where: sv.where ?? `Branch ${branch}` };
+      }
       if (!r) return;
       L.savePlan(st, issue, { tech_plan: sv.tech_plan ?? r.tech_plan, summary: r.summary, tests: r.tests, commit: r.commit, branch, repos: runRepos, developer: dev, qc_baseline: baselines, where: r.where });
       await say(who, [review ? "CODE (review feedback)" : "CODE", !sv.tech_plan && r.tech_plan && `Tech plan:\n${r.tech_plan}`, `Summary: ${r.summary ?? ""}`, r.tests && `Checks: ${r.tests}`, r.where].filter(Boolean).join("\n"));
@@ -440,6 +519,7 @@ Jira: ${issue}` });
     }
   }
   await jiraOps(issue);
+  X.ckptSave(st, issue, { running: false });
   let na2 = null; try { na2 = await mcp("next_action", { company, task: issue, listener_jira: true }); } catch {}
   if (na2 && !na2.waiting && na2.stage !== na.stage && depth < 2) { log(`lean post-run: ${issue} now ${na2.stage}, not waiting; continuing`); return leanRunInner({ ...p, event: "chain" }, na2, depth + 1, vis); }
 }
@@ -515,7 +595,30 @@ setInterval(() => {
     lastRx[c] = Date.now(); try { sockets[c]?.close(); } catch {}
   }
 }, 30000).unref?.();
-const backoffs = {};
+// Replay real Jira changes missed during an outage (listener or server down): issues updated since the last seen event,
+// one reconcile_issue per (issue, status, updated), deduped locally and on the server. Reads Jira only; never writes Jira events.
+const reconciling = {};
+async function reconcile(company, sinceIso) {
+  if (!jira || reconciling[company]) return; reconciling[company] = true;
+  try {
+    const stc = L.readStatus(homedir())?.companies?.[company] ?? {};
+    const since = [sinceIso, stc.last_event_at].filter(Boolean).sort()[0] ?? new Date(Date.now() - 3600e3).toISOString();
+    const st = L.stateDir(homedir(), company), seen = X.replaySeen(st), boards = registry.projects.flatMap((p) => p.boards).filter((b) => b.company === company);
+    let n = 0;
+    for (const b of boards) {
+      const res = await jira.search(X.jqlSince(b.project_key, since), ["status", "updated", "summary", "labels"]);
+      for (const x of X.replayTodo(res, seen)) {
+        const f = res.find((i) => i.key === x.key)?.fields ?? {};
+        const r = await mcp("reconcile_issue", { company, issue: x.key, status: x.status, updated: x.updated, project_key: b.project_key, summary: f.summary ?? "", labels: f.labels ?? [] });
+        X.replayMark(st, [X.replayKey(x.key, x.status, x.updated)]); n++;
+        log(`reconcile ${x.key} "${x.status}": ${r.duplicate ? "already applied" : r.replayed ? `replayed (${r.event ?? "?"}, ${r.stage_before ?? "new"} -> ${r.stage_after ?? "?"})` : `skipped (${r.reason ?? "?"})`}`);
+      }
+    }
+    log(`reconcile ${company}: ${n} change(s) since ${since}`);
+    L.writeStatus(homedir(), { companies: { [company]: { reconciled_at: new Date().toISOString(), reconciled: n } } });
+  } finally { reconciling[company] = false; }
+}
+const backoffs = {}, joinedOnce = {};
 async function connect(company) {
   backoffs[company] ??= 1000;
   const sub = await mcp("realtime_subscription", { company });
@@ -532,7 +635,7 @@ async function connect(company) {
   };
   ws.onmessage = (m) => {
     const msg = JSON.parse(m.data); lastRx[company] = Date.now();
-    if (msg.event === "phx_reply" && msg.topic === topic) { log("join", msg.payload.status, "company", company); if (msg.payload.status === "ok") { backoffs[company] = 1000; heartbeat(); rt("joined"); if (downNotified[company]) { downNotified[company] = false; L.desktopNotify(homedir(), "agents-holding", `Listener reconnected (${company})`); } } else rt(`join ${msg.payload.status}`); }
+    if (msg.event === "phx_reply" && msg.topic === topic) { log("join", msg.payload.status, "company", company); if (msg.payload.status === "ok") { backoffs[company] = 1000; heartbeat(); rt("joined"); if (!joinedOnce[company]) { joinedOnce[company] = true; reconcile(company).catch((e) => log("reconcile failed:", e.message)); } if (downNotified[company]) { downNotified[company] = false; L.desktopNotify(homedir(), "agents-holding", `Listener reconnected (${company})`); reconcile(company).catch((e) => log("reconcile failed:", e.message)); } } else rt(`join ${msg.payload.status}`); }
     if (msg.event === "broadcast" && msg.payload?.event === "next_action") {
       const p = { ...(msg.payload.payload ?? {}), company };
       L.writeStatus(homedir(), { companies: { [company]: { last_event_at: new Date().toISOString(), last_event: `${p.event} ${p.issue ?? ""}`.trim() } } });
@@ -564,7 +667,8 @@ async function connect(company) {
       return;
     }
   };
-  ws.onclose = () => { clearInterval(hb); if (sockets[company] === ws) delete sockets[company]; rt("disconnected"); const b = backoffs[company]; log("socket closed", company, "; reconnect in", b, "ms"); setTimeout(() => connect(company).catch(fail(company)), b); backoffs[company] = Math.min(b * 2, 60000); };
+  ws.onclose = () => { clearInterval(hb); if (sockets[company] === ws) delete sockets[company]; rt("disconnected"); log(`\x1b[31mrealtime disconnected (${company})\x1b[0m`);
+    if (!downNotified[company]) { downNotified[company] = true; L.desktopNotify(homedir(), "agents-holding", `Jira Listener lost the server connection (${company}); reconnecting`); } const b = backoffs[company]; log("socket closed", company, "; reconnect in", b, "ms"); setTimeout(() => connect(company).catch(fail(company)), b); backoffs[company] = Math.min(b * 2, 60000); };
   ws.onerror = () => {};
 }
 const fail = (company) => (e) => { const b = backoffs[company] ?? 1000; log("error", company, e.message); setTimeout(() => connect(company).catch(fail(company)), b); backoffs[company] = Math.min(b * 2, 60000); };

@@ -29,3 +29,6 @@ grok mcp add --transport http agents-holding https://mznrffnvmhmiudvfuquk.supaba
 Slash commands come from the server as MCP prompts (Grok CLI: as command files in ~/.grok/commands, written by `full/connect.sh` or `holding sync-commands`). The installer (`full/install.sh`) is optional: you only need it for the background Jira listener, which runs Grok, Claude Code or Codex on your Mac.
 
 Then follow **[full/SETUP.md](full/SETUP.md)**. The full version runs on a hosted server, which holds all roles, skills and workflow logic. This repo only has the optional local client (Jira listener and setup scripts) and the sign-in page (`docs/authorize.html`).
+
+## Resilience
+Compaction/resume, blocked agents + fallback, MCP server problems + reconcile: [docs/RESILIENCE.md](docs/RESILIENCE.md).

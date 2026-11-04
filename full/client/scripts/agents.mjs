@@ -78,11 +78,12 @@ export function resolveAgent({ env = process.env, cfg = {}, text, role = null, s
   const bin = env[`AH_${agent.toUpperCase().replace(/-/g, "_")}_BIN`] || (agent === "grok" ? env.GROK_BIN : null) || pd.bin || agent;
   const command = env.AH_AGENT ? null : (st.command || (!st.provider && cfg.command) || null); // fixed launch command: staff > company default
   const binding = command ? { ...(st.command ? st : {}), command } : null;
-  return { binding, agent: command ? "command" : agent, model: command ? null : model || null, effort: command ? null : effort, bin, command, providerDef: pd.type ? pd : null };
+  const fallback = (Array.isArray(st.fallback) ? st.fallback : st.fallback ? [st.fallback] : []).map(String).filter(Boolean); // per-staff fallback commands (agents.jsonc)
+  return { fallback, binding, agent: command ? "command" : agent, model: command ? null : model || null, effort: command ? null : effort, bin, command, providerDef: pd.type ? pd : null };
 }
 
 /** Fields of a fixed-command staff binding; {model} {effort} {cwd} {max_turns} placeholders resolve from them. */
-export const CMD_FIELDS = ["command", "model", "effort", "cwd", "context", "max_turns", "timeout", "env"];
+export const CMD_FIELDS = ["command", "model", "effort", "cwd", "context", "max_turns", "timeout", "env", "fallback"];
 export const EFFORTS = ["low", "medium", "high"];
 /** `holding staffs` runtime cell for one staff: "<model> - <effort>" exactly as resolveAgent will run it. */
 export function staffRuntime({ env = process.env, cfg = {}, role, text = true, stageModel = null }) {

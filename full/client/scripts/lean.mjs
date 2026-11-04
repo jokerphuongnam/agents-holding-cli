@@ -243,6 +243,7 @@ export function jiraClient(cfg, { dry, log }) {
     if (!r.ok) throw new Error(`Jira ${m} ${path.split("?")[0]} -> ${r.status}`); return r.status === 204 ? null : r.json(); };
   return {
     async issue(key) { return req("GET", `/issue/${encodeURIComponent(key)}?fields=summary,description,comment`); },
+    async search(jql, fields = ["status", "updated"]) { const j = await req("POST", "/search/jql", { jql, fields, maxResults: 50 }); return j?.issues ?? []; },
     async meta(key) { const j = await req("GET", `/issue/${encodeURIComponent(key)}?fields=labels,components`); return { labels: j.fields?.labels ?? [], components: (j.fields?.components ?? []).map((c) => c.name) }; },
     async staffLabel(key, role) { // replace the previous staff:<role> label (null = remove)
       if (dry) return log(`JIRA (dry): label ${key} staff:${role ?? "(remove)"}`);
@@ -525,3 +526,13 @@ export function formatStatus(st, alive, now = Date.now()) {
 export const socketStale = (lastRx, now = Date.now(), limitMs = 120000) => !lastRx || now - lastRx > limitMs;
 
 export * from "./agents.mjs";
+
+// ---- compaction / resume (see resilience.mjs for checkpoints) ----
+const COMPACT_RX = /auto-?compact(ed|ing)?|compacted (the )?conversation|conversation (was )?(compacted|truncated)|context (was )?truncated|context_length_exceeded|prompt is too long|max(imum)? turns reached|error_max_turns/i;
+export const compactionSignal = (txt) => String(txt ?? "").match(COMPACT_RX)?.[0] ?? null;
+export function resumeHint(plan = {}, ck = {}) {
+  return ["RESUME: a previous attempt lost its context mid-run. Do NOT redo finished work.",
+    plan.plan && "The plan is already approved (above).", plan.tech_plan && "The tech plan is done.",
+    ck?.code_done?.length && `Coding sub-steps already committed (WIP): ${ck.code_done.map((i) => i + 1).join(", ")}. Check \`git log\` on the branch.`,
+    "Continue from where it stopped."].filter(Boolean).join("\n");
+}
