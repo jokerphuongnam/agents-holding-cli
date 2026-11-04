@@ -19,6 +19,10 @@ case "$1" in
   agent) shift; exec node "$here/agent-cli.mjs" "$@" ;;
   sync-commands) shift; exec bash "$here/sync-commands.sh" "$@" ;;
   open-setup) shift; exec bash "$here/open-setup.sh" "$@" ;;
+  staffs|whoami|usage|tasks|history|sources|renew|plan|hire|fire|assign|convention|auto-pr|flow|custom-skills|help|tokens|token-add|token-revoke|token-renew|token-label|token-reset-device)
+    exec bash "$here/ah-cli.sh" "$@" ;;
+  server) shift; exec bash "$here/ah-cli.sh" "$@" ;;
+  jira-tasks|jira-task|jira-board|jira-new|jira-move|jira-comment) exec node "$here/jira.mjs" "$@" ;;
   *) cat <<USAGE
 usage:
   holding listener on [--repo DIR]   start the background listener now
@@ -38,6 +42,10 @@ usage:
   holding status                     listener alive?, realtime, last webhook event, last heartbeat, current task/stage
   holding notify on|off              macOS notifications for agent start/done/fail (default on)
   holding habits [show|edit|clear]    user habits learned on Done (local; used in plan/tech plan/code prompts)
+  holding staffs|whoami|usage|tasks|history|sources|plan KEY|flow|help ...   instant server commands, no model (holding help)
+  holding server doctor|status|listener   server-side view of /doctor, /listener
+  holding tokens|token-add|token-revoke|token-renew|token-label|token-reset-device   owner key commands
+  holding jira-tasks [column] | jira-task KEY | jira-board | jira-new "title" [desc] | jira-move KEY <col> | jira-comment KEY "text"  [--project KEY]
   holding sync-commands [--owner] [--claude]   refresh Grok slash commands (~/.grok/commands) from the server
   holding open-setup '<setup_url>'        open the /connect-jira setup page
 USAGE

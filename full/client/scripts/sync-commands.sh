@@ -5,11 +5,13 @@
 # Names that clash with Grok built-ins get an ah- prefix (/ah-doctor, /ah-help, ...). No Node needed (curl + macOS osascript).
 # --owner: use the owner admin key (Keychain agents-holding-owner-admin-key) so owner commands (/tokens, /token-add ...) are
 #   included, and add an `agents-holding-owner` MCP server to ~/.grok/config.toml (key via $AGENTS_HOLDING_OWNER_KEY).
+# Also installs a Grok UserPromptSubmit hook (~/.grok/hooks/agents-holding.json -> ah-hook.sh) that answers the deterministic
+#   commands (/staffs, /tokens, /jira-tasks ...) instantly WITHOUT a model turn; --no-hook skips it (AH_HOOK=0 disables it live).
 # --claude: also write ~/.claude/commands (Claude Code already lists MCP prompts as /mcp__agents-holding__<name>).
 set -euo pipefail
 MCP_URL="${AH_MCP_URL:-https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp}"
-OWNER=""; CLAUDE=""; DIRS=()
-while [ $# -gt 0 ]; do case "$1" in --owner) OWNER=1;; --claude) CLAUDE=1;; --dir) DIRS+=("$2"); shift;; *) echo "unknown option $1" >&2; exit 2;; esac; shift; done
+OWNER=""; CLAUDE=""; HOOK=1; DIRS=()
+while [ $# -gt 0 ]; do case "$1" in --owner) OWNER=1;; --claude) CLAUDE=1;; --no-hook) HOOK="";; --dir) DIRS+=("$2"); shift;; *) echo "unknown option $1" >&2; exit 2;; esac; shift; done
 [ ${#DIRS[@]} -gt 0 ] || DIRS=("$HOME/.grok/commands"); [ -n "$CLAUDE" ] && DIRS+=("$HOME/.claude/commands")
 BUILTIN=" doctor help plan status usage history tasks init clear compact model login logout exit quit config mcp resume settings theme "
 MARK="<!-- synced by agents-holding (holding sync-commands); edits are overwritten -->"
@@ -36,8 +38,23 @@ for name in $names; do
   for d in "${DIRS[@]}"; do cp "$tmp/$file.md" "$d/$file.md"; done
   written="$written$file "; n=$((n+1))
 done
+# local Jira commands (holding jira-*; your own Jira login). With the hook they never reach the model; without it the agent runs the CLI.
+for jc in "jira-tasks:[column] tasks grouped by column" "jira-task:KEY details, branch, comments, tokens" "jira-board:counts per column + stuck tasks" \
+          'jira-new:"title" [desc] new issue in To Do' "jira-move:KEY <column> move as you (starts the flow like a drag)" 'jira-comment:KEY "text" comment as you (user feedback)'; do
+  jn="${jc%%:*}"; jd="${jc#*:}"
+  printf -- '---\ndescription: "[jira] /%s %s"\nallowed-tools: Bash\n---\nRun exactly this shell command and print its output verbatim, nothing else: holding %s $ARGUMENTS\n%s\n' "$jn" "${jd//\"/\'}" "$jn" "$MARK" > "$tmp/$jn.md"
+  for d in "${DIRS[@]}"; do cp "$tmp/$jn.md" "$d/$jn.md"; done; written="$written$jn "; n=$((n+1))
+done
 for d in "${DIRS[@]}"; do for f in "$d"/*.md; do [ -e "$f" ] || continue; b="$(basename "$f" .md)"
   case "$written" in *" $b "*) ;; *) grep -qF "$MARK" "$f" && rm -f "$f" && echo "removed stale /$b";; esac; done; done
+if [ -n "$HOOK" ]; then # zero-model path: Grok UserPromptSubmit hook (global; Grok runs it after folder trust)
+  SD="$(cd "$(dirname "$0")" && pwd)"
+  if [ ! -f "$SD/ah-hook.sh" ] || [ ! -f "$SD/ah-cli.sh" ]; then SD="$HOME/.agents-holding/lite"; mkdir -p "$SD"
+    for f in ah-hook.sh ah-cli.sh; do curl -fsSL --retry 3 "https://raw.githubusercontent.com/jokerphuongnam/agents-holding-free/${AH_BRANCH:-main}/full/client/scripts/$f" -o "$SD/$f"; chmod +x "$SD/$f"; done; fi
+  mkdir -p "$HOME/.grok/hooks"
+  printf '{"hooks":{"UserPromptSubmit":[{"hooks":[{"type":"command","command":"bash %s/ah-hook.sh","timeout":30}]}]}}\n' "$SD" > "$HOME/.grok/hooks/agents-holding.json"
+  echo "hook: ~/.grok/hooks/agents-holding.json -> $SD/ah-hook.sh (pure-data commands answer instantly, no model)"
+fi
 if [ -n "$OWNER" ]; then
   GC="$HOME/.grok/config.toml"; touch "$GC"
   grep -qs '^\[mcp_servers.agents-holding-owner\]' "$GC" || printf '\n[mcp_servers.agents-holding-owner]\ntype = "http"\nurl = "%s"\nenabled = true\nheaders = { "Authorization" = "Bearer ${AGENTS_HOLDING_OWNER_KEY}" }\n' "$MCP_URL" >> "$GC"

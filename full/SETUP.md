@@ -61,6 +61,12 @@ then add `headers = { "Authorization" = "Bearer ${AGENTS_HOLDING_KEY}", "X-AH-De
 
 **Slash commands.** The server defines them (MCP prompts). Claude Code lists them as `/mcp__agents-holding__ceo`; Codex and Cursor list them under the server's prompts. **Grok CLI does not show MCP prompts**: it loads command files from `~/.grok/commands/*.md`, which `connect.sh` (and `install.sh`) write for you and refresh on every run; run `holding sync-commands` (or rerun `connect.sh`) to pick up new server commands. Names that clash with Grok built-ins get an `ah-` prefix: `/ah-doctor`, `/ah-help`, `/ah-plan`, `/ah-status`, `/ah-usage`, `/ah-history`, `/ah-tasks`. `/ah-help` (or `help` elsewhere) lists them all.
 
+**Instant commands (no model, no tokens).** Commands that only show data are answered without the AI:
+- In Grok, `holding sync-commands` (run by `connect.sh`/`install.sh`) installs a prompt hook (`~/.grok/hooks/agents-holding.json`). When you type `/staffs`, `/whoami`, `/ah-usage`, `/ah-tasks`, `/ah-history`, `/sources`, `/renew`, `/ah-plan KEY`, `/ah-doctor`, `/listener`, `/hire`, `/fire`, `/assign`, `/convention`, `/auto-pr`, `/flow` (show/list), `/custom-skills`, `/ah-help`, the owner `/tokens` and `/token-*` commands, or `/jira-*`, the hook prints the answer and Grok shows "Turn blocked by a hook". That message is expected: it means the prompt never went to the model. Turn this off with `export AH_HOOK=0`, or skip installing it with `holding sync-commands --no-hook`.
+- In a terminal, `holding staffs`, `holding whoami`, `holding usage 7`, `holding plan KAN-1`, `holding tokens`, and so on give the same output. `holding help` lists them. `holding server doctor` and `holding server listener` show the server's side of those checks.
+- These commands still go through the agent because they need it: `/ceo`, `/holding-ceo`, `/new-task`, `/split`, `/approve`, `/connect-jira`, `/flow edit`, `/admin`.
+
+
 ## 2. Create your company
 
 Open your agent in the repo (`cd ~/Code/shop && claude`, `codex`, or `grok`) and run the `holding-ceo` prompt:
@@ -147,6 +153,14 @@ Defaults: plan/question stages use a cheap model (Grok `grok-4.7-build-fast`, Cl
 - Flow types per task: `full`, `no_plan`, `no_dev`, `quick` (`/flow SHOP-12 quick` or the label `ah-flow:quick`). `/flow edit` designs your own columns and gates.
 - `/auto-pr on` (off by default): In Review pushes the branch and opens a PR with `gh`. Run `gh auth login` first, and make sure the repo has an `origin` remote.
 - `/usage` shows tokens per task and stage.
+- **Jira from the terminal or chat, no model** (uses your own Jira login from `holding jira-keychain`, so each action counts as you):
+  - `holding jira-tasks [column]`: tasks grouped by column, with assignee, the agent-working flag and when each was last updated.
+  - `holding jira-task KEY`: column, branch, tokens used, description and recent comments.
+  - `holding jira-board`: how many cards each column has, plus stuck cards (agent-working for longer than the run timeout, or Failed).
+  - `holding jira-new "title" [desc]`: a new card in To Do.
+  - `holding jira-move KEY "In Progress"`: a real move, which starts the flow just like dragging the card.
+  - `holding jira-comment KEY "text"`: a comment from you, which the agent treats as your feedback.
+  - Add `--project KEY` when the repo has more than one board. Each command also works as a slash command (`/jira-tasks`, ...).
 
 ## Renewing
 
