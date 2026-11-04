@@ -27,6 +27,15 @@ async function mcp(name, args) {
 const cfg = L.loadAgentCfg(process.env.HOME, company);
 const lang = L.pickLang(cfg.lang, task); L.setLang(lang);
 const code = /-dev$|engineer|developer/.test(staff);
+// staffing gate (same logic as the Jira path): no staff with the role -> fail fast; role without the skill -> ask 1/2/3
+if (!process.argv.includes("--proceed")) {
+  const st = await mcp("staffing_check", { company, request: task, staff, lang }).catch((e) => ({ kind: "ok", error: e.message }));
+  if (st?.kind && st.kind !== "ok") {
+    console.log(st.text ?? `${st.kind}: ${(st.why ?? []).join("; ")}`);
+    if (st.kind === "needs_decision") console.log(`\n1) /hire ${st.hire_for_skill?.[0] ?? "<role>"}   2) holding add-skill ${st.role} ${st.missing_skills?.[0]}   3) holding run ${staff} "<task>" --proceed`);
+    process.exit(st.kind === "needs_hire" ? 3 : 4);
+  }
+}
 const b = await mcp("staff_brief", { company, role: staff, text: task, max_skills: 2 }).catch(() => null);
 function repoFor(co) { const here = process.cwd(); try { const c = localCompanies().find((x) => x.company === co); const rs = c?.repos ?? []; if (!rs.length || rs.some((r) => here === r || here.startsWith(r + "/"))) return here; return rs[0]; } catch { return here; } }
 const r = await runStaff({ company, role: staff, kind: code ? "code" : "text", noTools: !code, cwd: repoFor(company),

@@ -44,7 +44,7 @@ async function search(req, jql, fields = F) {
     out.push(...(j.issues ?? [])); tok = j.nextPageToken; } while (tok && out.length < 500);
   return out;
 }
-const row = (i) => { const f = i.fields ?? {}; return { key: i.key, title: f.summary ?? "", column: f.status?.name ?? "?", cat: f.status?.statusCategory?.key, who: f.assignee?.displayName ?? "-", working: (f.labels ?? []).includes(WORK_LABEL), staff: ((f.labels ?? []).find((l) => /^staff:/.test(l)) ?? "").slice(6) || null, updated: f.updated }; };
+const row = (i) => { const f = i.fields ?? {}; return { key: i.key, title: f.summary ?? "", column: f.status?.name ?? "?", cat: f.status?.statusCategory?.key, who: f.assignee?.displayName ?? "-", working: (f.labels ?? []).includes(WORK_LABEL), needsHire: (f.labels ?? []).includes("needs-hire"), needsDecision: (f.labels ?? []).includes("needs-decision"), staff: ((f.labels ?? []).find((l) => /^staff:/.test(l)) ?? "").slice(6) || null, updated: f.updated }; };
 export async function columnsOf(req, key) { // board column order (agile API), else the project's statuses
   try { const b = await req("GET", `@agile/board?projectKeyOrId=${key}`); const id = b.values?.[0]?.id;
     if (id) { const c = await req("GET", `@agile/board/${id}/configuration`); const cols = (c.columnConfig?.columns ?? []).map((x) => x.name); if (cols.length) return cols; } } catch {}
@@ -71,7 +71,10 @@ export async function board(req, key, now = Date.now(), env = process.env) {
   const stuck = rows.filter((r) => isStuck(r, now, env));
   return [`${key} board (open + done last 7d)`, ...cols.map((c) => `  ${c.padEnd(16)} ${String(n[c] ?? 0).padStart(3)}`),
     `\nworking now: ${rows.filter((r) => r.working).map((r) => r.key).join(", ") || "none"}`,
-    `stuck (${stuck.length}; agent-working > ${stageTimeoutMin(env)} min or Failed): ${stuck.map((r) => `${r.key} [${r.column}, ${ago(r.updated, now)}]`).join(", ") || "none"}`].join("\n");
+    `stuck (${stuck.length}; agent-working > ${stageTimeoutMin(env)} min or Failed): ${stuck.map((r) => `${r.key} [${r.column}, ${ago(r.updated, now)}]`).join(", ") || "none"}`,
+    ...(() => { const h = rows.filter((r) => r.needsHire), d = rows.filter((r) => r.needsDecision);
+      return [`needs-hire (${h.length}): ${h.map((r) => r.key).join(", ") || "none"}${h.length ? "  -> /hire <role>, then it resumes" : ""}`,
+        `needs-decision (${d.length}): ${d.map((r) => r.key).join(", ") || "none"}${d.length ? "  -> reply 1/2/3 on the card" : ""}`]; })()].join("\n");
 }
 export async function task(req, key, { state = {}, usage = null } = {}) {
   const j = await req("GET", `/issue/${encodeURIComponent(key)}?fields=${F},description,comment`); const f = j.fields ?? {}; const r = row(j);

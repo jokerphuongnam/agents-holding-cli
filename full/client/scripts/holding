@@ -11,6 +11,7 @@ case " $* " in *" --all "*) case "$1" in status|tasks|jira-board|jira-tasks|usag
 case "$1" in
   listen) shift; exec node "$here/holding-listen.mjs" "$@" ;;
   jira-listener|listener) shift; exec bash "$here/launchd/listener.sh" "$@" ;;   # "listener" = old alias
+  add-skill) shift; exec node "$here/add-skill.mjs" "$@" ;;
   doctor) shift; exec bash "$here/doctor.sh" "$@" ;;
   jira-keychain) shift; exec bash "$here/jira-keychain-setup.sh" "$@" ;;
   jira-workflow) shift; exec bash "$here/jira-setup-workflow.sh" "$@" ;;

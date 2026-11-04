@@ -13,5 +13,8 @@ if (cmd === "notify") {
   { const { resolveCompany } = await import("./company.mjs"); const c = resolveCompany(); console.log(c.company ? `company: ${c.company} (from ${c.source})` : "company: none (holding use <company>)"); }
   { const w = L.listenerWarning(home); if (w) console.log(w + "\n"); }
   console.log(L.formatStatus(st, alive));
+  for (const [co, v] of Object.entries(st?.companies ?? {})) { const n = Object.entries(v.needs ?? {}); if (!n.length) continue;
+    const of = (l) => n.filter(([, x]) => x === l).map(([k]) => k);
+    console.log(`${co}: needs-hire ${of("needs-hire").length} (${of("needs-hire").join(", ") || "-"}) · needs-decision ${of("needs-decision").length} (${of("needs-decision").join(", ") || "-"})`); }
   console.log("server view (Jira listener + events as the server sees them): ask your agent /listener or /doctor");
 }

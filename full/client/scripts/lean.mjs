@@ -249,6 +249,11 @@ export function jiraClient(cfg, { dry, log }) {
       const ops = staffLabelOps((await this.meta(key)).labels, role); if (!ops.length) return;
       await req("PUT", `/issue/${encodeURIComponent(key)}`, { update: { labels: ops } });
     },
+    async labels(key, add = [], remove = []) { // generic label add/remove (needs-hire / needs-decision)
+      const ops = [...add.map((l) => ({ add: l })), ...remove.map((l) => ({ remove: l }))]; if (!ops.length) return;
+      if (dry) return log(`JIRA (dry): labels ${key} ${JSON.stringify(ops)}`);
+      await req("PUT", `/issue/${encodeURIComponent(key)}`, { update: { labels: ops } });
+    },
     async label(key, op) {
       if (dry) return log(`JIRA (dry): label ${key} ${op} ${WORK_LABEL}`);
       await req("PUT", `/issue/${encodeURIComponent(key)}`, labelBody(op));

@@ -537,10 +537,24 @@ async function connect(company) {
       const p = { ...(msg.payload.payload ?? {}), company };
       L.writeStatus(homedir(), { companies: { [company]: { last_event_at: new Date().toISOString(), last_event: `${p.event} ${p.issue ?? ""}`.trim() } } });
       log("next_action", company, p.event, p.issue ?? p.task_id ?? "", "stage", p.stage, p.waiting ? "(waiting on user)" : "");
+      const sf = p.staffing; // staffing gate (needs-hire / needs-decision): post ONE rich comment + label, no run; cleared -> remove labels
+      if (sf && (p.issue ?? p.task_id)) {
+        const k = p.issue ?? p.task_id, other = ["needs-hire", "needs-decision"].filter((l) => l !== sf.label);
+        const nd = { ...(L.readStatus(homedir())?.companies?.[company]?.needs ?? {}) }; if (sf.kind === "ok") delete nd[k]; else nd[k] = sf.label;
+        L.writeStatus(homedir(), { companies: { [company]: { needs: nd } } });
+        if (sf.kind !== "ok") {
+          log(`staffing ${k}: ${sf.kind} ${[...(sf.missing_roles ?? []), ...(sf.missing_skills ?? [])].join(",")}${sf.post ? "" : " (already asked)"}`);
+          if (jira) jira.labels(k, [sf.label], other).catch((e) => log("Jira label failed:", e.message))
+            .then(() => (p.say ? jira.comment(k, p.say) : null)).then(() => (sf.post && sf.text ? jira.comment(k, sf.text) : null)).catch((e) => log("Jira comment failed:", e.message));
+          if (sf.post) L.notify?.(`Jira Listener: ${k} ${sf.kind === "needs_hire" ? "needs a hire" : "needs your decision"}`);
+          return;
+        }
+        if (sf.clear && jira) jira.labels(k, [], ["needs-hire", "needs-decision"]).catch((e) => log("Jira label failed:", e.message));
+      }
       if (p.say && (p.issue ?? p.task_id)) { // server-decided one-off reply (To Do comment / "who should take this?"): post as is, no run
         const k = p.issue ?? p.task_id;
         if (jira) jira.comment(k, p.say).catch((e) => log("Jira comment failed:", e.message)); else log(`JIRA (no client): ${String(p.say).replace(/\n/g, " ")}`);
-        return;
+        if (!(p.event === "staffing_choice" && !p.waiting)) return; // "3 proceed": confirm, then run
       }
       if (p.waiting) return; // user gate
       if (DEBOUNCED.has(p.event)) return debounce(p); // a drag + comment arrive as 2 webhooks: one run, after both landed
