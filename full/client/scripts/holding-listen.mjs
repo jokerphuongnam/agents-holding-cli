@@ -209,14 +209,14 @@ function spawnGrok(gargs, out, issue, sid, o = {}) {
 // ---- lean run: scripts drive the stages, the model only writes text/code (see lean.mjs) ----
 async function leanModel(kind, issue, stage, prompt) {
   const sid = randomUUID(), out = join(logDir, `run-${Date.now()}.log`), buf = [];
-  const text = kind === "text", schema = text ? L.TEXT_SCHEMA : L.CODE_SCHEMA, system = text ? L.TEXT_SYSTEM : null;
+  const text = kind !== "code", schema = kind === "tech" ? L.TECH_SCHEMA : text ? L.TEXT_SCHEMA : L.CODE_SCHEMA, system = kind === "tech" ? L.TECH_SYSTEM : text ? L.TEXT_SYSTEM : null;
   const { agent, model, bin } = L.resolveAgent({ cfg: { agent: runSettings?.agent, model: runSettings?.model, text_model: runSettings?.text_model, ...L.loadAgentCfg(homedir(), company) }, text });
   let gargs, o = { collect: buf };
-  if (agent === "claude") { gargs = L.claudeArgs({ model, text, prompt, schema, system }); o = { ...o, bin, env: { ...process.env } }; }
+  if (agent === "claude") { gargs = L.claudeArgs({ model, text: text && kind !== "tech", prompt, schema, system, codeTools: kind === "tech" ? "Read,Grep,Glob" : undefined }); o = { ...o, bin, env: { ...process.env } }; }
   else if (agent === "codex") {
     const schemaFile = join(logDir, `schema-${sid}.json`); writeFileSync(schemaFile, JSON.stringify({ ...schema, additionalProperties: false, required: Object.keys(schema.properties) }));
     gargs = L.codexArgs({ model, text, prompt, schemaFile, system }); o = { ...o, bin, env: { ...process.env, CODEX_HOME: L.leanCodexHome(homedir()) } };
-  } else { gargs = L.leanGrokArgs({ sid, model, text, prompt, schema, system }); o = { ...o, home: leanHome, bin }; }
+  } else { gargs = L.leanGrokArgs({ sid, model, text, prompt, schema, system, ...(kind === "tech" ? { tools: L.TECH_TOOLS, maxTurns: 4 } : {}) }); o = { ...o, home: leanHome, bin }; }
   if (o.env) delete o.env.AGENTS_HOLDING_KEY; // lean runs need no server access
   log(`lean ${kind} call for ${issue} ${stage} agent ${agent} session ${sid} ${model ?? "default model"} prompt ${prompt.length} chars -> ${out}`);
   const t0 = Date.now(); const code = await spawnGrok(gargs, out, issue, sid, o); const wall = Date.now() - t0;
@@ -238,7 +238,7 @@ async function leanRun(p, na, depth = 0) {
   const readKey = opt("--jira-read-as") || process.env.AH_JIRA_READ_AS || issue; // dry replays may read the real issue (GET only)
   if (jira) { try { iss = { key: issue, ...L.compactIssue(await jira.issue(readKey)) }; } catch (e) { log(`lean: Jira read ${readKey} failed (${e.message}); using server title/request`); } }
   const fb = L.feedbackOf(na);
-  const say = async (t) => {
+  const say = async (staff, t0) => { const t = staff === false ? t0 : `${L.staffTag(staff)} ${t0}`; // every comment: [agent-holding] [<staff name>] ...
     if (dryJira && !jira) return log(`JIRA (dry): comment ${issue} "${t.slice(0, 160).replace(/\n/g, " ")}"`);
     if (jira) await jira.comment(issue, t).catch((e) => log("Jira comment failed:", e.message));
   };
@@ -246,7 +246,9 @@ async function leanRun(p, na, depth = 0) {
   const record = (kind, body) => mcp("record_artifact", { company, task: issue, kind, body: body || kind, role: "agent" }).catch((e) => log(`record ${kind} failed:`, e.message));
   const advance = async (from, to, art) => {
     for (let i = 0; i < 2; i++) {
-      try { const r = await mcp("advance", { company, task: issue, to_stage: to, listener_jira: true }); log(`lean: ${issue} ${from} -> ${r.stage}`); return true; }
+      try { const r = await mcp("advance", { company, task: issue, to_stage: to, listener_jira: true }); log(`lean: ${issue} ${from} -> ${r.stage}`);
+        await jiraOps(issue); // move the card NOW, before the next stage's work starts (the board shows what is actually happening)
+        return true; }
       catch (e) { const m = e.message.match(/kind=(\w+)/); if (i || !m) { log(`lean: advance ${from} -> ${to} failed: ${e.message}`); return false; } await record(m[1], art?.(m[1])); }
     }
   };
@@ -257,9 +259,9 @@ async function leanRun(p, na, depth = 0) {
     if (seg.kind === "move") { if (!(await advance(s0, seg.moves[0]))) return; continue; }
     if (seg.kind === "text") {
       const r = await leanModel("text", issue, s0, L.textPrompt(iss, { prevPlan: s0 === "planned" ? plan : null, feedback: fb, allowQuestion: s0 !== "planned" && (na.flow_stages ?? []).includes("ba_question") }));
-      if (r.question && s0 !== "planned") { await record("question", r.question); await say(`${L.AGENT_MARK} QUESTION\n${r.question}`); await advance(s0, "ba_question"); break; }
+      if (r.question && s0 !== "planned") { await record("question", r.question); await say(L.stageStaff(na, s0), `QUESTION\n${r.question}`); await advance(s0, "ba_question"); break; }
       plan = r.plan || r.summary || ""; if (!plan) { log(`lean: empty plan for ${issue}; stopping`); return; }
-      await record("plan", plan); await say(`${L.AGENT_MARK} PLAN\n${plan}`); L.savePlan(st, issue, { plan });
+      await record("plan", plan); await say(L.stageStaff(na, s0), `PLAN\n${plan}`); L.savePlan(st, issue, { plan });
       if (seg.moves[0] && !(await advance(s0, seg.moves[0]))) return;
       continue;
     }
@@ -273,41 +275,104 @@ Jira: ${issue}` });
       const steps = L.prSteps(na, seg), saved2 = L.loadPlan(st, issue);
       if (s0 === "done") { // template comment + local state cleanup; merge only if the flow says so (per auto_pr rules)
         const h = steps.merge ? host(saved2) : { msg: [] };
-        await say([L.doneComment(issue, saved2), ...h.msg].join("\n"));
+        await say(false, [L.doneComment(issue, saved2, L.stageStaff(na, "done")), ...h.msg].join("\n"));
         log(`lean: ${issue} done (script, no model); state ${L.clearState(st, issue) ? "cleared" : "none"}`);
         continue;
       }
       if (!steps.open && !steps.merge && !(na.on_enter?.[s0] ?? []).some((a) => a.action === "comment") && !seg.moves[0]) { log(`lean: ${issue} ${s0}: nothing to do (script)`); continue; }
       const h = (steps.open || steps.merge) ? host(saved2) : { msg: [] }; const note = h.msg.join("\n") || "moved on";
-      await say(`${L.AGENT_MARK} ${seg.stages.join(">")}\n${note}`);
+      await say(L.stageStaff(na, s0), `${seg.stages.join(">")}\n${note}`);
       if (h.msg.some((m) => /NOT done|failed/.test(m))) return; // never force: stop for the user
       for (let i = 0; i < seg.stages.length; i++) { const to = seg.moves[i]; if (!to) break; await record("note", note); if (!(await advance(seg.stages[i], to))) return; }
       continue;
     }
-    // code segment: one coding call covers pre_coding .. in_review; a task targeting several repos gets feature/<KEY> + one call per repo
-    const approval = seg.stages.includes("pre_coding") || p.event === "user_approved" ? "Plan approved; go ahead." : null;
-    let r = null; const wheres = [];
-    for (const rp of runRepos) {
-      repo = rp;
-      log(`lean: ${rp} branch ${branch}: ${L.ensureBranch(rp, branch)}`);
-      let files = []; try { files = L.git(rp, "ls-files").split("\n").filter(Boolean); } catch {}
-      const multi = runRepos.length > 1 ? `\nThis task spans repos ${runRepos.map((x) => x.split("/").pop()).join(", ")}; you are in ${rp.split("/").pop()}: change only what belongs here.` : "";
-      const r1 = await leanModel("code", issue, seg.stages.join(">"), L.codePrompt(iss, { plan: (plan ?? "") + multi, approval, feedback: fb, hints: L.fileHints(files, `${iss.summary} ${iss.description} ${plan ?? ""}`), qc: seg.stages.includes("qc") }));
-      if (r1.question && !r1.tech_plan) { await record("question", r1.question); await say(`${L.AGENT_MARK} QUESTION (${rp.split("/").pop()})\n${r1.question}`); repo = runRepos[0]; return; }
-      const sha = L.commitAll(rp, `${issue}: ${r1.commit_message || iss.summary || "agent change"}`);
-      const h = host(r1);
-      wheres.push(`${runRepos.length > 1 ? rp.split("/").pop() + ": " : ""}Branch ${branch}${sha ? ` @ ${sha}` : " (no changes)"}${h.url ? ` PR ${h.url}${h.merged ? " (merged)" : ""}` : " (local, not pushed)"}${h.msg.length && !h.url ? ` - ${h.msg.join("; ")}` : ""}`);
-      if (!r) r = { ...r1, commit: sha }; else r = { ...r, summary: `${r.summary ?? ""}\n${r1.summary ?? ""}`, tests: [r.tests, r1.tests].filter(Boolean).join("\n"), tech_plan: [r.tech_plan, r1.tech_plan].filter(Boolean).join("\n") };
+    const devRoles = na.dev_roles ?? [], rname = (rp) => rp.split("/").pop();
+    const filesOf = (rp) => { try { return L.git(rp, "ls-files").split("\n").filter(Boolean); } catch { return []; } };
+    const approval = plan || p.event === "user_approved" ? "Plan approved; go ahead." : null;
+    if (seg.kind === "techplan") { // Pre Coding: tech plan + pick the developer. NO code changes here.
+      const who = L.stageStaff(na, s0, { kind: "techplan" });
+      const files = filesOf(repo), hints = L.fileHints(files, `${iss.summary} ${iss.description} ${plan ?? ""}`);
+      const listed = files.length <= 40 ? files : hints;
+      const r = await leanModel("tech", issue, s0, L.techPlanPrompt(iss, { plan, feedback: fb, files: listed, snippets: L.fileSnippets(repo, hints.slice(0, 5)), devRoles }));
+      if (r.question && !r.tech_plan) { await record("question", r.question); await say(who, `QUESTION\n${r.question}`); return; }
+      const techPlan = r.tech_plan || r.summary || ""; if (!techPlan) { log(`lean: empty tech plan for ${issue}; stopping`); return; }
+      const dev = L.pickDeveloper(devRoles, r.developer, na.assigned_role, `${iss.summary} ${iss.description} ${techPlan}`);
+      if (dev !== "tech-lead" && dev !== na.assigned_role) await mcp("assign", { company, task: issue, role: dev }).catch((e) => log(`assign ${dev} failed:`, e.message));
+      L.savePlan(st, issue, { tech_plan: techPlan, developer: dev, qc_baseline: null });
+      await record("tech_plan", techPlan);
+      await say(who, `TECH PLAN\n${techPlan}\nDeveloper: ${L.staffName(dev)} (${dev})`);
+      log(`lean: ${issue} ${s0}: tech plan recorded, developer ${dev} (no code in this stage)`);
+      if (seg.moves[0] && !(await advance(s0, seg.moves[0], (k) => k === "tech_plan" ? techPlan : techPlan))) return;
+      continue;
     }
-    repo = runRepos[0];
-    const where = wheres.join("\n"), sha = r.commit;
-    L.savePlan(st, issue, { tech_plan: r.tech_plan, summary: r.summary, tests: r.tests, commit: sha, branch, repos: runRepos });
-    const art = (k) => ({ tech_plan: r.tech_plan, pr: `${r.summary}\n${where}`, qc_pass: r.tests || r.summary, note: `${r.summary}\n${r.tests ?? ""}\n${where}` }[k] ?? r.summary);
-    await say([`${L.AGENT_MARK} DONE`, r.tech_plan && `Tech plan:\n${r.tech_plan}`, `Summary: ${r.summary ?? ""}`, r.tests && `Checks: ${r.tests}`, where].filter(Boolean).join("\n"));
-    for (let i = 0; i < seg.stages.length; i++) {
-      const from = seg.stages[i], to = seg.moves[i]; if (!to) break;
-      const need = L.neededArtifact(from, to); if (need) await record(need, art(need));
-      if (!(await advance(from, to, art))) return;
+    const segs = L.segments(na), qcAhead = segs.some((x) => x.kind === "qc");
+    const codeOnce = async (stage, o) => { // one coding call per repo (multi-repo task = feature/<KEY> in each), commit by script
+      let r = null; const wheres = [];
+      for (const rp of runRepos) {
+        repo = rp;
+        log(`lean: ${rp} branch ${branch}: ${L.ensureBranch(rp, branch)}`);
+        const files = filesOf(rp);
+        const multi = runRepos.length > 1 ? `\nThis task spans repos ${runRepos.map(rname).join(", ")}; you are in ${rname(rp)}: change only what belongs here.` : "";
+        const r1 = await leanModel("code", issue, stage, L.codePrompt(iss, { plan: (plan ?? "") + multi, techPlan: o.techPlan, approval, feedback: o.feedback, hints: L.fileHints(files, `${iss.summary} ${iss.description} ${plan ?? ""}`), qc: !!o.selfCheck?.[rp] }));
+        if (r1.question && !r1.summary) { await record("question", r1.question); await say(o.who, `QUESTION (${rname(rp)})\n${r1.question}`); repo = runRepos[0]; return null; }
+        const sha = L.commitAll(rp, `${issue}: ${r1.commit_message || iss.summary || "agent change"}`);
+        const h = o.host ? host(r1) : { msg: [] };
+        wheres.push(`${runRepos.length > 1 ? rname(rp) + ": " : ""}Branch ${branch}${sha ? ` @ ${sha}` : " (no changes)"}${h.url ? ` PR ${h.url}${h.merged ? " (merged)" : ""}` : " (local, not pushed)"}${h.msg.length && !h.url ? ` - ${h.msg.join("; ")}` : ""}`);
+        if (!r) r = { ...r1, commit: sha }; else r = { ...r, summary: `${r.summary ?? ""}\n${r1.summary ?? ""}`, tests: [r.tests, r1.tests].filter(Boolean).join("\n"), tech_plan: [r.tech_plan, r1.tech_plan].filter(Boolean).join("\n") };
+      }
+      repo = runRepos[0]; return { ...r, where: wheres.join("\n") };
+    };
+    if (seg.kind === "code") { // Coding: the card is already in Coding (moved by advance), now the developer codes
+      const sv = L.loadPlan(st, issue);
+      const dev = sv.developer ?? L.pickDeveloper(devRoles, null, na.assigned_role, `${iss.summary} ${iss.description}`);
+      const who = L.stageStaff(na, s0, { kind: "code", developer: dev });
+      // QC baseline (script, no tokens): run the repo's checks on the untouched tree so QC only blames new failures
+      const baselines = { ...(sv.qc_baseline ?? {}) }, selfCheck = {};
+      for (const rp of runRepos) {
+        L.ensureBranch(rp, branch);
+        const checks = qcAhead ? L.detectChecks(rp) : [];
+        if (checks.length && !baselines[rp]) { baselines[rp] = L.runChecks(rp, checks).map(({ name, ok }) => ({ name, ok })); log(`lean: ${issue} QC baseline ${rname(rp)}: ${baselines[rp].map((x) => `${x.name}=${x.ok ? "ok" : "fail"}`).join(", ")}`); }
+        selfCheck[rp] = !(baselines[rp] ?? []).some((x) => x.ok); // no usable script check -> the developer runs the cheapest check itself
+      }
+      const r = await codeOnce(s0, { techPlan: sv.tech_plan, feedback: fb, selfCheck, who, host: L.prSteps(na, seg).open || L.prSteps(na, seg).merge });
+      if (!r) return;
+      L.savePlan(st, issue, { tech_plan: sv.tech_plan ?? r.tech_plan, summary: r.summary, tests: r.tests, commit: r.commit, branch, repos: runRepos, developer: dev, qc_baseline: baselines, where: r.where });
+      await say(who, ["CODE", !sv.tech_plan && r.tech_plan && `Tech plan:\n${r.tech_plan}`, `Summary: ${r.summary ?? ""}`, r.tests && `Checks: ${r.tests}`, r.where].filter(Boolean).join("\n"));
+      const art = (k) => ({ tech_plan: r.tech_plan, pr: `${r.summary}\n${r.where}`, qc_pass: r.tests || r.summary, note: `${r.summary}\n${r.tests ?? ""}\n${r.where}` }[k] ?? r.summary);
+      const to = seg.moves[0];
+      if (to) { const need = L.neededArtifact(s0, to); if (need) await record(need, art(need)); if (!(await advance(s0, to, art))) return; }
+      continue;
+    }
+    if (seg.kind === "qc") { // QC by script: the repo's checks vs the baseline; one cheap fix round through Coding on a new failure
+      const who = L.stageStaff(na, s0, { kind: "qc" });
+      const codingKey = (na.flow_stages ?? []).includes("coding") ? "coding" : null;
+      const runQc = () => { const sv = L.loadPlan(st, issue); return runRepos.map((rp) => ({ rp, v: L.qcVerdict(sv.qc_baseline?.[rp] ?? null, L.runChecks(rp, L.detectChecks(rp))) })); };
+      const qcText = (res) => res.map((x) => `${runRepos.length > 1 ? rname(x.rp) + ": " : ""}${x.v.text}`).join("\n");
+      for (const rp of runRepos) L.ensureBranch(rp, branch);
+      let res = runQc(), fixes = 0;
+      while (res.some((x) => !x.v.pass) && fixes < 1 && codingKey) {
+        const txt = qcText(res); await record("qc_fail", txt); await say(who, `QC FAIL\n${txt}\nBack to Coding for one fix.`);
+        if (!(await advance(s0, codingKey))) return;
+        const sv = L.loadPlan(st, issue), dev = sv.developer ?? "tech-lead", dwho = L.stageStaff(na, codingKey, { kind: "code", developer: dev });
+        const r = await codeOnce(codingKey, { techPlan: sv.tech_plan, feedback: `QC failed, fix it:\n${res.filter((x) => !x.v.pass).map((x) => x.v.failed.map((f) => `${f.name}: ${f.out}`).join("\n")).join("\n")}`, who: dwho });
+        if (!r) return;
+        L.savePlan(st, issue, { summary: `${sv.summary ?? ""}\nFix: ${r.summary ?? ""}`, commit: r.commit, where: r.where });
+        await say(dwho, `FIX\n${r.summary ?? ""}\n${r.where}`);
+        if (!(await advance(codingKey, s0))) return;
+        fixes++; res = runQc();
+      }
+      const sv = L.loadPlan(st, issue);
+      if (res.some((x) => !x.v.pass)) { const txt = qcText(res); await record("qc_fail", txt); await say(who, `QC FAIL\n${txt}\nStopping: needs a look from you.`); log(`lean: ${issue} QC failed after ${fixes} fix(es); stopped`); return; }
+      const txt = [qcText(res), res.every((x) => !x.v.passed.length) && sv.tests && `Developer check: ${sv.tests}`].filter(Boolean).join("\n");
+      const steps = L.prSteps(na, seg), h = steps.open || steps.merge ? host(sv) : { msg: [] };
+      const where = [sv.where, ...h.msg].filter(Boolean).join("\n");
+      await say(who, `QC PASS\n${txt}${where ? `\n${where}` : ""}`);
+      if (h.msg.some((m) => /NOT done|failed/.test(m))) return;
+      const art = (k) => ({ pr: `${sv.summary ?? ""}\n${where}`, qc_pass: txt, note: `${txt}\n${where}` }[k] ?? txt);
+      const to = seg.moves[0];
+      if (to) { const need = L.neededArtifact(s0, to); if (need) await record(need, art(need)); else await record("qc_pass", txt); if (!(await advance(s0, to, art))) return; }
+      else await record("qc_pass", txt);
+      continue;
     }
   }
   await jiraOps(issue);
@@ -327,6 +392,8 @@ async function jiraOps(issue) {
       const api = (m, path, body) => fetch(`${jiraCfg.site.replace(/\/$/, "")}/rest/api/3/issue/${encodeURIComponent(o.issue)}${path}`, { method: m,
         headers: { Authorization: "Basic " + Buffer.from(`${jiraCfg.email}:${tok}`).toString("base64"), "Content-Type": "application/json", Accept: "application/json" }, body: body && JSON.stringify(body) });
       const adf = (t) => ({ body: { type: "doc", version: 1, content: [{ type: "paragraph", content: [{ type: "text", text: t }] }] } });
+      const cur = (await (await api("GET", "?fields=status")).json())?.fields?.status?.name ?? "";
+      if (o.to_names.some((n) => n.toLowerCase() === cur.toLowerCase())) { log(`JIRA: ${o.issue} already in ${cur}`); continue; }
       if (o.notice) await api("POST", "/comment", adf(o.notice));
       const tr = (await (await api("GET", "/transitions")).json()).transitions ?? [];
       const hit = o.to_names.map((n) => tr.find((t) => t.to?.name?.toLowerCase() === n.toLowerCase())).find(Boolean);
@@ -389,7 +456,7 @@ async function connect(company) {
   ws.onerror = () => {};
 }
 const fail = (company) => (e) => { const b = backoffs[company] ?? 1000; log("error", company, e.message); setTimeout(() => connect(company).catch(fail(company)), b); backoffs[company] = Math.min(b * 2, 60000); };
-// Manual one-shot replay of a missed/killed run: holding listen --run PROJ-1 --event user_comment --stage todo
+// Manual one-shot replay of a missed/killed run: holding listen --run KAN-1 --event user_comment --stage todo
 if (opt("--run")) { log("manual run", opt("--run")); wake({ company: opt("--company", company), issue: opt("--run"), event: opt("--event", "manual"), stage: opt("--stage", "?") }); }
 else {
 log("holding listen:", registry.projects.length, "project(s),", companyList.length, "company subscription(s)", lean ? "LEAN" : "legacy", dryJira ? "DRY-JIRA" : listenerJira ? "jira-by-listener" : "jira-by-agent", "mcp", mcpServers().join(","), "timeout", runTimeoutMs / 60000, "min");

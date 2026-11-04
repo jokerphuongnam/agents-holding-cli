@@ -2,7 +2,12 @@
 // Scripts do everything deterministic: read the Jira issue (REST), record artifacts, advance stages, Jira comments,
 // transitions (via jiraOps), branch + commit. The model is called only for the text it must write:
 //   * text stages (product_work / ba_question / plan revision): ONE tool-less call, cheap model, JSON {plan|question}
-//   * code stages (pre_coding .. in_review chain): ONE coding call, JSON {tech_plan, summary, tests, commit_message}
+//   * Pre Coding (tech_plan): ONE tool-less call, cheap model: tech plan + the developer role picked from the server roster. NO code.
+//   * Coding (code): the script moves the card to Coding FIRST, then ONE coding call (default model) implements the saved tech plan.
+//   * QC (qc_test): the script moves the card to QC, then runs the repo's own checks (npm test/lint/typecheck/build, pytest, go, cargo)
+//     before vs after; only newly failing checks fail QC (one cheap fix call, then QC again). No model call when checks pass.
+//   Each stage is its own step; the Jira card is moved right after each advance, so the board shows what is actually happening.
+//   Every comment: "[agent-holding] [<staff name>] ..." (staff from the server's stage owners / roster).
 // Every model call is a FRESH session (no resume) with no MCP servers (lean GROK_HOME / CODEX_HOME, claude --strict-mcp-config);
 // the CLI is grok (default), claude or codex, see agents.mjs (AH_AGENT or per-company agent.json),
 // with a short saved plan (state dir) + the user's approval/feedback instead of the old conversation.
@@ -10,13 +15,41 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-export const AGENT_MARK = "[agents-holding]";
+export const AGENT_MARK = "[agent-holding]";
+export const AGENT_MARKS = [AGENT_MARK, "[agents-holding]"]; // legacy prefix still recognized as an agent comment
+export const isAgentText = (t) => AGENT_MARKS.some((m) => String(t ?? "").trimStart().startsWith(m));
+const STAFF_NAMES = { ceo: "CEO", cto: "CTO", "tech-lead": "Tech Lead", "ba-lead": "BA", "ba-user": "BA", "po-lead": "PO", "po-new": "PO", "po-modify": "PO",
+  "pm-lead": "PM", "design-lead": "Design Lead", "ui-designer": "UI Designer", "ux-writer": "UX Writer", "qc-lead": "QC", "user-qc": "QC", git: "Git", "code-graph": "Code Graph" };
+/** Role id -> display name (mirrors the server's staffName). */
+export const staffName = (role) => !role ? "Agent" : STAFF_NAMES[role] ?? String(role).split(/[-_]/).filter(Boolean).map((w) => /^(fe|be|qa|qc|ui|ux|ios|api|ai|ml|db|sre)$/.test(w) ? w.toUpperCase() : w[0].toUpperCase() + w.slice(1)).join(" ");
+/** "[agent-holding] [<staff name>]" */
+export const staffTag = (name) => `${AGENT_MARK} [${name || "Agent"}]`;
+/** Client mirror of the server's ownerFor (fallback when next_action has no staff map). */
+export function ownerFor(stage, engineer, roster = []) {
+  const has = (r) => !roster.length || roster.includes(r);
+  if (["todo", "in_progress", "product_work", "ba_question"].includes(stage)) return has("ba-lead") ? "ba-lead" : "po-lead";
+  if (stage === "planned") return has("tech-lead") ? "tech-lead" : "po-lead";
+  if (stage === "qc") return has("qc-lead") ? "qc-lead" : "user-qc";
+  if (stage === "pre_coding") return has("tech-lead") ? "tech-lead" : engineer ?? "tech-lead";
+  if (stage === "done") return "ceo";
+  return engineer ?? "tech-lead";
+}
+/** Staff display name for a stage: server staff map, else mirror. kind "code" = the picked developer, "qc" = QC. */
+export function stageStaff(na, stage, { kind, developer } = {}) {
+  if (kind === "code") return staffName(developer || "tech-lead");
+  if (kind === "qc" && stage !== "qc") return staffName(ownerFor("qc", null, na?.roster ?? [])); // custom QC stage
+  if (kind === "techplan" && stage !== "pre_coding") return staffName(ownerFor("pre_coding", null, na?.roster ?? []));
+  return na?.staff?.[stage]?.name ?? staffName(ownerFor(stage, na?.assigned_role ?? null, na?.roster ?? []));
+}
 export const TEXT_STAGES = new Set(["product_work", "ba_question", "planned"]);
 export const SCRIPT_ACTIONS = new Set(["open_pr", "merge", "create_branch", "comment"]); // flow stages done by script, no model
 export const ENTER_ONLY = new Set(["planned", "in_review", "done"]);
-export const CODE_TOOLS = "run_terminal_command,read_file,search_replace,write,grep,list_dir";
+// grok --tools names: "Bash" = run_terminal_command ("run_terminal_command" itself is NOT accepted and silently loads ALL ~22 tools, ~9k tokens/turn)
+export const CODE_TOOLS = "Bash,read_file,search_replace,write,grep,list_dir";
+export const TECH_TOOLS = "read_file,grep,list_dir"; // Pre Coding: read-only, a few turns max, cheap model
 export const TEXT_SCHEMA = { type: "object", properties: { plan: { type: "string" }, question: { type: "string" } } };
 export const CODE_SCHEMA = { type: "object", properties: { tech_plan: { type: "string" }, summary: { type: "string" }, tests: { type: "string" }, commit_message: { type: "string" }, question: { type: "string" } }, required: ["summary"] };
+export const TECH_SCHEMA = { type: "object", properties: { tech_plan: { type: "string" }, developer: { type: "string" }, question: { type: "string" } } };
 
 // ---------- pure helpers (unit-tested in tests/lean_test.mjs) ----------
 export function adfText(n) {
@@ -30,7 +63,7 @@ const clip = (s, n) => { s = String(s ?? "").replace(/\n{3,}/g, "\n\n").trim(); 
 export function compactIssue(j, max = { desc: 1500, comments: 4, comment: 400 }) {
   const f = j?.fields ?? {};
   const comments = (f.comment?.comments ?? []).map((c) => ({ who: c.author?.displayName ?? "?", t: clip(adfText(c.body), max.comment) }))
-    .filter((c) => c.t && !c.t.startsWith(AGENT_MARK)).slice(-max.comments);
+    .filter((c) => c.t && !isAgentText(c.t)).slice(-max.comments);
   return { summary: f.summary ?? "", description: clip(adfText(f.description), max.desc), comments };
 }
 /** Up to n repo files whose path matches words of the task (cheap file hints; whole list if the repo is tiny). */
@@ -64,26 +97,89 @@ export function textPrompt(iss, o = {}) {
 }
 export const TEXT_SYSTEM = "You are a senior BA/tech lead. You write short, concrete task plans. Reply with JSON only.";
 export function codePrompt(iss, o = {}) {
-  return [issueBlock(iss), o.plan && `Approved plan:\n${o.plan}`, o.approval && `User: ${o.approval}`, o.feedback && `Address this feedback: ${o.feedback}`,
-    o.hints?.length && `Likely files: ${o.hints.join(", ")}`,
-    `Implement it in this repo with minimal changes${o.qc ? "; then run the cheapest relevant check (build/tests) and fix failures" : ""}.`,
+  return [issueBlock(iss), o.plan && `Approved plan:\n${o.plan}`, o.techPlan && `Tech plan (follow it; read only the files it names unless something is missing):\n${o.techPlan}`,
+    o.approval && `User: ${o.approval}`, o.feedback && `Address this feedback: ${o.feedback}`,
+    !o.techPlan && o.hints?.length && `Likely files: ${o.hints.join(", ")}`,
+    `Implement it in this repo with minimal changes${o.qc ? "; then run the cheapest relevant check (build/tests) and fix failures" : "; do not run tests/builds (QC runs them by script)"}.`,
     "Do not run git commit/branch/push and do not touch Jira (scripts do that).",
-    "Finish with JSON: {\"tech_plan\": \"files+steps, 3-6 lines\", \"summary\": \"what changed\", \"tests\": \"checks run + result\", \"commit_message\": \"one line\"}."].filter(Boolean).join("\n\n");
+    `Finish with JSON: {${o.techPlan ? "" : "\"tech_plan\": \"files+steps, 3-6 lines\", "}\"summary\": \"what changed\", ${o.qc ? "\"tests\": \"checks run + result\", " : ""}\"commit_message\": \"one line\"}.`].filter(Boolean).join("\n\n");
 }
-/** Agent-stage segments of a run: [{kind:"text"|"code"|"move", from, to}] from the current stage + server chain. */
+export const TECH_SYSTEM = "You are the tech lead. You write short technical plans and pick the developer. You never write code. Reply with JSON only.";
+/** Pre Coding prompt: tech plan only (no code), with inline file excerpts so one tool-less turn is enough, and the developer roles to pick from. */
+export function techPlanPrompt(iss, o = {}) {
+  const roles = (o.devRoles ?? []).map((r) => `- ${r.role}${r.skills?.length ? `: ${r.skills.join(", ")}` : ""}`).join("\n");
+  return [issueBlock(iss), o.plan && `Approved plan:\n${o.plan}`, o.feedback && `User feedback: ${o.feedback}`, o.context && `Project: ${o.context}`,
+    o.files?.length && `Repo files (subset): ${o.files.join(", ")}`,
+    o.snippets?.length && `File excerpts:\n${o.snippets.map((x) => `--- ${x.path}\n${x.text}`).join("\n")}`,
+    roles ? `Developers on the roster (pick the best fit by role/skills):\n${roles}` : "No developer roles on the roster: the tech lead codes it (developer = \"tech-lead\").",
+    "Use the excerpts above; read at most 2 more files only if essential. Write the technical plan only (do NOT write code or edit files): files to change/create, steps, risks, test plan; max 8 short lines.",
+    "Return {\"tech_plan\": \"...\", \"developer\": \"<role id>\"}, or {\"question\": \"...\"} if something essential is unclear. JSON only."].filter(Boolean).join("\n\n");
+}
+/** Developer role for Coding: the model's pick if it is on the roster, else the task's assigned dev role, else best skill/keyword match, else tech-lead. */
+export function pickDeveloper(devRoles = [], choice, assigned, text = "") {
+  const ids = devRoles.map((r) => r.role);
+  if (choice && ids.includes(choice)) return choice;
+  if (assigned && ids.includes(assigned)) return assigned;
+  const t = String(text).toLowerCase();
+  const scored = devRoles.map((r) => [[r.role, ...(r.skills ?? [])].join(" ").toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2 && t.includes(w)).length, r.role]).sort((a, b) => b[0] - a[0]);
+  if (scored[0]?.[0] > 0) return scored[0][1];
+  return ids.length === 1 ? ids[0] : "tech-lead";
+}
+/** Small excerpts of the hinted files (for the tool-less tech plan call). */
+export function fileSnippets(repo, files, { max = 1200, total = 6000 } = {}) {
+  const out = []; let used = 0;
+  for (const f of files) { if (used >= total) break; let t = ""; try { t = readFileSync(join(repo, f), "utf8"); } catch { continue; }
+    t = t.length > max ? t.slice(0, max) + "\n…" : t; used += t.length; out.push({ path: f, text: t }); }
+  return out;
+}
+
+// ---------- QC by script: the repo's own checks, before vs after the change (no model tokens) ----------
+/** Check commands a repo offers: package.json scripts test/lint/typecheck/build (npm), pytest, go test, cargo test, make test. */
+export function detectChecks(repo, has = (f) => existsSync(join(repo, f)), read = (f) => readFileSync(join(repo, f), "utf8")) {
+  const out = [];
+  if (has("package.json")) {
+    let sc = {}; try { sc = JSON.parse(read("package.json")).scripts ?? {}; } catch {}
+    for (const n of ["test", "lint", "typecheck", "build"]) if (sc[n] && !/no test specified/.test(sc[n])) out.push({ name: `npm run ${n}`, cmd: "npm", args: ["run", "-s", n] });
+  }
+  if (has("pytest.ini") || has("pyproject.toml") && /pytest/.test((() => { try { return read("pyproject.toml"); } catch { return ""; } })()) || has("tests") && has("setup.py")) out.push({ name: "pytest", cmd: "python3", args: ["-m", "pytest", "-q"] });
+  if (has("go.mod")) out.push({ name: "go test", cmd: "go", args: ["test", "./..."] });
+  if (has("Cargo.toml")) out.push({ name: "cargo test", cmd: "cargo", args: ["test", "-q"] });
+  if (!out.length && has("Makefile") && /^test:/m.test((() => { try { return read("Makefile"); } catch { return ""; } })())) out.push({ name: "make test", cmd: "make", args: ["test"] });
+  return out;
+}
+export function runChecks(repo, checks, exec = (c, a) => execFileSync(c, a, { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 5 * 60 * 1000, env: { ...process.env, CI: "1" } })) {
+  return checks.map((c) => { try { const o = exec(c.cmd, c.args); return { name: c.name, ok: true, out: clip(o, 300) }; }
+    catch (e) { return { name: c.name, ok: false, out: clip(`${e.stdout ?? ""}\n${e.stderr ?? ""}\n${e.message ?? ""}`.split("\n").filter(Boolean).slice(-25).join("\n"), 1500) }; } });
+}
+/** QC verdict: a check fails QC only if it passed on the baseline (pre-existing failures are reported, not blamed on the change). */
+export function qcVerdict(baseline, after) {
+  const was = Object.fromEntries((baseline ?? []).map((r) => [r.name, r.ok]));
+  const failed = after.filter((r) => !r.ok && was[r.name] !== false), preexisting = after.filter((r) => !r.ok && was[r.name] === false);
+  const passed = after.filter((r) => r.ok);
+  return { pass: !failed.length, failed, preexisting, passed,
+    text: [passed.length && `PASS: ${passed.map((r) => r.name).join(", ")}`, failed.length && `FAIL: ${failed.map((r) => `${r.name}\n${r.out}`).join("\n")}`,
+      preexisting.length && `Pre-existing failures (also fail before the change): ${preexisting.map((r) => r.name).join(", ")}`, !after.length && "No automated checks in this repo."].filter(Boolean).join("\n") };
+}
+/** Agent-stage segments of a run: one per stage [{kind, stages:[s], moves:[to]}] from the current stage + server chain (each stage is its own step). */
 // Which stages need the model at all. Only real AI work (analysis/plan text, tech plan/code/QC) calls it;
 // moves, gates, review, done, todo, merges, PRs, comments and custom stages without AI actions are script-only.
+// Stage kinds: move | text (plan) | techplan (Pre Coding: tech plan + developer pick, no code) | code (Coding) | qc (QC by script) | script.
+// Custom stages map by their on_enter actions (code > tech_plan > qc_test > analyze/plan); a stage with no AI action is script-only.
 export const CODE_STAGES = new Set(["pre_coding", "coding", "qc"]);
-const TEXT_ACTIONS = new Set(["analyze", "plan"]), CODE_MODEL_ACTIONS = new Set(["tech_plan", "code", "qc_test"]);
+const TEXT_ACTIONS = new Set(["analyze", "plan"]);
 export function stageKind(s, acts) {
   if (s === "in_progress") return "move";
   if (TEXT_STAGES.has(s)) return "text";
-  if (CODE_STAGES.has(s)) return "code";
-  if (acts?.some((a) => CODE_MODEL_ACTIONS.has(a.action))) return "code";
+  if (s === "pre_coding") return "techplan";
+  if (s === "coding") return "code";
+  if (s === "qc") return "qc";
+  if (acts?.some((a) => a.action === "code")) return "code";
+  if (acts?.some((a) => a.action === "tech_plan")) return "techplan";
+  if (acts?.some((a) => a.action === "qc_test")) return "qc";
   if (acts?.some((a) => TEXT_ACTIONS.has(a.action))) return "text";
   return "script"; // todo, in_review, done, merge/PR/comment-only or action-less custom stages
 }
-export const doneComment = (issue, st) => [`${AGENT_MARK} DONE`, `${issue} is closed.`, st?.branch && `Branch ${st.branch}${st.commit ? ` @ ${st.commit}` : ""}`, st?.pr && `PR ${st.pr}`].filter(Boolean).join("\n");
+export const doneComment = (issue, st, staff = "CEO") => [`${staffTag(staff)} DONE`, `${issue} is closed.`, st?.branch && `Branch ${st.branch}${st.commit ? ` @ ${st.commit}` : ""}`, st?.pr && `PR ${st.pr}`].filter(Boolean).join("\n");
 export function clearState(dir, issue) { try { rmSync(join(dir, `${issue}.json`)); return true; } catch { return false; } }
 export function segments(na) {
   const path = [na.stage, ...(na.chain ?? []).map((c) => c.stage)];
@@ -95,8 +191,6 @@ export function segments(na) {
     const acts = na.on_enter?.[s];
     const kind = stageKind(s, acts);
     if (!to && kind === "move") break;
-    const last = out.at(-1);
-    if (kind === "code" && last?.kind === "code") { last.stages.push(s); last.moves.push(to); continue; }
     out.push({ kind, stages: [s], moves: [to] });
   }
   return out;
@@ -149,9 +243,9 @@ export function leanGrokHome(home) {
   try { if (!existsSync(tf) && existsSync(rtf)) writeFileSync(tf, readFileSync(rtf)); } catch {}
   return d;
 }
-export function leanGrokArgs({ sid, model, text, prompt, schema, system }) {
+export function leanGrokArgs({ sid, model, text, prompt, schema, system, tools, maxTurns }) {
   return ["--trust", "--always-approve", "--session-id", sid, ...(model ? ["--model", model] : []),
-    "--tools", text ? "read_file" : CODE_TOOLS, ...(text ? ["--max-turns", "1"] : []), "--disable-web-search", "--no-subagents", "--no-plan",
+    "--tools", tools ?? (text ? "read_file" : CODE_TOOLS), ...(maxTurns || text ? ["--max-turns", String(maxTurns ?? 1)] : []), "--disable-web-search", "--no-subagents", "--no-plan",
     ...(system ? ["--system-prompt-override", system] : []), "--json-schema", JSON.stringify(schema), "--output-format", "json", "--single", prompt];
 }
 /** Parse grok --output-format json stdout: structuredOutput, else the last {...} in text. */

@@ -62,7 +62,7 @@ export function route(reg, { company, issue, site, labels = [], components = [] 
   const hit = c.filter((p) => want.has(p.name.toLowerCase()));
   return hit.length ? { repos: hit } : { ask: c.map((p) => p.name) };
 }
-export const askComment = (issue, names) => `[agents-holding] WHICH REPO?\n${issue} is on a board that feeds several repos: ${names.join(", ")}.\n` +
+export const askComment = (issue, names) => `[agent-holding] [Tech Lead] WHICH REPO?\n${issue} is on a board that feeds several repos: ${names.join(", ")}.\n` +
   `Add a label repo:<name> (one per repo, e.g. repo:${names[0]}; repo:all for every repo) or a component with the repo name, then move or comment on the card again. Nothing was run.`;
 /** One-time migration of the old single-repo setup (AH_REPO_DIR / --repo) into the registry. */
 export function migrate(home, repo, { site } = {}) {
