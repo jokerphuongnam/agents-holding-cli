@@ -17,6 +17,9 @@ run=()
 case "$name $verb" in
   "task add"*|"task split"*|"skill add"*|"jira setup"*|"flow edit"*|"flow "[A-Z]*|"flow default"*) exit 0 ;;  # need the agent
 esac
+# /ceo companies | /ceo company <verb>: instant company list/overview (no model)
+if [ "$name" = ceo ] && { [ "$verb" = companies ] || [ "$verb" = company ]; } && [ -n "$H" ]; then
+  rest="${args#"$verb"}"; rest="${rest# }"; [ "$verb" = companies ] && rest="list${rest:+ $rest}"; name=company; args="$rest"; verb="${args%% *}"; fi
 case "$name" in
   staff|task|provider|skill|project|company|listener|jira|inbox|key|credit|billing|status|doctor|notify|setup|habit|flow)
     if [ -n "$H" ]; then export AH_HOOK_RUN=1; run=(bash "$here/holding" "$name")
