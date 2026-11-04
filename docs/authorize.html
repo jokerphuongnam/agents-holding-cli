@@ -23,7 +23,7 @@ if (dev) for (const [k, v] of [["device_id", dev], ["device_name", (q.get("clien
   const i = document.createElement("input"); i.type = "hidden"; i.name = k; i.value = v; f.appendChild(i); }
 if (q.get("client_name")) document.getElementById("client").textContent = q.get("client_name");
 const msg = { invalid_key: "That license key was not accepted. Check it and try again.", too_many_attempts: "Too many failed attempts. Wait 15 minutes and try again.",
-  license_expired: "This license has expired. Use /renew or contact the person who gave you the key.", license_revoked: "This license is revoked.",
-  device_bound: "This license key is bound to another machine (1 key = 1 machine). Ask the owner to run /token-reset-device for it, then sign in again here." }[q.get("error")] || (q.get("error") ? "Sign-in failed: " + q.get("error") : "");
+  license_expired: "This license has expired. Use /key renew or contact the person who gave you the key.", license_revoked: "This license is revoked.",
+  device_bound: "This license key is bound to another machine (1 key = 1 machine). Ask the owner to run /key reset-device for it, then sign in again here." }[q.get("error")] || (q.get("error") ? "Sign-in failed: " + q.get("error") : "");
 if (msg) { const e = document.getElementById("err"); e.textContent = msg; e.hidden = false; }
 </script></body></html>

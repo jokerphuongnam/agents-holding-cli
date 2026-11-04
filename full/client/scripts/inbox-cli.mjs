@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // CEO inbox from the terminal (no chat needs to stay open; notifications are the trigger):
-//   holding inbox [--all] [KEY]              pending items (staff questions, 1/2/3 decisions, hires, blocks, gates), pending first
-//   holding reply <KEY|item> <answer...>      quick answer without a session (e.g. holding reply KAN-12 2); the staff resumes from its checkpoint
+//   holding inbox list [--all] [KEY]         pending items (staff questions, 1/2/3 decisions, hires, blocks, gates), pending first
+//   holding inbox reply <KEY|item> <answer...>      quick answer without a session (e.g. holding inbox reply KAN-12 2); the staff resumes from its checkpoint
 //   holding ceo [--item <id>|KEY]             open a CEO session focused on that item (agent CLI in a new Terminal window when not in one)
-//   holding communication [jira+chat|chat]    per company: jira+chat (default) or chat only (no question/decision/progress comments on cards)
+//   holding company set communication [jira+chat|chat]    per company: jira+chat (default) or chat only (no question/decision/progress comments on cards)
 import { execFileSync, spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -33,17 +33,17 @@ export function formatInbox(d) {
   for (const g of d.by_company) { out.push(`\n${g.company}`); for (const i of g.items) out.push(`  ${++n}. [${i.short_id}] ${i.issue ?? "-"} ${i.kind}: ${i.need}${i.detail ? `\n       ${i.detail.split("\n").slice(0, 4).join("\n       ")}` : ""}\n       ${i.how}`); }
   return out.join("\n");
 }
-if (cmd === "inbox") {
+if (cmd === "list") {
   console.log(formatInbox(await mcp("inbox_list", { ...(company ? { company } : {}), ...(pos[0] ? { issue: pos[0] } : {}) })));
 } else if (cmd === "reply") {
-  const [ref, ...ans] = pos; if (!ref || !ans.length) { console.error("usage: holding reply <KEY|item id> <answer...>   e.g. holding reply KAN-12 2"); process.exit(2); }
+  const [ref, ...ans] = pos; if (!ref || !ans.length) { console.error("usage: holding inbox reply <KEY|item id> <answer...>   e.g. holding inbox reply KAN-12 2"); process.exit(2); }
   const d = await mcp("inbox_reply", { ...(company ? { company } : {}), item: ref, answer: ans.join(" ") }); console.log(d.tell_user);
 } else if (cmd === "communication") {
   if (!company) { console.error("which company? run inside a company repo or pass --company X"); process.exit(2); }
   const m = pos[0];
-  if (m && !["jira+chat", "chat"].includes(m)) { console.error("usage: holding communication [jira+chat|chat]"); process.exit(2); }
-  if (m) { await mcp("set_company_options", { company, communication: m }); console.log(`communication for ${company}: ${m}${m === "chat" ? " (no question/decision/progress comments on Jira cards; answer with /ceo or holding reply; labels, status and assignee still update)" : " (Jira comments + CEO inbox)"}\nThe Jira Listener picks it up within 60s.`); }
-  else { const d = await mcp("list_companies", {}); const c = (d.data ?? d.companies ?? d ?? []).find?.((x) => x.slug === company); console.log(`communication for ${company}: ${c?.communication ?? "jira+chat"}   (holding communication jira+chat|chat)`); }
+  if (m && !["jira+chat", "chat"].includes(m)) { console.error("usage: holding company set communication [jira+chat|chat]"); process.exit(2); }
+  if (m) { await mcp("set_company_options", { company, communication: m }); console.log(`communication for ${company}: ${m}${m === "chat" ? " (no question/decision/progress comments on Jira cards; answer with /ceo or holding inbox reply; labels, status and assignee still update)" : " (Jira comments + CEO inbox)"}\nThe Jira Listener picks it up within 60s.`); }
+  else { const d = await mcp("list_companies", {}); const c = (d.data ?? d.companies ?? d ?? []).find?.((x) => x.slug === company); console.log(`communication for ${company}: ${c?.communication ?? "jira+chat"}   (holding company set communication jira+chat|chat)`); }
 } else if (cmd === "ceo") {
   const focus = item ?? pos[0] ?? null;
   const prompt = `/ceo ${focus ? `resolve pending inbox item ${focus}` : "show pending items and progress"}`;
@@ -53,4 +53,4 @@ if (cmd === "inbox") {
   const sh = `cd ${JSON.stringify(cwd)} && ${JSON.stringify(grok)} --cwd ${JSON.stringify(cwd)} ${JSON.stringify(prompt)}`;
   execFileSync("osascript", ["-e", `tell application "Terminal" to do script ${JSON.stringify(sh)}`, "-e", 'tell application "Terminal" to activate']);
   console.log(`opened a CEO session in Terminal (${cwd}): ${prompt}`);
-} else { console.error("usage: holding inbox [--all] | reply <KEY|item> <answer> | ceo [--item ID|KEY] | communication [jira+chat|chat]"); process.exit(2); }
+} else { console.error("usage: holding inbox list [--all] [KEY] | holding inbox reply <KEY|item> <answer>"); process.exit(2); }

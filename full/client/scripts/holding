@@ -1,92 +1,99 @@
-#!/bin/sh
-# holding <command>: local helper for agents-holding customers.
+#!/usr/bin/env bash
+# holding <noun> <verb> [args]: local helper for agents-holding customers. One root, `holding <noun> <verb>`; chat slash
+# commands map 1:1 (`/staff add` = `holding staff add`). No verb = list/show. Unknown command = this help.
 src="$0"  # follow symlinks (e.g. ~/.local/bin/holding -> ~/.agents-holding/scripts/holding)
 while [ -L "$src" ]; do d="$(dirname "$src")"; src="$(readlink "$src")"; case "$src" in /*) ;; *) src="$d/$src" ;; esac; done
 here="$(cd "$(dirname "$src")" && pwd)"
 # @company mention -> --company <company> (exact local company only; other @words stay as text)
 isco() { [ -d "$HOME/.config/agents-holding/state/$1" ] || grep -q "\"company\": *\"$1\"" "$HOME/.config/agents-holding/projects.json" 2>/dev/null; }
 n=$#; i=0; while [ $i -lt $n ]; do x="$1"; shift; i=$((i+1)); case "$x" in @?*) if isco "${x#@}"; then set -- "$@" --company "${x#@}"; else set -- "$@" "$x"; fi ;; *) set -- "$@" "$x" ;; esac; done
-# --all: aggregate over every local company / board (status, tasks, jira-board, jira-tasks, usage, staffs)
-case " $* " in *" --all "*) case "$1" in status|tasks|jira-board|jira-tasks|usage|staffs|history) exec node "$here/all-cli.mjs" "$@" ;; esac ;; esac
-case "$1" in
-  listen) shift; exec node "$here/holding-listen.mjs" "$@" ;;
-  jira-listener|listener) shift; exec bash "$here/launchd/listener.sh" "$@" ;;   # "listener" = old alias
-  add-skill) shift; exec node "$here/add-skill.mjs" "$@" ;;
-  doctor) shift; exec bash "$here/doctor.sh" "$@" ;;
-  jira-keychain) shift; exec bash "$here/jira-keychain-setup.sh" "$@" ;;
-  jira-workflow) shift; exec bash "$here/jira-setup-workflow.sh" "$@" ;;
-  jira-connect-events|jira-webhook) shift; exec bash "$here/jira-register-webhook.sh" "$@" ;;
-  remove-project) shift; exec node "$here/projects.mjs" remove "$@" ;;
-  projects) shift; exec node "$here/projects.mjs" list "$@" ;;
-  status) shift; exec node "$here/status.mjs" status "$@" ;;
-  notify) shift; exec node "$here/status.mjs" notify "$@" ;;
-  habits) shift; exec node "$here/habits.mjs" "$@" ;;
-  agent) shift; exec node "$here/agent-cli.mjs" "$@" ;;
-  set-staff|unset-staff|set-lang) exec node "$here/agent-cli.mjs" "$@" ;;
-  providers) shift; exec node "$here/providers-cli.mjs" "$@" ;;
-  ceo) shift; [ $# -gt 0 ] && exec node "$here/inbox-cli.mjs" ceo "$@"
-    echo "The CEO is your current chat session: use /ceo in your agent (Grok/Claude/Codex). Focus one pending item: holding ceo --item <id> (opens a CEO session)."; exit 0 ;;
-  inbox|reply|communication) exec node "$here/inbox-cli.mjs" "$@" ;;
-  companies) shift; exec node "$here/companies-cli.mjs" list "$@" ;;
-  use|current) exec node "$here/companies-cli.mjs" "$@" ;;
-  whoami) node "$here/companies-cli.mjs" current "$@"; exec bash "$here/ah-cli.sh" "$@" ;;
-  bind) shift; exec node "$here/bind-cli.mjs" "$@" ;;
-  defaults) exec node "$here/bind-cli.mjs" "$@" ;;
-  hire) shift; set +e; role="$1"; n=$#; bind=(); i=0
-    while [ $i -lt $n ]; do x="$1"; shift; i=$((i+1)); case "$x" in --agent|--provider|--model|--effort|--command) bind+=("$x" "$1"); shift; i=$((i+1)) ;; *) set -- "$@" "$x" ;; esac; done
-    bash "$here/ah-cli.sh" hire "$@" || exit $?; exec node "$here/bind-cli.mjs" "$role" "${bind[@]}" ;;
-  add-project) shift; set +e; node "$here/projects.mjs" add "$@" || exit $?
-    [ -t 0 ] && node "$here/bind-cli.mjs" $(bash "$here/ah-cli.sh" staffs 2>/dev/null | sed -nE 's/^[^a-z0-9]*([a-z0-9][a-z0-9-]*) - .*/\1/p' | sort -u); exit 0 ;;
-  run) shift; exec node "$here/run-cli.mjs" "$@" ;;
-  sync-commands) shift; exec bash "$here/sync-commands.sh" "$@" ;;
-  open-setup) shift; exec bash "$here/open-setup.sh" "$@" ;;
-  staff) [ "${2:-}" = test ] && { shift 2; exec node "$here/staff-test.mjs" "$@"; }; echo "usage: holding staff test <staff>"; exit 1 ;;
-  staffs) set +e; out="$(bash "$here/ah-cli.sh" "$@")"; rc=$?; printf '%s\n' "$out" | node "$here/staffs-local.mjs" "${AH_COMPANY:-}" "$@"; exit $rc ;;
-  billing|usage|tasks|history|sources|renew|plan|fire|assign|convention|auto-pr|flow|custom-skills|help|tokens|token-add|token-revoke|token-renew|token-label|token-reset-device|token-show)
-    exec bash "$here/ah-cli.sh" "$@" ;;
-  server) shift; exec bash "$here/ah-cli.sh" "$@" ;;
-  jira-tasks|jira-task|jira-board|jira-new|jira-move|jira-comment) exec node "$here/jira.mjs" "$@" ;;
-  *) cat <<USAGE
-usage:
-  holding set-staff <staff> <provider> <model> [low|medium|high] [--company X]   per-company staff -> provider/model/effort
-  holding billing                     plan + credits used/left (read-only; more credits: contact the owner)
-  holding inbox [--all] [KEY]         CEO inbox: what needs you (questions, 1/2/3, hires, blocks, gates), pending first
-  holding reply <KEY|item> <answer>   quick answer without a session (e.g. holding reply KAN-12 2); the staff resumes
-  holding ceo --item <id|KEY>         open a CEO session focused on that pending item
-  holding communication [jira+chat|chat]   chat = no question/decision/progress comments on Jira cards (labels/status/assignee still update)
-  holding set-lang <code|auto> [--company X]   output language (auto = same as each card / prompt)
-  holding set-staff <staff> "<command with {prompt}>"   fixed launch command (default = company default command)
-  holding staff test <staff>   dry-run the staff launch command
-  holding unset-staff <staff> [--company X]   back to company/global defaults
-  holding providers [--json]          agent providers (built-in, agents.json, custom modules) + health
-  holding companies | use <company> | current   list local companies / set the active one (company = --company > cwd .agents/company.json > active)
-  holding bind [staff ...] [--agent P --model M --effort E]   bind staff to provider/model/effort (Default = remembered, or Custom)
-  holding defaults [set <role> <provider> [model] [effort] | unset <role>]   remembered per-role bindings
-  holding hire <role> [--agent P --model M --effort E]   hire, then bind
-  holding run <staff> "<task>" [--company X]   run one staff directly on its bound provider (holding set-staff)
-  holding listener on [--repo DIR]   start the background listener now
-  holding listener off               stop it AND turn auto-start off
-  holding listener autostart on|off  start at login (only while the listener is on)
-  holding listener status            running? PID, autostart, last 'join ok'
-  holding listener logs [-f]         recent listener log
-  holding doctor [--repo DIR]        check every local setup step
-  holding listen [--repo DIR] [--once]   run the listener in the foreground (all registered projects, or only DIR)
-  holding jira-keychain <site> <email>     store your Atlassian API token in the macOS Keychain (hidden prompt)
-  holding jira-workflow <site> <email> <KEY> [--dry-run]   create missing Jira statuses/columns
-  holding jira-webhook '<setup_url>'      connect Jira events to your Jira listener (token from the Keychain)
-  holding add-project --jira-project KEY [--jira-project KEY2] [--company ID] [--name N] [--auto-pr on|off] [--agent A]   (inside a repo)
-  holding remove-project [--repo DIR|NAME] [--jira-project KEY]
-  holding projects [--json]           list repos and the Jira boards feeding them
-  holding agent [grok|claude|codex] [--model M] [--text-model M]   CLI the listener runs for this company (no args = show)
-  holding status                     Jira listener alive?, realtime, last Jira event, last heartbeat, current task/stage
-  holding notify on|off              macOS notifications for agent start/done/fail (default on)
-  holding habits [show|edit|clear]    user habits learned on Done (local; used in plan/tech plan/code prompts)
-  holding staffs|whoami|usage|tasks|history|sources|plan KEY|flow|help ...   instant server commands, no model (holding help)
-  holding server doctor|status|listener   server-side view of /doctor, /listener
-  holding tokens|token-add|token-revoke|token-renew|token-label|token-reset-device|token-show <id>   owner (home-Mac key only); new keys go to Keychain + clipboard
-  holding jira-tasks [column] | jira-task KEY | jira-board | jira-new "title" [desc] | jira-move KEY <col> | jira-comment KEY "text"  [--project KEY]
-  holding sync-commands [--owner] [--claude]   refresh Grok slash commands (~/.grok/commands) from the server
-  holding open-setup '<setup_url>'        open the /connect-jira setup page
+usage() { cat <<'USAGE'
+usage: holding <noun> <verb> [args]   (chat: /<noun> <verb> ...; no verb = list/show)
+  staff list | add <role> [--agent P --model M --effort E] | remove <role>
+  staff set <staff> <provider> <model> [low|medium|high] | set <staff> "<command with {prompt}>" | unset <staff>   [--company X]
+  staff run <staff> "<task>" [--proceed] | staff test <staff>
+  task list [all] | history [n] | plan <KEY> | set <KEY> --staff <role> | add "<description>" | split <KEY>   (add/split: in your agent)
+  provider list | set [staff ...] [--agent P --model M --effort E] | set --default <role> <provider> [model] [effort] | unset <role>
+  skill add <staff> <skill> | skill list --custom
+  project add --jira-project KEY [--company ID] [--name N] [--auto-pr on|off] [--agent A] | remove [--repo DIR|NAME] [--jira-project KEY] | list [--json]
+  company list [--json] | use <company> | show [convention|auto-pr]
+  company set lang <code|auto> | communication [jira+chat|chat] | auto-pr on|off | convention "<text>" | agent [grok|claude|codex] [--model M]
+  listener start [--repo DIR] | stop | status [--server] | logs [-f] | autostart on|off | run [--repo DIR] [--once]
+  jira connect <site> <email> | setup-workflow <site> <email> <KEY> [--dry-run] | connect-events '<setup_url>' | sources
+  jira list [column] | show KEY | board | add "title" [desc] | move KEY <column> | comment KEY "text"   [--project KEY]
+  inbox list [--all] [KEY] | inbox reply <KEY|item> <answer>
+  ceo [--item <id|KEY>]               the CEO is your chat session (/ceo); --item opens one focused on a pending item
+  key show | renew                    your license (owner, home-Mac key: key list | add <label> [plan] [days] | remove <ref> | renew <ref> [days] | set label <id> <label> | reset-device <ref> | show <id>)
+  billing [vi|en] | billing usage [days]
+  status [--server] | doctor [--repo DIR] [--server] | notify on|off
+  setup sync [--owner] [--claude] | setup open '<setup_url>'
+  habit list | edit | clear
+  flow show | list                    (edit a flow with /flow edit in your agent)
+  --all (status, task list, task history, jira list, jira board, billing usage, staff list): every local company
 USAGE
-     exit 2 ;;
+exit 2; }
+noun="${1:-}"; verb="${2:-}"; [ $# -gt 0 ] && shift; [ $# -gt 0 ] && shift
+srv() { exec bash "$here/ah-cli.sh" "$noun" "$verb" "$@"; }  # server-rendered text (ah-cli.sh): command=<noun>, args=<verb ...>
+case " $* " in *" --all "*) case "$noun $verb" in "status "|"status --all"|"task list"|"task history"|"jira list"|"jira board"|"billing usage"|"staff list") exec node "$here/all-cli.mjs" "$noun" "$verb" "$@" ;; esac ;; esac
+case "$noun" in
+  staff) case "$verb" in
+    ""|list) set +e; out="$(bash "$here/ah-cli.sh" staff list "$@")"; rc=$?; printf '%s\n' "$out" | node "$here/staffs-local.mjs" "${AH_COMPANY:-}" "$@"; exit $rc ;;
+    add) role="${1:-}"; bind=(); rest=(); while [ $# -gt 0 ]; do case "$1" in --agent|--provider|--model|--effort|--command) bind+=("$1" "$2"); shift 2 ;; *) rest+=("$1"); shift ;; esac; done
+      bash "$here/ah-cli.sh" staff add ${rest[@]+"${rest[@]}"} || exit $?; exec node "$here/bind-cli.mjs" "$role" ${bind[@]+"${bind[@]}"} ;;
+    remove) srv "$@" ;;
+    set|unset) exec node "$here/agent-cli.mjs" "$verb" "$@" ;;
+    run) exec node "$here/run-cli.mjs" "$@" ;;
+    test) exec node "$here/staff-test.mjs" "$@" ;;
+    *) usage ;; esac ;;
+  task) case "$verb" in ""|list|history|plan|set) [ -z "$verb" ] && verb=list; srv "$@" ;;
+    add|split) echo "/task $verb needs the agent: run it inside grok/claude/codex (e.g. /task $verb ...)." >&2; exit 2 ;;
+    *) usage ;; esac ;;
+  provider) case "$verb" in
+    ""|list) node "$here/providers-cli.mjs" "$@"; echo; exec node "$here/bind-cli.mjs" remembered ;;
+    set) if [ "${1:-}" = --default ]; then shift; exec node "$here/bind-cli.mjs" remembered set "$@"; fi; exec node "$here/bind-cli.mjs" "$@" ;;
+    unset) exec node "$here/bind-cli.mjs" remembered unset "$@" ;;
+    *) usage ;; esac ;;
+  skill) case "$verb" in add) exec node "$here/add-skill.mjs" "$@" ;; ""|list) srv "$@" ;; *) usage ;; esac ;;
+  project) case "$verb" in
+    add) set +e; node "$here/projects.mjs" add "$@" || exit $?
+      [ -t 0 ] && node "$here/bind-cli.mjs" $(bash "$here/ah-cli.sh" staff list 2>/dev/null | sed -nE 's/^[^a-z0-9]*([a-z0-9][a-z0-9-]*) - .*/\1/p' | sort -u); exit 0 ;;
+    remove) exec node "$here/projects.mjs" remove "$@" ;;
+    ""|list) exec node "$here/projects.mjs" list "$@" ;;
+    *) usage ;; esac ;;
+  company) case "$verb" in
+    ""|list) exec node "$here/companies-cli.mjs" list "$@" ;;
+    use) exec node "$here/companies-cli.mjs" use "$@" ;;
+    show) case "${1:-}" in convention|auto-pr) srv "$@" ;; esac; exec node "$here/companies-cli.mjs" show "$@" ;;
+    set) what="${1:-}"; [ $# -gt 0 ] && shift; case "$what" in
+        lang) exec node "$here/agent-cli.mjs" lang "$@" ;;
+        communication) exec node "$here/inbox-cli.mjs" communication "$@" ;;
+        auto-pr|convention) exec bash "$here/ah-cli.sh" company set "$what" "$@" ;;
+        agent) exec node "$here/agent-cli.mjs" "$@" ;;
+        *) usage ;; esac ;;
+    *) usage ;; esac ;;
+  listener) case "$verb" in
+    run) exec node "$here/holding-listen.mjs" "$@" ;;
+    status) case " $* " in *" --server "*) srv "$@" ;; esac; exec bash "$here/launchd/listener.sh" status ;;
+    ""|start|stop|logs|autostart) exec bash "$here/launchd/listener.sh" ${verb:-status} "$@" ;;
+    *) usage ;; esac ;;
+  jira) case "$verb" in
+    connect) exec bash "$here/jira-keychain-setup.sh" "$@" ;;
+    setup-workflow) exec bash "$here/jira-setup-workflow.sh" "$@" ;;
+    connect-events) exec bash "$here/jira-register-webhook.sh" "$@" ;;
+    sources) srv "$@" ;;
+    ""|list|show|board|add|move|comment) exec node "$here/jira.mjs" "${verb:-list}" "$@" ;;
+    setup) echo "/jira setup needs the agent: run it inside grok/claude/codex." >&2; exit 2 ;;
+    *) usage ;; esac ;;
+  inbox) case "$verb" in ""|list|reply) exec node "$here/inbox-cli.mjs" "${verb:-list}" "$@" ;; *) exec node "$here/inbox-cli.mjs" list "$verb" "$@" ;; esac ;;
+  ceo) [ -n "$verb" ] && exec node "$here/inbox-cli.mjs" ceo "$verb" "$@"
+    echo "The CEO is your current chat session: use /ceo in your agent (Grok/Claude/Codex). Focus one pending item: holding ceo --item <id> (opens a CEO session)."; exit 0 ;;
+  key) case "$verb" in ""|show) [ $# -eq 0 ] && node "$here/companies-cli.mjs" show; srv "$@" ;; renew|list|add|remove|set|reset-device) srv "$@" ;; *) usage ;; esac ;;
+  billing) case "$verb" in ""|usage|vi|en) srv "$@" ;; *) bash "$here/ah-cli.sh" billing "$verb" "$@"; exit $? ;; esac ;;
+  status) case " $verb $* " in *" --server "*) exec bash "$here/ah-cli.sh" status ;; esac; exec node "$here/status.mjs" status ${verb:+"$verb"} "$@" ;;
+  doctor) case " $verb $* " in *" --server "*) exec bash "$here/ah-cli.sh" doctor ;; esac; exec bash "$here/doctor.sh" ${verb:+"$verb"} "$@" ;;
+  notify) exec node "$here/status.mjs" notify ${verb:+"$verb"} "$@" ;;
+  setup) case "$verb" in sync) exec bash "$here/sync-commands.sh" "$@" ;; open) exec bash "$here/open-setup.sh" "$@" ;; *) usage ;; esac ;;
+  habit) case "$verb" in ""|list|edit|clear) exec node "$here/habits.mjs" "${verb:-list}" "$@" ;; *) usage ;; esac ;;
+  flow) case "$verb" in ""|show|list) srv "$@" ;; *) echo "/flow $verb needs the agent: run it inside grok/claude/codex." >&2; exit 2 ;; esac ;;
+  *) usage ;;
 esac

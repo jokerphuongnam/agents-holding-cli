@@ -1,21 +1,23 @@
 #!/usr/bin/env bash
-# holding <cmd> [args]: instant, deterministic agents-holding commands. One MCP tools/call ("cli"), the server renders the text,
-# this prints it. No model, no Node (curl + macOS osascript). Owner commands (tokens, token-*) use THIS Mac's license key: the
+# holding <noun> <verb> [args]: instant, deterministic agents-holding commands. One MCP tools/call ("cli"), the server renders the text,
+# this prints it. No model, no Node (curl + macOS osascript). Owner commands (key list|add|remove|renew <ref>|set label|reset-device|show <id>) use THIS Mac's license key: the
 # server accepts them only from the owner's home-Mac key on its bound device. Recovery (home key lost): AH_OWNER_RECOVERY=1 uses
-# the owner admin key + 2FA session (docs/OWNER.md). New keys never print: they go to the Keychain + clipboard (token-show).
+# the owner admin key + 2FA session (docs/OWNER.md). New keys never print: they go to the Keychain + clipboard (key show <id>).
 # Company = .agents/company.json in this dir or a parent, or --company <slug> / $AH_COMPANY.
 set -euo pipefail
 MCP_URL="${AH_MCP_URL:-https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp}"
-cmd="${1:?usage: holding <command> [args]}"; shift || true
+cmd="${1:?usage: holding <noun> <verb> [args]}"; shift || true
 CO="${AH_COMPANY:-}"; A=()
 while [ $# -gt 0 ]; do case "$1" in --company) CO="$2"; shift;; *) A+=("$1");; esac; shift; done
 kc() { security find-generic-password -s "$1" -a "$USER" -w 2>/dev/null; }
-case "$cmd" in tokens|token-*) if [ "${AH_OWNER_RECOVERY:-0}" = 1 ]; then KEY="${AGENTS_HOLDING_OWNER_KEY:-$(kc agents-holding-owner-admin-key || true)}"; OWN=1; else KEY="${AGENTS_HOLDING_KEY:-$(kc agents-holding-license || true)}"; OWN=""; fi;;
+V="${A[0]:-}"; X="${A[1]:-}"; OWNCMD=""
+[ "$cmd" = key ] && case "$V" in list|add|remove|set|reset-device) OWNCMD=1;; renew|show) [ -n "$X" ] && OWNCMD=1;; esac
+case "$OWNCMD" in 1) if [ "${AH_OWNER_RECOVERY:-0}" = 1 ]; then KEY="${AGENTS_HOLDING_OWNER_KEY:-$(kc agents-holding-owner-admin-key || true)}"; OWN=1; else KEY="${AGENTS_HOLDING_KEY:-$(kc agents-holding-license || true)}"; OWN=""; fi;;
   *) KEY="${AGENTS_HOLDING_KEY:-$(kc agents-holding-license || true)}"; OWN="";; esac
 [ -n "$KEY" ] || { echo "no $([ -n "$OWN" ] && echo owner || echo license) key in the Keychain: run connect.sh first" >&2; exit 1; }
 DEV="${AGENTS_HOLDING_DEVICE:-$(kc agents-holding-device || true)}"
 if [ -z "$CO" ]; then d="$PWD"; while [ "$d" != "/" ]; do [ -f "$d/.agents/company.json" ] && { CO="$(sed -nE 's/.*"company" *: *"([^"]+)".*/\1/p' "$d/.agents/company.json" | head -1)"; break; }; d="$(dirname "$d")"; done; fi
-[ -z "$CO" ] && [ -f "$HOME/.config/agents-holding/active" ] && CO="$(tr -d '\n' < "$HOME/.config/agents-holding/active")"  # holding use <company>
+[ -z "$CO" ] && [ -f "$HOME/.config/agents-holding/active" ] && CO="$(tr -d '\n' < "$HOME/.config/agents-holding/active")"  # holding company use <company>
 SESS=""; [ -n "$OWN" ] && [ -f "$HOME/.config/agents-holding/owner-session.txt" ] && SESS="$(tr -d '\n' < "$HOME/.config/agents-holding/owner-session.txt")"
 tmp="$(mktemp -d)"; chmod 700 "$tmp"; trap 'rm -rf "$tmp"' EXIT
 # JSON body built by osascript (safe quoting of free text); secrets go to curl via its config on stdin, never argv
@@ -31,9 +33,9 @@ osascript -l JavaScript -e 'function run(a){ObjC.import("Foundation");const s=$.
   let x=t; try{const v=JSON.parse(t); x=typeof v==="string"?v:JSON.stringify(v,null,1)}catch(e){}
   return (r.isError?"ERR ":"")+x}' "$tmp/out.json" "$code" > "$tmp/txt"
 }
-# token-show <id>: pick up a parked key -> Keychain (agents-holding-issued-<id>) + clipboard; only a masked form is printed
+# key show <id>: pick up a parked key -> Keychain (agents-holding-issued-<id>) + clipboard; only a masked form is printed
 pickup() {
-  call token-show "$1"; line="$(grep '^AH_NEW_KEY ' "$tmp/txt" || true)"
+  call key "show $1"; line="$(grep '^AH_NEW_KEY ' "$tmp/txt" || true)"
   [ -n "$line" ] || { cat "$tmp/txt"; return 1; }
   id="$(printf '%s' "$line" | cut -d' ' -f2)"; k="$(printf '%s' "$line" | cut -d' ' -f3)"; : > "$tmp/txt"
   security add-generic-password -U -s "agents-holding-issued-$id" -a "$USER" -w "$k" 2>/dev/null || { echo "could not store in Keychain" >&2; return 1; }
@@ -43,20 +45,20 @@ pickup() {
 }
 args="${A[*]:-}"
 # billing: language follows the input; no words typed -> the terminal language (vi_* -> Vietnamese)
-[ "$cmd" = billing ] && [ -z "$args" ] && case "${AH_LANG:-${LANG:-}}" in vi*) args="vi";; esac
+[ "$cmd" = billing ] && [ -z "${args// /}" ] && case "${AH_LANG:-${LANG:-}}" in vi*) args="vi";; esac
 # read-only commands keep the last good answer; on server down / 5xx / timeout they print it marked STALE (never for writes)
-RO=0; case "$cmd" in status|board|tasks|task|usage|staffs|staff|team|flow|flows|listener|help|skills|habits|setup-status|ceo) RO=1;; esac
+RO=0; case "$cmd $V" in "status "*|"doctor "*|"task list"|"task history"|"task plan"|"staff list"|"staff "|"task "|"billing "|"billing usage"|"flow "*|"listener status"|"help "*|"skill list"|"jira sources"|"company show") RO=1;; esac
 CACHE="$HOME/.config/agents-holding/cache/cli-${CO:-none}-$cmd-$(printf '%s' "$args" | shasum | cut -c1-10).txt"
 QUOTA="MCP server quota exceeded (plan limit / too many requests). Work pauses; nothing is lost. Check: holding status · upgrade or wait for the reset."
 stale() { # stale <why>: print the cached answer marked STALE (read-only cmds) or the error
   [ "$1" = quota ] && echo "$QUOTA" >&2 || echo "$1" >&2
   if [ "$RO" = 1 ] && [ -f "$CACHE" ]; then echo "⚠️  STALE (cached $(date -r "$CACHE" '+%Y-%m-%d %H:%M'); server unavailable: $1)"; cat "$CACHE"; exit 0; fi
 }
-if [ "$cmd" = token-show ]; then pickup "${A[0]:-}"; exit $?; fi
+if [ -n "$OWNCMD" ] && [ "$V" = show ]; then pickup "$X"; exit $?; fi
 call "$cmd" "$args"
 case "$code" in 402|429) stale quota; exit 1;; 5*|000) stale "server error HTTP $code"; exit 1;; esac
 grep -qi '^ERR .*\(quota\|limit \(reached\|exceeded\)\)' "$tmp/txt" && { stale quota; exit 1; }
 cat "$tmp/txt"; grep -q '^ERR \|^HTTP ' "$tmp/txt" && exit 1
 [ "$RO" = 1 ] && { mkdir -p "$(dirname "$CACHE")"; chmod 700 "$(dirname "$CACHE")"; cp "$tmp/txt" "$CACHE"; }
-case "$cmd" in token-add|token-renew) id="$(sed -nE 's/.*holding token-show ([0-9a-f-]{36}).*/\1/p' "$tmp/txt" | head -1)"; [ -n "$id" ] && { echo; pickup "$id" || true; } ;; esac
+case "$OWNCMD $V" in "1 add"|"1 renew") id="$(sed -nE 's/.*holding key show ([0-9a-f-]{36}).*/\1/p' "$tmp/txt" | head -1)"; [ -n "$id" ] && { echo; pickup "$id" || true; } ;; esac
 exit 0

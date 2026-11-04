@@ -1,6 +1,6 @@
 // Which local CLI the lean runner drives: grok (default) | claude (Claude Code) | codex (Codex CLI).
 // Choose with AH_AGENT, else per company ~/.config/agents-holding/state/<company>/agent.json {"agent","model","text_model"}, else the repo's
-// projects.json settings.agent (holding add-project --agent A), else grok. `holding agent <grok|claude|codex> [--model M] [--text-model M]` writes agent.json.
+// projects.json settings.agent (holding project add --agent A), else grok. `holding company set agent <grok|claude|codex> [--model M] [--text-model M]` writes agent.json.
 // Models: AH_MODEL / AH_TEXT_MODEL override everything.
 // Every call stays tool-light and MCP-free (the runner talks to the server itself), one fresh session, JSON result + token usage.
 import { loadJsonc, writeJsonc } from "./staff-config.mjs";
@@ -36,13 +36,13 @@ export function loadAgentCfg(home, company) {
   if (j) { if (j.staff && typeof j.staff === "object") c.staff = { ...(c.staff ?? {}), ...j.staff }; if (typeof j.default === "string") c.command = j.default || c.command; }
   return c;
 }
-/** holding set-staff / unset-staff: per-company mapping staff.<role> = {provider, model, effort} in state/<company>/agent.json. */
+/** holding staff set / staff unset: per-company mapping staff.<role> = {provider, model, effort} in state/<company>/agent.json. */
 export function setStaff(home, company, role, m) {
   if (role === "ceo" && m) throw new Error("the CEO is always your current chat session; it has no provider binding");
   if (m?.command) m = Object.fromEntries(Object.entries(m).filter(([k, v]) => CMD_FIELDS.includes(k) && v !== undefined && v !== null && v !== "")); // fixed command binding
   if (m?.command) m.command = String(m.command).trim();
   else if (m?.provider) m = { ...m, command: undefined };
-  if (m?.provider && !providerIds(home, { providers: { ...(loadGlobalCfg(home).providers ?? {}), ...(loadAgentCfg(home, company).providers ?? {}) } }).includes(m.provider)) throw new Error(`unknown provider ${m.provider} (see holding providers)`);
+  if (m?.provider && !providerIds(home, { providers: { ...(loadGlobalCfg(home).providers ?? {}), ...(loadAgentCfg(home, company).providers ?? {}) } }).includes(m.provider)) throw new Error(`unknown provider ${m.provider} (see holding provider list)`);
   if (m?.effort && !EFFORTS.includes(m.effort)) throw new Error(`effort must be ${EFFORTS.join("|")}`);
   const cur = loadAgentCfg(home, company), staff = { ...(cur.staff ?? {}) };
   if (m === null) delete staff[role]; else staff[role] = Object.fromEntries(Object.entries({ ...staff[role], ...m }).filter(([k, v]) => v && k !== "agent" && !(m.command && !CMD_FIELDS.includes(k))));
@@ -59,7 +59,7 @@ export function saveAgentCfg(home, company, o) {
 }
 /** Resolve {agent, model} for a call. Agent: AH_AGENT > per-staff override (agent.json staff.<role>.agent) > company agent.json > grok.
  * Model: AH_MODEL/AH_TEXT_MODEL > per-staff model (staff.<role>.model) > the flow's per-stage model (server flow def stage.model / flow model)
- * > company model/text_model > CLI defaults. `holding staffs` shows exactly this resolution. */
+ * > company model/text_model > CLI defaults. `holding staff list` shows exactly this resolution. */
 export function resolveAgent({ env = process.env, cfg = {}, text, role = null, stageModel = null, global = loadGlobalCfg(env.HOME || homedir()) }) {
   // per-staff mapping: company agent.json staff.<role> over agents.json staff.<role>; `agent` is the legacy name of `provider`
   const gs = (role && global.staff?.[role]) || {}, cs = (role && cfg.staff?.[role]) || {};
@@ -85,7 +85,7 @@ export function resolveAgent({ env = process.env, cfg = {}, text, role = null, s
 /** Fields of a fixed-command staff binding; {model} {effort} {cwd} {max_turns} placeholders resolve from them. */
 export const CMD_FIELDS = ["command", "model", "effort", "cwd", "context", "max_turns", "timeout", "env", "fallback", "jira_user"];
 export const EFFORTS = ["low", "medium", "high"];
-/** `holding staffs` runtime cell for one staff: "<model> - <effort>" exactly as resolveAgent will run it. */
+/** `holding staff list` runtime cell for one staff: "<model> - <effort>" exactly as resolveAgent will run it. */
 export function staffRuntime({ env = process.env, cfg = {}, role, text = true, stageModel = null }) {
   const r = resolveAgent({ env, cfg, text, role, stageModel });
   if (r.command) return `$ ${r.command.length > 40 ? r.command.slice(0, 39) + "…" : r.command}`;
@@ -136,7 +136,7 @@ export function parseCodex(stdout, model = null) {
   return { result: error ? {} : firstJson(msg) ?? (msg ? { summary: msg } : {}), usage, error };
 }
 
-/** Remembered per-role bindings (the user's preference), prefilled by holding bind / hire / add-project: ~/.config/agents-holding/agent-defaults.json */
+/** Remembered per-role bindings (the user's preference), prefilled by holding provider set / staff add / project add: ~/.config/agents-holding/agent-defaults.json */
 const defaultsPath = (home) => join(home, ".config/agents-holding/agent-defaults.json");
 export function loadDefaults(home = process.env.HOME || homedir()) { try { return JSON.parse(readFileSync(defaultsPath(home), "utf8")); } catch { return {}; } }
 export function saveDefault(home, role, m) {

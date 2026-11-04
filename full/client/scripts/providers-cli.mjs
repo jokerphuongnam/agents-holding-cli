@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// holding providers [--json] [--company X]: every agent provider with a health check, its full effective launch template,
+// holding provider list [--json] [--company X]: every agent provider with a health check, its full effective launch template,
 // and the per-staff command overrides of the company on top.
 import { homedir } from "node:os";
 import { listProviders } from "./providers/index.mjs";
@@ -15,4 +15,4 @@ for (const p of ps) { console.log(`${p.ok ? "✅" : "❌"} ${p.id.padEnd(18)} ${
 for (const id of ["openai-compatible", "ollama"]) if (!ps.some((p) => p.id === id)) { const t = BUILTIN_TEMPLATES[id]; console.log(`ℹ️  ${id} (example, not configured)\n   run  : ${t.text}\n   parse: ${t.parse}${t.example ? `\n   setup: ${t.example}` : ""}`); }
 if (co) { console.log(`\ncompany ${co}: default command ${def ? `$ ${def}` : "(none: built-in provider)"}`);
   for (const [r, m] of staff) console.log(`  ${r} - $ ${m.command}${["model", "effort", "max_turns", "timeout", "context", "cwd"].filter((k) => m[k]).map((k) => `  ${k}=${m[k]}`).join("")}`);
-  if (!staff.length) console.log("  no per-staff commands (holding set-staff <staff> \"<command with {prompt}>\")"); }
+  if (!staff.length) console.log("  no per-staff commands (holding staff set <staff> \"<command with {prompt}>\")"); }

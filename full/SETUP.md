@@ -20,7 +20,7 @@ curl -fsSL https://raw.githubusercontent.com/jokerphuongnam/agents-holding-free/
 ```
 It asks your key at a hidden prompt and keeps it only in the macOS Keychain, creates this Mac's device id, adds agents-holding to Grok (and Claude Code / Codex if installed), adds two Keychain loader lines to `~/.zshrc`, and runs `grok mcp doctor agents-holding`. Open a new terminal afterwards.
 
-**1 key = 1 machine.** A key binds to the first machine that uses it (the `X-AH-Device` header from the Keychain id, or the sign-in page's browser id). Another machine gets "bound to another machine"; ask the owner to run `/token-reset-device`, then connect the new machine.
+**1 key = 1 machine.** A key binds to the first machine that uses it (the `X-AH-Device` header from the Keychain id, or the sign-in page's browser id). Another machine gets "bound to another machine"; ask the owner to run `/key reset-device`, then connect the new machine.
 
 Manual alternative (OAuth sign-in page):
 
@@ -59,28 +59,28 @@ echo 'export AGENTS_HOLDING_DEVICE="$(security find-generic-password -s agents-h
 ```
 then add `headers = { "Authorization" = "Bearer ${AGENTS_HOLDING_KEY}", "X-AH-Device" = "${AGENTS_HOLDING_DEVICE}" }` under `[mcp_servers.agents-holding]` in `~/.grok/config.toml` (`connect.sh` above does all of this for you).
 
-**Slash commands.** The server defines them (MCP prompts). Claude Code lists them as `/mcp__agents-holding__ceo`; Codex and Cursor list them under the server's prompts. **Grok CLI does not show MCP prompts**: it loads command files from `~/.grok/commands/*.md`, which `connect.sh` (and `install.sh`) write for you and refresh on every run; run `holding sync-commands` (or rerun `connect.sh`) to pick up new server commands. Names that clash with Grok built-ins get an `ah-` prefix: `/ah-doctor`, `/ah-help`, `/ah-plan`, `/ah-status`, `/ah-usage`, `/ah-history`, `/ah-tasks`. `/ah-help` (or `help` elsewhere) lists them all.
+**Slash commands.** The server defines them (MCP prompts). Claude Code lists them as `/mcp__agents-holding__ceo`; Codex and Cursor list them under the server's prompts. **Grok CLI does not show MCP prompts**: it loads command files from `~/.grok/commands/*.md`, which `connect.sh` (and `install.sh`) write for you and refresh on every run; run `holding setup sync` (or rerun `connect.sh`) to pick up new server commands. Names that clash with Grok built-ins get an `ah-` prefix: `/doctor`, `/help`, `/task plan`, `/status`, `/billing usage`, `/task history`, `/task list`. `/help` (or `help` elsewhere) lists them all.
 
 **Instant commands (no model, no tokens).** Commands that only show data are answered without the AI:
-- In Grok, `holding sync-commands` (run by `connect.sh`/`install.sh`) installs a prompt hook (`~/.grok/hooks/agents-holding.json`). When you type `/staffs`, `/whoami`, `/billing`, `/ah-usage`, `/ah-tasks`, `/ah-history`, `/sources`, `/renew`, `/ah-plan KEY`, `/ah-doctor`, `/listener`, `/hire`, `/fire`, `/assign`, `/convention`, `/auto-pr`, `/flow` (show/list), `/custom-skills`, `/ah-help`, the owner `/tokens` and `/token-*` commands, or `/jira-*`, the hook prints the answer and Grok shows "Turn blocked by a hook". That message is expected: it means the prompt never went to the model. Turn this off with `export AH_HOOK=0`, or skip installing it with `holding sync-commands --no-hook`.
-- In a terminal, `holding staffs`, `holding whoami`, `holding usage 7`, `holding plan KAN-1`, `holding tokens`, and so on give the same output. `holding help` lists them. `holding server doctor` and `holding server listener` show the server's side of those checks.
-- These commands still go through the agent because they need it: `/ceo`, `/holding-ceo`, `/new-task`, `/split`, `/approve`, `/connect-jira`, `/flow edit`, `/admin`.
+- In Grok, `holding setup sync` (run by `connect.sh`/`install.sh`) installs a prompt hook (`~/.grok/hooks/agents-holding.json`). When you type `/staff list`, `/key show`, `/billing`, `/billing usage`, `/task list`, `/task history`, `/jira sources`, `/key renew`, `/task plan KEY`, `/doctor`, `/listener`, `/staff add`, `/staff remove`, `/task set`, `/company set convention`, `/company set auto-pr`, `/flow` (show/list), `/skill list --custom`, `/help`, the owner `/key list` and `/token-*` commands, or `/jira-*`, the hook prints the answer and Grok shows "Turn blocked by a hook". That message is expected: it means the prompt never went to the model. Turn this off with `export AH_HOOK=0`, or skip installing it with `holding setup sync --no-hook`.
+- In a terminal, `holding staff list`, `holding key show`, `holding billing usage 7`, `holding task plan KAN-1`, `holding key list`, and so on give the same output. `holding help` lists them. `holding doctor --server` and `holding listener status --server` show the server's side of those checks.
+- These commands still go through the agent because they need it: `/ceo`, `/ceo`, `/task add`, `/task split`, `/approve`, `/jira setup`, `/flow edit`, `/admin`.
 
 
 ## 2. Create your company
 
-Open your agent in the repo (`cd ~/Code/shop && claude`, `codex`, or `grok`) and run the `holding-ceo` prompt:
+Open your agent in the repo (`cd ~/Code/shop && claude`, `codex`, or `grok`) and run the CEO prompt:
 
 ```
-/holding-ceo set up a company for this repo
+/ceo set up a company for this repo
 ```
 
-The holding CEO looks at your stack, creates the company and writes `.agents/company.json`. Commit that one file. Use `/ceo <what you want>` for day-to-day work, `/staffs` to see your staff as a tree (each role with a one-line description), and `/help` to list every command.
+The holding CEO looks at your stack, creates the company and writes `.agents/company.json`. Commit that one file. Use `/ceo <what you want>` for day-to-day work, `/staff list` to see your staff as a tree (each role with a one-line description), and `/help` to list every command.
 
 ## 3. Check everything
 
 ```
-/doctor                 # in your agent: license, company, Jira, webhook, listener
+/doctor                 # in your agent: license, company, Jira, Jira Listener
 ```
 ```bash
 holding doctor --repo ~/Code/shop   # in a terminal: checks on this Mac
@@ -103,41 +103,41 @@ Pick the CLI the listener runs, per company (default `grok`; sign in to that CLI
 
 ```bash
 cd ~/Code/shop
-holding agent claude                       # or codex / grok; no argument shows the current choice
-holding agent claude --text-model haiku --model sonnet   # optional model overrides
+holding company set agent claude                       # or codex / grok; no argument shows the current choice
+holding company set agent claude --text-model haiku --model sonnet   # optional model overrides
 ```
 
-Defaults: plan/question stages use a cheap model (Grok `grok-4.7-build-fast`, Claude `haiku`, Codex your default model at low reasoning effort); the coding call uses the CLI's default model. `AH_AGENT`, `AH_TEXT_MODEL` and `AH_MODEL` override for one run. Runs never load your other MCP servers. `/usage` shows tokens per task and stage for every agent.
+Defaults: plan/question stages use a cheap model (Grok `grok-4.7-build-fast`, Claude `haiku`, Codex your default model at low reasoning effort); the coding call uses the CLI's default model. `AH_AGENT`, `AH_TEXT_MODEL` and `AH_MODEL` override for one run. Runs never load your other MCP servers. `/billing usage` shows tokens per task and stage for every agent.
 
 1. **Atlassian MCP in your agent** (lets it read your board during setup): add `https://mcp.atlassian.com/v1/mcp` the same way as in step 1 (e.g. `claude mcp add --transport http --scope user atlassian https://mcp.atlassian.com/v1/mcp`) and sign in.
 2. **Connect the project.** In your agent, in your repo:
    ```
-   /connect-jira SHOP
+   /jira setup SHOP
    ```
-   You get a setup page with the checklist. Open it with `holding open-setup '<setup_url>'` (the agent does this for you).
+   You get a setup page with the checklist. Open it with `holding setup open '<setup_url>'` (the agent does this for you).
 3. **Jira API token in the Keychain.** Create one at https://id.atlassian.com/manage-profile/security/api-tokens, then:
    ```bash
-   holding jira-keychain https://your-team.atlassian.net you@example.com
+   holding jira connect https://your-team.atlassian.net you@example.com
    ```
    Paste the token at the hidden prompt. It is stored only in the macOS Keychain. `~/.config/agents-holding/jira.json` holds just the site and email.
 4. **Columns.**
    ```bash
-   holding jira-workflow https://your-team.atlassian.net you@example.com SHOP
+   holding jira setup-workflow https://your-team.atlassian.net you@example.com SHOP
    ```
    This creates any missing statuses. Jira can't reorder columns by API, so drag them into this order (Board settings → Columns):
    `To Do, In Progress, Product Work, BA Question, Planned, Pre Coding, Coding, QC, In Review, Done`. Done goes last.
-5. **Webhook** (needs a Jira site admin). Either run `ATLASSIAN_EMAIL=you@example.com holding jira-webhook '<setup_url>'`, or create it by hand from the setup page with these values:
+5. **Send Jira events to your Jira Listener** (needs a Jira site admin). Either run `ATLASSIAN_EMAIL=you@example.com holding jira connect-events '<setup_url>'`, or create it by hand from the setup page with these values:
    - URL: copy it from the setup page. It looks like `https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/jira-webhook?s=<id>&token=<secret>`. Keep it private.
    - JQL: `project = SHOP`
    - Events: **Issue created**, **Issue updated**, **Comment created**
    - Exclude body: **No**
 6. **Start the listener:**
    ```bash
-   holding add-project --jira-project SHOP   # inside the repo: which board feeds it
-   holding listener on --repo ~/Code/shop     # start now
+   holding project add --jira-project SHOP   # inside the repo: which board feeds it
+   holding listener start --repo ~/Code/shop     # start now
    holding listener autostart on              # also start at login
    holding listener status                    # running? autostart? last "join ok"
-   holding listener off                       # stop now and turn autostart off
+   holding listener stop                       # stop now and turn autostart off
    holding listener logs -f                   # follow the log
    ```
    If your repo is in Documents, Desktop or Downloads, click **Allow** when macOS asks whether `node` may read that folder.
@@ -149,27 +149,27 @@ Defaults: plan/question stages use a cheap model (Grok `grok-4.7-build-fast`, Cl
 
 - New cards stay in **To Do**. **Drag a card to In Progress to start it.**
 - The agent stops at two gates, **Planned** and **In Review**. Approve by moving the card or commenting `/approve`. Only you move cards to **Done**.
-- `/new-task <description>` writes a proper issue in To Do. `/split SHOP-12` splits it into sub-tasks.
+- `/task add <description>` writes a proper issue in To Do. `/task split SHOP-12` splits it into sub-tasks.
 - Flow types per task: `full`, `no_plan`, `no_dev`, `quick` (`/flow SHOP-12 quick` or the label `ah-flow:quick`). `/flow edit` designs your own columns and gates.
-- `/auto-pr on` (off by default): In Review pushes the branch and opens a PR with `gh`. Run `gh auth login` first, and make sure the repo has an `origin` remote.
-- `/usage` shows tokens per task and stage.
-- **Jira from the terminal or chat, no model** (uses your own Jira login from `holding jira-keychain`, so each action counts as you):
-  - `holding jira-tasks [column]`: tasks grouped by column, with assignee, the agent-working flag and when each was last updated.
-  - `holding jira-task KEY`: column, branch, tokens used, description and recent comments.
-  - `holding jira-board`: how many cards each column has, plus stuck cards (agent-working for longer than the run timeout, or Failed).
-  - `holding jira-new "title" [desc]`: a new card in To Do.
-  - `holding jira-move KEY "In Progress"`: a real move, which starts the flow just like dragging the card.
-  - `holding jira-comment KEY "text"`: a comment from you, which the agent treats as your feedback.
-  - Add `--project KEY` when the repo has more than one board. Each command also works as a slash command (`/jira-tasks`, ...).
+- `/company set auto-pr on` (off by default): In Review pushes the branch and opens a PR with `gh`. Run `gh auth login` first, and make sure the repo has an `origin` remote.
+- `/billing usage` shows tokens per task and stage.
+- **Jira from the terminal or chat, no model** (uses your own Jira login from `holding jira connect`, so each action counts as you):
+  - `holding jira list [column]`: tasks grouped by column, with assignee, the agent-working flag and when each was last updated.
+  - `holding jira show KEY`: column, branch, tokens used, description and recent comments.
+  - `holding jira board`: how many cards each column has, plus stuck cards (agent-working for longer than the run timeout, or Failed).
+  - `holding jira add "title" [desc]`: a new card in To Do.
+  - `holding jira move KEY "In Progress"`: a real move, which starts the flow just like dragging the card.
+  - `holding jira comment KEY "text"`: a comment from you, which the agent treats as your feedback.
+  - Add `--project KEY` when the repo has more than one board. Each command also works as a slash command (`/jira list`, ...).
 
 ## Renewing
 
-The assistant warns you 7 days before the key expires. `/whoami` shows the plan and expiry date, and `/renew` explains how to renew. `holding billing` (or `/billing`) shows your plan, credits used and credits left ("no data yet" until the credit system is on); to get more credits, contact the owner. It answers in the language you type in. Your data is kept if the key expires.
+The assistant warns you 7 days before the key expires. `/key show` shows the plan and expiry date, and `/key renew` explains how to renew. `holding billing` (or `/billing`) shows your plan, credits used and credits left ("no data yet" until the credit system is on); to get more credits, contact the owner. It answers in the language you type in. Your data is kept if the key expires.
 
 ## Uninstall
 
 ```bash
-holding listener off
+holding listener stop
 rm -rf ~/.agents-holding ~/.local/bin/holding ~/.config/agents-holding
 security delete-generic-password -s agents-holding-license 2>/dev/null
 security delete-generic-password -s agents-holding-device 2>/dev/null
@@ -181,5 +181,5 @@ claude mcp remove agents-holding --scope user; codex mcp remove agents-holding  
 ## Feedback, habits and status (listener)
 
 - Comment on a card in **Planned**: the plan is revised and stays in Planned. Comment in **In Review** (or drag it back to Coding with a comment): it goes back to Coding, the same developer fixes it on `feature/<KEY>`, QC runs, and it returns to In Review. Only you move cards to Done.
-- `holding habits [show|edit|clear]`: preferences learned from your comments when a task reaches Done (local file, used in later plans and code).
-- `holding status`: listener running?, realtime connection, last webhook event, last heartbeat, current task/stage. `holding notify on|off`: macOS notifications. Cards being worked on carry the `agent-working` label.
+- `holding habit list [show|edit|clear]`: preferences learned from your comments when a task reaches Done (local file, used in later plans and code).
+- `holding status`: listener running?, realtime connection, last Jira event, last heartbeat, current task/stage. `holding notify on|off`: macOS notifications. Cards being worked on carry the `agent-working` label.

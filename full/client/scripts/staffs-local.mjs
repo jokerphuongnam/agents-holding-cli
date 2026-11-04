@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// stdin: server `/staffs` tree. Rewrites each "<staff> - <model> - <effort>" cell with what THIS machine's lean runner will
+// stdin: server `/staff list` tree. Rewrites each "<staff> - <model> - <effort>" cell with what THIS machine's lean runner will
 // actually use (AH_AGENT/AH_MODEL/AH_EFFORT, agent.json, per-staff override staff.<role>, the flow's per-stage model).
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";

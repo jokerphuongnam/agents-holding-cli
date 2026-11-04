@@ -1,5 +1,5 @@
 // state/<company>/agents.jsonc: the per-staff launch config with explanatory comments (English, or Vietnamese when the company lang is vi).
-// The runner reads it (comments and trailing commas allowed); holding set-staff / bind rewrite it with the same comments, so hand
+// The runner reads it (comments and trailing commas allowed); holding staff set / bind rewrite it with the same comments, so hand
 // edits to values are kept (loadAgentCfg merges it over agent.json) and the explanations never get lost.
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -21,9 +21,9 @@ export function loadJsonc(home, company) { try { return parseJsonc(readFileSync(
 const T = {
   en: {
     head: `agents-holding: staff launch config for company {co}.
- Edit values here or use: holding set-staff <staff> "<command>" [--model M] [--effort E] [--cwd DIR] [--context auto|none|FILE] [--max-turns N] [--timeout SEC] [--env K=V]
- Dry run (no model call): holding staff test <staff>     See all: holding staffs / holding providers
- Comments are kept: set-staff rewrites this file with the same explanations.`,
+ Edit values here or use: holding staff set <staff> "<command>" [--model M] [--effort E] [--cwd DIR] [--context auto|none|FILE] [--max-turns N] [--timeout SEC] [--env K=V]
+ Dry run (no model call): holding staff test <staff>     See all: holding staff list / holding provider list
+ Comments are kept: holding staff set rewrites this file with the same explanations.`,
     fields: `Fields of one staff (only "command" is required):
    command    the exact command to run. {prompt} = ONLY the task (one argument, no shell: quotes/$ stay literal).
               No {prompt}/{prompt_file} -> the task goes to stdin.
@@ -44,9 +44,9 @@ const T = {
   },
   vi: {
     head: `agents-holding: cấu hình lệnh chạy cho từng nhân viên của công ty {co}.
- Sửa giá trị trực tiếp ở đây hoặc dùng: holding set-staff <staff> "<lệnh>" [--model M] [--effort E] [--cwd THƯ_MỤC] [--context auto|none|FILE] [--max-turns N] [--timeout GIÂY] [--env K=V]
- Chạy thử (không gọi model): holding staff test <staff>     Xem tất cả: holding staffs / holding providers
- Chú thích được giữ nguyên: set-staff ghi lại file này cùng các giải thích.`,
+ Sửa giá trị trực tiếp ở đây hoặc dùng: holding staff set <staff> "<lệnh>" [--model M] [--effort E] [--cwd THƯ_MỤC] [--context auto|none|FILE] [--max-turns N] [--timeout GIÂY] [--env K=V]
+ Chạy thử (không gọi model): holding staff test <staff>     Xem tất cả: holding staff list / holding provider list
+ Chú thích được giữ nguyên: holding staff set ghi lại file này cùng các giải thích.`,
     fields: `Các trường của một nhân viên (chỉ "command" là bắt buộc):
    command    lệnh chạy chính xác. {prompt} = CHỈ nội dung công việc (một tham số, không qua shell: dấu nháy/$ giữ nguyên).
               Không có {prompt}/{prompt_file} -> công việc được đưa vào stdin.

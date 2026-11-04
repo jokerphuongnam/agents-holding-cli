@@ -1,4 +1,4 @@
-// Fixed per-staff launch command (holding set-staff <staff> "claude -p --model sonnet --effort low").
+// Fixed per-staff launch command (holding staff set <staff> "claude -p --model sonnet --effort low").
 // The runner executes exactly that command in the company repo. The prompt is injected where {prompt} / {prompt_file} appear,
 // otherwise it is written to stdin. Optional placeholders: {system} {system_file} {cwd}. Output/usage parsing is picked by the
 // first word: claude | codex | grok | ollama | anything else = plain text.
@@ -91,7 +91,7 @@ export const commandProvider = (b) => ({ id: "command", displayName: `command: $
 
 /** Commented example of every staff binding field, written once to ~/.config/agents-holding/staff.example.jsonc on setup. */
 export const EXAMPLE = `// agents-holding: staff launch command bindings (example; the live file is state/<company>/agent.json "staff").
-// Set with: holding set-staff <staff> "<command>" [--model M] [--effort E] [--cwd DIR] [--context auto|none|FILE] [--max-turns N] [--timeout SEC] [--env K=V]
+// Set with: holding staff set <staff> "<command>" [--model M] [--effort E] [--cwd DIR] [--context auto|none|FILE] [--max-turns N] [--timeout SEC] [--env K=V]
 // {prompt} = ONLY the task. Staff context (persona, skill summaries, habits, language) is a separate per-run file:
 //   {context} / {context_file} if you use them, else claude --append-system-prompt-file, codex -c developer_instructions, grok --rules,
 //   else env AH_CONTEXT_FILE. No {prompt}/{prompt_file}: the task goes to stdin. cwd defaults to the company repo (projects.json).

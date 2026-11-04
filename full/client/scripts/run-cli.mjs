@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// holding run <staff> "task" [--company X] [--json]: run one staff directly on ITS bound provider/model/effort
-// (holding set-staff). Dev/engineer roles get the code tool loop in the cwd; others answer as text.
+// holding staff run <staff> "task" [--company X] [--json]: run one staff directly on ITS bound provider/model/effort
+// (holding staff set). Dev/engineer roles get the code tool loop in the cwd; others answer as text.
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -10,9 +10,9 @@ import { resolveCompany, localCompanies } from "./company.mjs";
 const a = process.argv.slice(2), flag = (n) => a.includes(n), opt = (n) => { const i = a.indexOf(n); return i >= 0 ? a[i + 1] : undefined; };
 const pos = a.filter((x, i) => !x.startsWith("--") && !(i > 0 && a[i - 1] === "--company"));
 const [staff, ...rest] = pos, task = rest.join(" ");
-if (!staff || !task) { console.error('usage: holding run <staff> "<task>" [--company X] [--json]'); process.exit(1); }
+if (!staff || !task) { console.error('usage: holding staff run <staff> "<task>" [--company X] [--json]'); process.exit(1); }
 const company = resolveCompany().company;
-if (!company) { console.error("run inside a repo with .agents/company.json, pass --company, or holding use <company>"); process.exit(1); }
+if (!company) { console.error("run inside a repo with .agents/company.json, pass --company, or holding company use <company>"); process.exit(1); }
 const kc = (s) => { try { return execFileSync("security", ["find-generic-password", "-s", s, "-a", process.env.USER, "-w"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { return null; } };
 async function mcp(name, args) {
   const key = process.env.AGENTS_HOLDING_KEY || kc("agents-holding-license"); if (!key) throw new Error("no license key in the Keychain: run connect.sh");
@@ -32,7 +32,7 @@ if (!process.argv.includes("--proceed")) {
   const st = await mcp("staffing_check", { company, request: task, staff, lang }).catch((e) => ({ kind: "ok", error: e.message }));
   if (st?.kind && st.kind !== "ok") {
     console.log(st.text ?? `${st.kind}: ${(st.why ?? []).join("; ")}`);
-    if (st.kind === "needs_decision") console.log(`\n1) /hire ${st.hire_for_skill?.[0] ?? "<role>"}   2) holding add-skill ${st.role} ${st.missing_skills?.[0]}   3) holding run ${staff} "<task>" --proceed`);
+    if (st.kind === "needs_decision") console.log(`\n1) /staff add ${st.hire_for_skill?.[0] ?? "<role>"}   2) holding skill add ${st.role} ${st.missing_skills?.[0]}   3) holding staff run ${staff} "<task>" --proceed`);
     process.exit(st.kind === "needs_hire" ? 3 : 4);
   }
 }

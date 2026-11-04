@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// holding bind [role ...] [--agent P --model M --effort E] [--company X] [--yes]: bind each staff (never the CEO: it is the
+// holding provider set [role ...] [--agent P --model M --effort E] [--company X] [--yes]: bind each staff (never the CEO: it is the
 // current chat session) to provider/model/effort for this company. Per staff: Default (remembered binding, Enter) or Custom.
 // A custom choice becomes the remembered default (~/.config/agents-holding/agent-defaults.json).
-// holding defaults [set <role> <provider> [model] [effort] | unset <role>]: show/edit the remembered bindings.
+// holding provider list [set <role> <provider> [model] [effort] | unset <role>]: show/edit the remembered bindings.
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -13,17 +13,17 @@ const home = process.env.HOME || homedir();
 const a = process.argv.slice(2), opt = (n) => { const i = a.indexOf(n); return i >= 0 ? a[i + 1] : undefined; };
 const VAL = ["--agent", "--provider", "--model", "--effort", "--company"];
 const pos = a.filter((x, i) => !x.startsWith("--") && !VAL.includes(a[i - 1]));
-if (pos[0] === "defaults") {
+if (pos[0] === "remembered") {
   const [, sub, role, provider, model, effort] = pos;
   if (sub === "set" && role && provider) { if (effort && !A.EFFORTS.includes(effort)) { console.error(`effort must be ${A.EFFORTS.join("|")}`); process.exit(1); } A.saveDefault(home, role, { provider, model, effort }); }
   else if (sub === "unset" && role) A.saveDefault(home, role, null);
-  else if (sub) { console.error("usage: holding defaults [set <role> <provider> [model] [effort] | unset <role>]"); process.exit(1); }
+  else if (sub) { console.error("usage: holding provider set --default <role> <provider> [model] [effort] | holding provider unset <role>"); process.exit(1); }
   const d = A.loadDefaults(home); const ks = Object.keys(d);
-  console.log(ks.length ? ks.map((r) => A.bindingLabel(r, d[r])).join("\n") : "no remembered bindings yet (set one with holding set-staff / bind / defaults set)");
+  console.log(ks.length ? ks.map((r) => A.bindingLabel(r, d[r])).join("\n") : "no remembered bindings yet (set one with holding provider set --default <role> <provider>)");
   process.exit(0);
 }
 const company = resolveCompany().company;
-if (!company) { console.error("run inside a repo with .agents/company.json, pass --company, or holding use <company>"); process.exit(1); }
+if (!company) { console.error("run inside a repo with .agents/company.json, pass --company, or holding company use <company>"); process.exit(1); }
 let roles = pos.filter((r) => r !== "ceo");
 if (!roles.length && !process.stdin.isTTY) { try { roles = (JSON.parse(readFileSync(0, "utf8") || "[]")).filter((r) => r !== "ceo"); } catch {} }
 const flags = { command: opt("--command"), provider: opt("--agent") ?? opt("--provider"), model: opt("--model"), effort: opt("--effort") };
@@ -57,7 +57,7 @@ for (const role of roles) {
     } else m = fb;
   }
   if (m?.command) { try { A.setStaff(home, company, role, null); A.setStaff(home, company, role, m); console.log(`✅ ${A.bindingLabel(role, m)}`); } catch (e) { console.log(`❌ ${role}: ${e.message}`); } continue; }
-  if (!m?.provider) { console.log(`⚠ ${role}: unbound, uses the company default (bind: holding set-staff ${role} <provider> <model> [effort])`); continue; }
+  if (!m?.provider) { console.log(`⚠ ${role}: unbound, uses the company default (bind: holding staff set ${role} <provider> <model> [effort])`); continue; }
   try { A.setStaff(home, company, role, null); A.setStaff(home, company, role, { provider: m.provider, model: m.model ?? null, effort: m.effort ?? null }); console.log(`✅ ${A.bindingLabel(role, A.loadAgentCfg(home, company).staff[role])}`); }
   catch (e) { console.log(`❌ ${role}: ${e.message}`); }
 }

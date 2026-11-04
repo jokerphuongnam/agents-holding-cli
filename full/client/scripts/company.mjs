@@ -1,5 +1,5 @@
 // Company resolution, the same everywhere (holding CLI + Grok slash commands):
-// --company X > nearest .agents/company.json from cwd up > active company (~/.config/agents-holding/active, set by holding use).
+// --company X > nearest .agents/company.json from cwd up > active company (~/.config/agents-holding/active, set by holding company use).
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -12,7 +12,7 @@ export function resolveCompany({ argv = process.argv.slice(2), env = process.env
   if (i >= 0 && argv[i + 1]) return { company: argv[i + 1], source: "--company" };
   if (env.AH_COMPANY) return { company: env.AH_COMPANY, source: "AH_COMPANY" };
   const c = fromCwd(cwd); if (c) return { company: c, source: ".agents/company.json" };
-  const a = getActive(home); return a ? { company: a, source: "active (holding use)" } : { company: null, source: null };
+  const a = getActive(home); return a ? { company: a, source: "active (holding company use)" } : { company: null, source: null };
 }
 export const companyOrNull = (o) => resolveCompany(o).company;
 /** Local companies: from projects.json boards + state/<company> dirs. */

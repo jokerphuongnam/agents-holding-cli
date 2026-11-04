@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Register the agents-holding webhook in YOUR Jira site (admin webhooks REST), using your own API token.
-# Usage: scripts/jira-register-webhook.sh '<setup_url from /connect-jira>'
+# Usage: scripts/jira-register-webhook.sh '<setup_url from /jira setup>'
 # Needs: ATLASSIAN_EMAIL (your Atlassian login email) and an API token from
 #   env ATLASSIAN_API_TOKEN, or macOS Keychain:  security add-generic-password -s agents-holding-atlassian -a "$ATLASSIAN_EMAIL" -w
 # The token is only sent to your own Jira site. It is never printed, stored elsewhere or sent to agents-holding.
@@ -15,7 +15,7 @@ if [ -z "$TOKEN" ] && command -v security >/dev/null; then
 fi
 [ -n "$TOKEN" ] || { echo "NO_TOKEN: no Atlassian API token in ATLASSIAN_API_TOKEN or Keychain (service agents-holding-atlassian). Finish on the setup page instead."; exit 2; }
 
-STATUS_JSON="$(curl -fsS "${SETUP_URL}&format=json")" || { echo "setup link invalid or expired; run /connect-jira again"; exit 3; }
+STATUS_JSON="$(curl -fsS "${SETUP_URL}&format=json")" || { echo "setup link invalid or expired; run /jira setup again"; exit 3; }
 read -r SITE HOOK JQL KEY < <(python3 -c 'import json,sys;s=json.load(sys.stdin);print(s["site"],s["webhook_url"],s["jql"].replace(" ","\u00a0"),s["project_key"])' <<<"$STATUS_JSON")
 JQL="${JQL//$'\u00a0'/ }"
 case "$HOOK" in *"/functions/v1/jira-webhook?s="*"&token="*) ;; *) echo "BAD_WEBHOOK_URL: setup JSON did not return a jira-webhook URL with &token="; exit 6;; esac

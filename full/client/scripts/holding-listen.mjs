@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// holding listen: wake the LOCAL agent when the server broadcasts a next_action for this repo's company.
+// holding listener run: wake the LOCAL agent when the server broadcasts a next_action for this repo's company.
 // Multi-project: one process for every repo in ~/.config/agents-holding/projects.json (see registry.mjs; --repo DIR = only that repo).
-// Usage: holding listen [--repo DIR] [--once] [--dry-jira] | [--run ISSUE --event E --stage S [--dry-jira]]   (license: $AGENTS_HOLDING_KEY or Keychain agents-holding-license|agents-holding-test-license)
+// Usage: holding listener run [--repo DIR] [--once] [--dry-jira] | [--run ISSUE --event E --stage S [--dry-jira]]   (license: $AGENTS_HOLDING_KEY or Keychain agents-holding-license|agents-holding-test-license)
 // One agent run at a time; events arriving during a run are coalesced into one follow-up run. Logs: ~/Library/Logs/agents-holding/.
 import { execFileSync, spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
@@ -47,7 +47,7 @@ const jiraSite = (() => { try { return JSON.parse(readFileSync(join(homedir(), "
 let registry = R.load(homedir());
 if (!registry) {
   registry = R.migrate(homedir(), onlyRepo ?? process.env.AH_REPO_DIR ?? process.cwd(), { site: jiraSite });
-  if (!registry) throw new Error("no projects: run `holding add-project --jira-project KEY` inside a repo");
+  if (!registry) throw new Error("no projects: run `holding project add --jira-project KEY` inside a repo");
   R.save(homedir(), registry); log(`registry: migrated ${registry.projects[0].path} into ${R.registryPath(homedir())}`);
 }
 if (onlyRepo) {
@@ -100,7 +100,7 @@ const heartbeat = (state = "online") => Promise.all(companyList.map((company) =>
   .catch((e) => { log("heartbeat failed:", e.message); L.writeStatus(homedir(), { companies: { [company]: { heartbeat_at: new Date().toISOString(), heartbeat_ok: false } } }); })));
 L.writeStatus(homedir(), { pid: process.pid, started_at: new Date().toISOString(), notify: L.notifyOn(homedir()), running: null, companies: {} });
 setInterval(heartbeat, Number(process.env.AH_HEARTBEAT_SEC ?? 60) * 1000);
-// Clean shutdown (launchctl bootout/unload, holding jira-listener stop, Ctrl-C, logout): tell the server right away.
+// Clean shutdown (launchctl bootout/unload, holding listener stop, Ctrl-C, logout): tell the server right away.
 let stopping = false;
 for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(sig, () => { if (stopping) return; stopping = true;
   log(`\x1b[31m${sig}: Jira Listener stopping; telling the MCP server it is offline\x1b[0m`);
@@ -116,7 +116,7 @@ process.on("SIGUSR1", () => heartbeat()); // `holding listener autostart on|off`
 //  * per-stage model hint from the company flow (--model), overridable with AH_MODEL;
 //  * deterministic Jira moves: the listener moves the card after the run (Jira REST with ~/.config/agents-holding/jira.json),
 //    no AI tokens; --dry-jira prints every Jira action instead and denies the Jira MCP to the agent;
-//  * tokens per run from the grok session usage.json -> jira-listener.log + report_usage (/usage per task/stage).
+//  * tokens per run from the grok session usage.json -> jira-listener.log + report_usage (/billing usage per task/stage).
 const dryJira = args.includes("--dry-jira");
 let sessFile, sessions;
 const loadSessions = () => { sessFile = join(homedir(), ".config/agents-holding", `sessions-${company}.json`); try { sessions = JSON.parse(readFileSync(sessFile, "utf8")); } catch { sessions = {}; } };
@@ -129,10 +129,10 @@ const jiraCfg = (() => { const p = join(homedir(), ".config/agents-holding/jira.
   return j.site && j.email && j.keychain_service ? { site: j.site, email: j.email, keychain_service: j.keychain_service } : null; } catch { return null; } })();
 const lean = process.env.AH_LEAN !== "0";
 const jira = jiraCfg ? L.jiraClient(jiraCfg, { dry: dryJira, log }) : null;
-// Communication (per company, from the heartbeat; `holding communication jira+chat|chat`): everything the user must act on
+// Communication (per company, from the heartbeat; `holding company set communication jira+chat|chat`): everything the user must act on
 // (question, 1/2/3, hire, blocked, gate, QC stop, failed, which repo) ALWAYS goes to the CEO inbox + an 'Agents Holding'
 // notification; Jira comments only in jira+chat mode. Labels/status/assignee update in both modes. Runs never wait for input:
-// they post the item and exit; the answer (Jira comment, /ceo or holding reply) re-triggers the task from its checkpoint.
+// they post the item and exit; the answer (Jira comment, /ceo or holding inbox reply) re-triggers the task from its checkpoint.
 const commMode = {};
 async function comms(issue, text, kind = null) {
   if (kind) {
@@ -700,9 +700,9 @@ async function connect(company) {
   ws.onerror = () => {};
 }
 const fail = (company) => (e) => { const b = backoffs[company] ?? 1000; log("error", company, e.message); setTimeout(() => connect(company).catch(fail(company)), b); backoffs[company] = Math.min(b * 2, 60000); };
-// Manual one-shot replay of a missed/killed run: holding listen --run KAN-1 --event user_comment --stage todo
+// Manual one-shot replay of a missed/killed run: holding listener run --run KAN-1 --event user_comment --stage todo
 if (opt("--run")) { log("manual run", opt("--run")); wake({ company: opt("--company", company), issue: opt("--run"), event: opt("--event", "manual"), stage: opt("--stage", "?") }); }
 else {
-log("holding listen:", registry.projects.length, "project(s),", companyList.length, "company subscription(s)", lean ? "LEAN" : "legacy", dryJira ? "DRY-JIRA" : listenerJira ? "jira-by-listener" : "jira-by-agent", "mcp", mcpServers().join(","), "timeout", runTimeoutMs / 60000, "min");
+log("holding listener run:", registry.projects.length, "project(s),", companyList.length, "company subscription(s)", lean ? "LEAN" : "legacy", dryJira ? "DRY-JIRA" : listenerJira ? "jira-by-listener" : "jira-by-agent", "mcp", mcpServers().join(","), "timeout", runTimeoutMs / 60000, "min");
 for (const c of companyList) connect(c).catch(fail(c));
 }

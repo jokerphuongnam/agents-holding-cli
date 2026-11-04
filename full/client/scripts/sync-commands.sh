@@ -1,20 +1,19 @@
 #!/usr/bin/env bash
-# holding sync-commands [--owner] [--claude] [--dir DIR]: write the server's slash commands as Grok command files.
+# holding setup sync [--owner] [--claude] [--dir DIR]: write the server's slash commands as Grok command files.
 # Grok CLI does not show MCP prompts as slash commands; it loads ~/.grok/commands/<name>.md. This fetches prompts/list +
 # prompts/get (request=$ARGUMENTS) and writes one file per command, refreshing on every run (stale ones it wrote are removed).
-# Names that clash with Grok built-ins get an ah- prefix (/ah-doctor, /ah-help, ...). No Node needed (curl + macOS osascript).
-# --owner: use the owner admin key (Keychain agents-holding-owner-admin-key) so owner commands (/tokens, /token-add ...) are
+# One file per noun (/staff, /task, /key ...); the verb is the first argument (/staff add). No Node needed (curl + macOS osascript).
+# --owner: use the owner admin key (Keychain agents-holding-owner-admin-key) so owner commands (/key list, /key add ...) are
 #   included, and add an `agents-holding-owner` MCP server to ~/.grok/config.toml (key via $AGENTS_HOLDING_OWNER_KEY).
 # Also installs a Grok UserPromptSubmit hook (~/.grok/hooks/agents-holding.json -> ah-hook.sh) that answers the deterministic
-#   commands (/staffs, /tokens, /jira-tasks ...) instantly WITHOUT a model turn; --no-hook skips it (AH_HOOK=0 disables it live).
+#   commands (/staff list, /key list, /jira list ...) instantly WITHOUT a model turn; --no-hook skips it (AH_HOOK=0 disables it live).
 # --claude: also write ~/.claude/commands (Claude Code already lists MCP prompts as /mcp__agents-holding__<name>).
 set -euo pipefail
 MCP_URL="${AH_MCP_URL:-https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp}"
 OWNER=""; CLAUDE=""; HOOK=1; DIRS=()
 while [ $# -gt 0 ]; do case "$1" in --owner) OWNER=1;; --claude) CLAUDE=1;; --no-hook) HOOK="";; --dir) DIRS+=("$2"); shift;; *) echo "unknown option $1" >&2; exit 2;; esac; shift; done
 [ ${#DIRS[@]} -gt 0 ] || DIRS=("$HOME/.grok/commands"); [ -n "$CLAUDE" ] && DIRS+=("$HOME/.claude/commands")
-BUILTIN=" doctor help plan status usage history tasks init clear compact model login logout exit quit config mcp resume settings theme "
-MARK="<!-- synced by agents-holding (holding sync-commands); edits are overwritten -->"
+MARK="<!-- synced by agents-holding (holding setup sync); edits are overwritten -->"
 kc() { security find-generic-password -s "$1" -a "$USER" -w 2>/dev/null; }
 if [ -n "$OWNER" ]; then KEY="$(kc agents-holding-owner-admin-key)" || { echo "no owner key in the Keychain (agents-holding-owner-admin-key)" >&2; exit 1; }
 else KEY="${AGENTS_HOLDING_KEY:-$(kc agents-holding-license || true)}"; fi
@@ -31,19 +30,12 @@ for d in "${DIRS[@]}"; do mkdir -p "$d"; done
 n=0; written=" "
 for name in $names; do
   rpc "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"prompts/get\",\"params\":{\"name\":\"$name\",\"arguments\":{\"request\":\"\$ARGUMENTS\"}}}" "$tmp/p.json"
-  file="$name"; case "$BUILTIN" in *" $name "*) file="ah-$name";; esac
+  file="$name"
   js 'const L=JSON.parse($.NSString.stringWithContentsOfFileEncodingError(a[1],4,null).js).result.prompts;const p=L.find(x=>x.name===a[2])||{};
       const t=j.result.messages.map(m=>m.content.text).join("\n");const d=(p.description||a[2]).replace(/\n/g," ");
       return "---\ndescription: "+JSON.stringify(d)+"\n---\n"+t+"\n\nUser arguments: $ARGUMENTS\n"+a[3]+"\n"' "$tmp/p.json" "$tmp/list.json" "$name" "$MARK" > "$tmp/$file.md"
   for d in "${DIRS[@]}"; do cp "$tmp/$file.md" "$d/$file.md"; done
   written="$written$file "; n=$((n+1))
-done
-# local Jira commands (holding jira-*; your own Jira login). With the hook they never reach the model; without it the agent runs the CLI.
-for jc in "jira-tasks:[column] tasks grouped by column" "jira-task:KEY details, branch, comments, tokens" "jira-board:counts per column + stuck tasks" \
-          'jira-new:"title" [desc] new issue in To Do' "jira-move:KEY <column> move as you (starts the flow like a drag)" 'jira-comment:KEY "text" comment as you (user feedback)'; do
-  jn="${jc%%:*}"; jd="${jc#*:}"
-  printf -- '---\ndescription: "[jira] /%s %s"\nallowed-tools: Bash\n---\nRun exactly this shell command and print its output verbatim, nothing else: holding %s $ARGUMENTS\n%s\n' "$jn" "${jd//\"/\'}" "$jn" "$MARK" > "$tmp/$jn.md"
-  for d in "${DIRS[@]}"; do cp "$tmp/$jn.md" "$d/$jn.md"; done; written="$written$jn "; n=$((n+1))
 done
 for d in "${DIRS[@]}"; do for f in "$d"/*.md; do [ -e "$f" ] || continue; b="$(basename "$f" .md)"
   case "$written" in *" $b "*) ;; *) grep -qF "$MARK" "$f" && rm -f "$f" && echo "removed stale /$b";; esac; done; done

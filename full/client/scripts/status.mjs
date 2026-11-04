@@ -10,7 +10,7 @@ if (cmd === "notify") {
 } else {
   const st = L.readStatus(home); let alive = false;
   try { if (st?.pid) { process.kill(st.pid, 0); alive = true; } } catch {}
-  { const { resolveCompany } = await import("./company.mjs"); const c = resolveCompany(); console.log(c.company ? `company: ${c.company} (from ${c.source})` : "company: none (holding use <company>)"); }
+  { const { resolveCompany } = await import("./company.mjs"); const c = resolveCompany(); console.log(c.company ? `company: ${c.company} (from ${c.source})` : "company: none (holding company use <company>)"); }
   { const w = L.listenerWarning(home); if (w) console.log(w + "\n"); }
   console.log(L.formatStatus(st, alive));
   if (alive && st?.server?.state && st.server.state !== "ok") console.log(`\x1b[31m⚠️  SERVER ${String(st.server.state).toUpperCase()} since ${st.server.since}: ${st.server.msg}\x1b[0m\n   Work pauses; missed Jira changes are replayed automatically when it recovers.`);

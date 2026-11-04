@@ -332,7 +332,7 @@ export function prSteps(na, seg) {
 export function gitHost(repo, o, exec = (c, a) => execFileSync(c, a, { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim()) {
   const r = { pushed: false, url: null, merged: false, msg: [] };
   if (!o.open && !o.merge) return r;
-  if (!o.autoPr) { r.msg.push(`auto PR is OFF for this company (/auto-pr on to enable): branch ${o.branch} stays local`); return r; }
+  if (!o.autoPr) { r.msg.push(`auto PR is OFF for this company (/company set auto-pr on to enable): branch ${o.branch} stays local`); return r; }
   try { exec("git", ["remote", "get-url", "origin"]); } catch { r.msg.push("auto PR ON but the repo has no git remote 'origin': add one, then retry"); return r; }
   try { exec("git", ["push", "-u", "origin", o.branch]); r.pushed = true; } catch (e) { r.msg.push(`git push failed: ${String(e.message).split("\n")[0]}`); return r; }
   try { exec("gh", ["auth", "status"]); } catch { r.msg.push(`pushed ${o.branch}; gh CLI missing or not logged in: run \`brew install gh && gh auth login\`, then the PR opens on the next run`); return r; }
@@ -382,7 +382,7 @@ export const learnedComment = (staff, added) => `${staffTag(staff)} ${T("learned
 
 
 // ---------- output language = input language (card title+description / latest user comment / /ceo prompt) ----------
-// Override per company: `holding set-lang <code|auto>` (agent.json "lang"). Code, identifiers, commit messages follow repo conventions.
+// Override per company: `holding company set lang <code|auto>` (agent.json "lang"). Code, identifiers, commit messages follow repo conventions.
 export const LANG_NAMES = { en: "English", vi: "Vietnamese", zh: "Chinese", ja: "Japanese", ko: "Korean", th: "Thai", ru: "Russian", fr: "French", es: "Spanish", de: "German" };
 export function detectLang(text) {
   const t = String(text ?? ""), n = (re) => (t.match(re) ?? []).length;
@@ -542,11 +542,11 @@ function homedirSafe() { return process.env.AH_HOME ?? process.env.HOME; }
 export function listenerWarning(home = homedirSafe(), { tty = !!process.stdout.isTTY && !process.env.AH_HOOK_RUN } = {}) {
   if (listenerAlive(home)) return null;
   const body = ["Jira Listener is off — all Jira automation is stopped until you start it:",
-    "  holding jira-listener start && holding jira-listener autostart on", "  Jira Listener keeps all Jira automation running.   check: holding jira-listener status   (or /listener)"];
+    "  holding listener start && holding listener autostart on", "  Jira Listener keeps all Jira automation running.   check: holding listener status   (or /listener)"];
   return tty ? `\x1b[1;31m🔴 ${body[0]}\x1b[0m\n\x1b[31m${body.slice(1).join("\n")}\x1b[0m` : `🔴 **${body[0]}**\n${body.slice(1).map((l) => `**${l.trim()}**`).join("\n")}`;
 }
 export function formatStatus(st, alive, now = Date.now()) {
-  if (!st) return "listener: no status file yet (never started? run: holding jira-listener start && holding jira-listener autostart on)";
+  if (!st) return "listener: no status file yet (never started? run: holding listener start && holding listener autostart on)";
   const l = [`listener: ${alive ? `RUNNING pid ${st.pid}` : `NOT RUNNING (last pid ${st.pid ?? "?"})`}, started ${ago(st.started_at, now)}, notifications ${st.notify === false ? "off" : "on"}`];
   for (const [c, v] of Object.entries(st.companies ?? {}))
     l.push(`  ${c}: realtime ${v.realtime ?? "?"}${v.realtime_at ? ` since ${ago(v.realtime_at, now)}` : ""}; last Jira event ${v.last_event ? `${v.last_event} ` : ""}${ago(v.last_event_at, now)}; last server heartbeat ${v.heartbeat_ok === false ? "FAILED " : ""}${ago(v.heartbeat_at, now)}`);

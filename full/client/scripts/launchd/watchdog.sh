@@ -7,7 +7,7 @@ LABEL=com.agentsholding.jira-listener
 DOMAIN="gui/$(id -u)"
 STATE="$HOME/.config/agents-holding/watchdog.json"
 LOG="$HOME/Library/Logs/agents-holding/watchdog.log"
-CMD="holding jira-listener start && holding jira-listener autostart on"
+CMD="holding listener start && holding listener autostart on"
 EVERY="${AH_WATCHDOG_SEC:-5}"; REMIND=900
 mkdir -p "$(dirname "$STATE")" "$(dirname "$LOG")"
 notify() { /usr/bin/osascript -e "display notification \"$2\" with title \"$1\" sound name \"Basso\"" >/dev/null 2>&1 || true; }

@@ -8,7 +8,7 @@ The lean runner and `/ceo` talk to **providers** through one small interface (th
 | `openai-compatible` | Any `/v1/chat/completions` endpoint, such as DeepSeek, Kimi/Moonshot, OpenRouter, Ollama, LM Studio or vLLM | config only |
 | Custom | Your own module | `~/.config/agents-holding/providers/<name>.mjs` |
 
-`holding providers` lists every provider with a health check: binary version, reachable endpoint, and whether the Keychain key is present.
+`holding provider list` lists every provider with a health check: binary version, reachable endpoint, and whether the Keychain key is present.
 
 ## Per-company staff mapping
 
@@ -18,14 +18,14 @@ The user's example sends each staff to a different provider:
 - PO (plan) → an expensive Codex model
 
 ```bash
-holding set-staff ba-lead            ollama  qwen2.5-coder:7b  low
-holding set-staff frontend-engineer  claude  haiku
-holding set-staff po-lead            codex   gpt-5             high
-holding unset-staff po-lead          # back to the defaults
-holding staffs
+holding staff set ba-lead            ollama  qwen2.5-coder:7b  low
+holding staff set frontend-engineer  claude  haiku
+holding staff set po-lead            codex   gpt-5             high
+holding staff unset po-lead          # back to the defaults
+holding staff list
 ```
 
-`holding staffs` puts the runtime right after each staff's name. The description is on the next line.
+`holding staff list` puts the runtime right after each staff's name. The description is on the next line.
 
 ```
 CEO — Acme
@@ -37,9 +37,9 @@ ceo - current session
 └─ qa-lead - grok-4.7-build-fast - default ⚠ unbound (company default)
 ```
 
-**The CEO is always your current chat session** (whatever agent and model you are chatting in). It has no binding and `holding set-staff ceo …` is refused. When `/ceo` delegates, it runs `holding run <staff> "<task>"` (Grok: `/run <staff> <task>`), which starts that staff as a **separate process on its own binding**. The Jira listener does the same for every stage.
+**The CEO is always your current chat session** (whatever agent and model you are chatting in). It has no binding and `holding staff set ceo …` is refused. When `/ceo` delegates, it runs `holding staff run <staff> "<task>"` (Grok: `/staff run <staff> <task>`), which starts that staff as a **separate process on its own binding**. The Jira listener does the same for every stage.
 
-**Binding step.** `holding add-project` (new company) and `holding hire <role>` ask, per staff (never the CEO):
+**Binding step.** `holding project add` (new company) and `holding staff add <role>` ask, per staff (never the CEO):
 
 ```
 ba-lead:
@@ -48,7 +48,7 @@ ba-lead:
   choice [1]:
 ```
 
-Enter accepts Default (your remembered binding for that role). Custom asks provider (the list from `holding providers`, with health) → model → effort, and becomes the new remembered default. In agent chat: `/hire <role> --agent claude --model haiku --effort low` (no flags = remembered default). `holding bind [staff …]` reruns the step. Remembered bindings live in `~/.config/agents-holding/agent-defaults.json`; `holding defaults` shows them, `holding defaults set <role> <provider> [model] [effort]` / `unset <role>` edits them. Every `set-staff` is remembered too. A staff without a binding uses the company default and is flagged `⚠ unbound` in `/staffs`.
+Enter accepts Default (your remembered binding for that role). Custom asks provider (the list from `holding provider list`, with health) → model → effort, and becomes the new remembered default. In agent chat: `/staff add <role> --agent claude --model haiku --effort low` (no flags = remembered default). `holding provider set [staff …]` reruns the step. Remembered bindings live in `~/.config/agents-holding/agent-defaults.json`; `holding provider list` shows them, `holding provider set --default <role> <provider> [model] [effort]` / `unset <role>` edits them. Every `set-staff` is remembered too. A staff without a binding uses the company default and is flagged `⚠ unbound` in `/staff list`.
 
 The mapping is stored **per company** in `~/.config/agents-holding/state/<company>/agent.json`:
 
@@ -58,7 +58,7 @@ The mapping is stored **per company** in `~/.config/agents-holding/state/<compan
 
 Global defaults and provider definitions live in `~/.config/agents-holding/agents.json`. A company file can also define its own `providers`.
 
-**Resolution order** (the same order is used everywhere: lean runs, `holding run`, `/run`, `/staffs`):
+**Resolution order** (the same order is used everywhere: lean runs, `holding staff run`, `/staff run`, `/staff list`):
 
 - **Provider:**
   1. `AH_AGENT`
@@ -85,7 +85,7 @@ Global defaults and provider definitions live in `~/.config/agents-holding/agent
   - codex: `model_reasoning_effort`
   - openai-compatible: `reasoning_effort`, only when `supportsEffort: true`
 
-`holding agent <provider> [--model M] [--effort E] [--staff ROLE]` still works (legacy).
+`holding company set agent <provider> [--model M] [--effort E] [--staff ROLE]` still works (legacy).
 
 ## Ollama (local, free) example
 
@@ -106,7 +106,7 @@ ollama pull qwen2.5-coder:7b && ollama serve   # http://localhost:11434
 }
 ```
 
-Then run `holding set-staff ba-lead ollama qwen2.5-coder:7b low` and check with `holding providers`. LM Studio (`http://localhost:1234/v1`) and vLLM (`http://host:8000/v1`) work the same way.
+Then run `holding staff set ba-lead ollama qwen2.5-coder:7b low` and check with `holding provider list`. LM Studio (`http://localhost:1234/v1`) and vLLM (`http://host:8000/v1`) work the same way.
 
 **Secrets: Keychain only.** A provider's `keychain` field names a macOS Keychain service. The key is read when the call is made (`security find-generic-password -s <service> -a $USER -w`), and it is never written to a config file or a log. To store it:
 
@@ -140,7 +140,7 @@ export default {
 };
 ```
 
-- **Custom adapter.** Save the file as `~/.config/agents-holding/providers/my-llm.mjs`. It can export the object above, or a factory `(name, def) => provider`, where `def` is that provider's `agents.json` entry. Then run `holding set-staff <staff> my-llm <model>`.
+- **Custom adapter.** Save the file as `~/.config/agents-holding/providers/my-llm.mjs`. It can export the object above, or a factory `(name, def) => provider`, where `def` is that provider's `agents.json` entry. Then run `holding staff set <staff> my-llm <model>`.
 - **Built-in reference.** `scripts/providers/{grok,claude,codex}.mjs` show how CLI adapters use `ctx.spawn`.
 - **Rules for every adapter:**
   - no MCP or server access (the runner talks to the server itself)
@@ -150,31 +150,31 @@ export default {
 
 ## Language
 
-Output follows the input language. `holding set-lang <code|auto>` overrides it per company. See WHO-DECIDES.
+Output follows the input language. `holding company set lang <code|auto>` overrides it per company. See WHO-DECIDES.
 
 ## Which company
 
-Bindings are per company. Company = `--company X` > nearest `.agents/company.json` from the current folder > active company (`holding use <company>`). `holding companies` lists them; `holding current` prints what this shell resolves to.
+Bindings are per company. Company = `--company X` > nearest `.agents/company.json` from the current folder > active company (`holding company use <company>`). `holding company list` lists them; `holding company show` prints what this shell resolves to.
 
 ## One /ceo, two modes
 
-`/ceo` routes on its own. If one company resolves (`--company`, `@slug`, the company named in the prompt, the repo `.agents/company.json`, or the active company), it runs in company mode and the reply starts with `[ceo @ <slug>]`. Otherwise, or when the request spans companies, it runs in holding mode and the reply starts with `[holding]`. `/holding-ceo` is an alias.
+`/ceo` routes on its own. If one company resolves (`--company`, `@slug`, the company named in the prompt, the repo `.agents/company.json`, or the active company), it runs in company mode and the reply starts with `[ceo @ <slug>]`. Otherwise, or when the request spans companies, it runs in holding mode and the reply starts with `[holding]`. `/ceo` is an alias.
 
 ## Staff launch command (the simple way)
 
 Give a staff one fixed command. When that staff gets work, agents-holding runs exactly that command in the company repo (the path in projects.json).
 
 ```sh
-holding set-staff developer 'claude -p --model {model} --effort {effort} --output-format json "{prompt}"' --model sonnet --effort low --timeout 900
-holding set-staff ba-lead   'grok --single "{prompt}" --model grok-4.7-build-fast --reasoning-effort low --max-turns 1 --output-format json --no-subagents'
-holding set-staff tech-lead 'codex exec --json --skip-git-repo-check -s read-only -m {model} "{prompt}"' --model gpt-5 --effort medium
-holding set-staff qa        'ollama run qwen2.5-coder'        # no {prompt}: the task goes to stdin
-holding set-staff default   'claude -p --output-format json "{prompt}"'   # company default for staff without a command
+holding staff set developer 'claude -p --model {model} --effort {effort} --output-format json "{prompt}"' --model sonnet --effort low --timeout 900
+holding staff set ba-lead   'grok --single "{prompt}" --model grok-4.7-build-fast --reasoning-effort low --max-turns 1 --output-format json --no-subagents'
+holding staff set tech-lead 'codex exec --json --skip-git-repo-check -s read-only -m {model} "{prompt}"' --model gpt-5 --effort medium
+holding staff set qa        'ollama run qwen2.5-coder'        # no {prompt}: the task goes to stdin
+holding staff set default   'claude -p --output-format json "{prompt}"'   # company default for staff without a command
 holding staff test developer     # dry run: argv, cwd, how prompt and context are passed, no model call
-holding unset-staff developer
+holding staff unset developer
 ```
 
-Fields (all optional except `command`). The binding step in `holding hire` / `add-project` asks for the same fields under **Custom**. **Default** is the remembered one in `agent-defaults.json`. A commented example of every field is written to `~/.config/agents-holding/staff.example.jsonc` the first time.
+Fields (all optional except `command`). The binding step in `holding staff add` / `holding project add` asks for the same fields under **Custom**. **Default** is the remembered one in `agent-defaults.json`. A commented example of every field is written to `~/.config/agents-holding/staff.example.jsonc` the first time.
 
 | field | example | used by |
 |---|---|---|
@@ -212,4 +212,4 @@ Output parsing is picked from the first word:
 - `grok`: JSON
 - anything else: plain text (a trailing `{...}` JSON is used if present)
 
-`holding providers` prints each built-in's full effective template, then the company's default command and per-staff commands. `/staffs` shows `<staff> - $ <command…>`.
+`holding provider list` prints each built-in's full effective template, then the company's default command and per-staff commands. `/staff list` shows `<staff> - $ <command…>`.

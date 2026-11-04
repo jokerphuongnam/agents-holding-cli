@@ -76,7 +76,7 @@ say "Shell profile: $PROFILE loads the key and device id from the Keychain"
 if [[ ",$AGENTS," == *",grok,"* ]]; then
   SYNC="${AH_SRC:+$AH_SRC/full/client/scripts/sync-commands.sh}"
   if [ -z "$SYNC" ]; then SYNC="$(mktemp)"; curl -fsSL "https://raw.githubusercontent.com/jokerphuongnam/agents-holding-free/${AH_BRANCH:-main}/full/client/scripts/sync-commands.sh" -o "$SYNC"; fi
-  bash "$SYNC" ${AH_OWNER:+--owner} && say "Grok slash commands synced into ~/.grok/commands (refresh: rerun this, or holding sync-commands)" || warn "could not sync slash commands"
+  bash "$SYNC" ${AH_OWNER:+--owner} && say "Grok slash commands synced into ~/.grok/commands (refresh: rerun this, or holding setup sync)" || warn "could not sync slash commands"
 fi
 
 # 6b. health check
@@ -86,4 +86,4 @@ if [ -z "${AH_NO_DOCTOR:-}" ] && [ -x "$GROK" ] && [[ ",$AGENTS," == *",grok,"* 
   if printf '%s' "$out" | grep -q 'handshake OK'; then say "OK  grok mcp doctor agents-holding: $(printf '%s' "$out" | grep -Eo '[0-9]+ tools discovered' | head -1)"
   else printf '%s\n' "$out" | tail -8; die "grok mcp doctor agents-holding is not healthy (see above)"; fi
 fi
-printf '\nDone. Open a NEW terminal (or: source %s), then in your repo run: grok   and type /ah-help\n' "$PROFILE"
+printf '\nDone. Open a NEW terminal (or: source %s), then in your repo run: grok   and type /help\n' "$PROFILE"

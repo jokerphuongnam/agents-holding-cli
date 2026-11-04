@@ -6,7 +6,7 @@ import { join } from "node:path";
 
 export const BLOCKED_LABEL = "agent-blocked";
 const FIX = {
-  claude: { auth: "claude login   (or: claude setup-token)", quota: "check your plan/credits: claude /usage", missing: "npm i -g @anthropic-ai/claude-code" },
+  claude: { auth: "claude login   (or: claude setup-token)", quota: "check your plan/credits: claude /billing usage", missing: "npm i -g @anthropic-ai/claude-code" },
   codex: { auth: "codex login", quota: "check your OpenAI plan/credits (codex login --with-api-key for a key)", missing: "npm i -g @openai/codex" },
   grok: { auth: "grok login", quota: "check your xAI plan/credits", missing: "install the grok CLI, then: grok login" },
   ollama: { auth: "-", quota: "-", missing: "brew install ollama && ollama serve" },
@@ -28,7 +28,7 @@ export function classifyAgentError(kind, out = "", code = 1) {
   else if (RX.rate_limit.test(s)) cause = "rate_limit";
   else if (RX.compaction.test(s)) cause = "compaction";
   else if (code === "SIGTERM" || code === "SIGKILL") cause = "timeout";
-  const fix = FIX[k][cause] ?? (cause === "rate_limit" ? "wait a few minutes; retried automatically with backoff" : cause === "compaction" ? "resumes from the checkpoint automatically; if it repeats: holding run <KEY> --proceed" : null);
+  const fix = FIX[k][cause] ?? (cause === "rate_limit" ? "wait a few minutes; retried automatically with backoff" : cause === "compaction" ? "resumes from the checkpoint automatically; if it repeats: holding staff run <KEY> --proceed" : null);
   const line = (s.split("\n").reverse().find((l) => RX[cause]?.test(l)) ?? s.trim().split("\n").at(-1) ?? "").trim().slice(0, 200);
   return { cause, kind: k, fix, retry: cause === "rate_limit" || cause === "compaction", switchable: ["auth", "quota", "missing", "rate_limit"].includes(cause), detail: line };
 }
@@ -45,7 +45,7 @@ export function blockedComment(lang, c, { cmd, stage, tried = [] } = {}) {
     cmd && `${vi ? "Lệnh" : "Command"}: ${cmd}`,
     tried.length > 1 && `${vi ? "Đã thử" : "Tried"}: ${tried.join(" → ")}`,
     c.fix && `${vi ? "Cách sửa" : "Fix"}: ${c.fix}`,
-    vi ? "Sau khi sửa: holding run <KEY> (tiếp tục từ checkpoint) hoặc kéo lại thẻ." : "After fixing: holding run <KEY> (resumes from the checkpoint) or move the card again."].filter(Boolean).join("\n");
+    vi ? "Sau khi sửa: holding staff run <KEY> (tiếp tục từ checkpoint) hoặc kéo lại thẻ." : "After fixing: holding staff run <KEY> (resumes from the checkpoint) or move the card again."].filter(Boolean).join("\n");
 }
 export const switchNote = (lang, from, to, c) => lang === "vi" ? `↪️ Chuyển sang lệnh dự phòng: ${to} (vì ${from}: ${CAUSE_TXT.vi[c.cause] ?? c.cause})` : `↪️ Switched to fallback: ${to} (${from}: ${CAUSE_TXT.en[c.cause] ?? c.cause})`;
 export const backoffMs = (attempt, base = Number(process.env.AH_BACKOFF_MS ?? 30000)) => Math.min(base * 2 ** attempt, 10 * 60000);

@@ -5,7 +5,7 @@ The Jira Listener handles three kinds of failure without losing work. It never i
 ## 1. Agent compaction / context loss / mid-run death → checkpoint + resume
 - Each stage writes a checkpoint to `~/.config/agents-holding/state/<company>/<KEY>.ckpt.json`. The checkpoint records the stage, the finished steps, the coding sub-steps already done, the last commit and any error.
 - Larger tech plans are coded in up to 3 sub-steps. Each one ends in a `WIP(<KEY>) n/3` commit on `feature/<KEY>`, and the card gets a 📌 progress note listing what is done (✅) and what remains (⏳).
-- A rerun (`holding run <KEY>` or moving the card again) resumes from the checkpoint. Finished plans, tech plans and sub-steps are not redone.
+- A rerun (`holding staff run <KEY>` or moving the card again) resumes from the checkpoint. Finished plans, tech plans and sub-steps are not redone.
 - When the agent CLI reports compaction, truncation, a context overflow or a max-turns limit, the call is retried once in a fresh session with a resume note.
 
 ## 2. Agent expired / unavailable → `agent-blocked` + fallback
@@ -34,8 +34,8 @@ Tests: `node tests/resilience_test.mjs` uses mock CLIs that fail with auth, expi
 
 - **Clean stop / quit / logout** (SIGTERM, SIGINT, SIGHUP, `launchctl bootout`): the listener tells the MCP server "stopped" before exiting (~1 s).
 - **Crash, sleep or freeze**: the listener sends a heartbeat every 60 s; after 150 s without one the MCP server marks it offline.
-- **Local watchdog** (launchd job `com.agentsholding.listener-watchdog`, installed with `holding jira-listener start` / `autostart on`): checks every 5 s and shows a macOS notification *"Jira Listener is off — all Jira automation is stopped until you start it: `holding jira-listener start && holding jira-listener autostart on`"* (reminder every 15 min), *"Jira Listener restarted"* when it crashed and launchd restarted it, and *"running again"* when it is back. Log: `~/Library/Logs/agents-holding/watchdog.log`.
-- `holding status`, `holding jira-listener status` and `/ceo` start with the same red warning while it is off; the CEO inbox gets a "Jira Listener is off" item.
+- **Local watchdog** (launchd job `com.agentsholding.listener-watchdog`, installed with `holding listener start` / `autostart on`): checks every 5 s and shows a macOS notification *"Jira Listener is off — all Jira automation is stopped until you start it: `holding listener start && holding listener autostart on`"* (reminder every 15 min), *"Jira Listener restarted"* when it crashed and launchd restarted it, and *"running again"* when it is back. Log: `~/Library/Logs/agents-holding/watchdog.log`.
+- `holding status`, `holding listener status` and `/ceo` start with the same red warning while it is off; the CEO inbox gets a "Jira Listener is off" item.
 - **Jira changes while it is off**: the first change on each card gets ONE comment (in the task's language) saying the Jira Listener was off and how to start it. When it is back, the flag clears, the offline item closes, and every missed change is replayed (reconcile); unfinished runs resume from their checkpoint.
 - A replayed change that is only "the card is still in the column the agent is moving it out of" is ignored (no false "you moved it back").
 
@@ -48,13 +48,13 @@ When a staff picks up a task (same moment as the `staff:<id>` label) the card's 
 Everything that needs you (a staff question, a 1/2/3 decision, a hire, an agent blocked e.g. by a login, an approval gate, a QC stop, a failed run, "which repo?", Jira Listener off) becomes ONE pending item in the **CEO inbox** and a macOS notification titled **Agents Holding** with the task key, what is needed and how to answer. Staff runs never wait for input: they post the item and exit; your answer resumes the task from its checkpoint.
 
 - `holding inbox [--all] [KEY]`: pending items, grouped by company.
-- `holding reply KAN-12 2`: quick answer without opening a session (same effect as replying on the card; nothing is written to Jira).
+- `holding inbox reply KAN-12 2`: quick answer without opening a session (same effect as replying on the card; nothing is written to Jira).
 - **Open CEO** button on the notification, or `holding ceo --item <id>`: opens a CEO session (new Terminal window) focused on that item.
-- `/ceo` shows pending items first. Inside a company repo: only that company. Outside any company: holding mode, every company's pending items and progress, grouped; resolve any item from there. Approve with `/approve`, move/mark done with `holding jira-move KAN-12 "Done"`.
+- `/ceo` shows pending items first. Inside a company repo: only that company. Outside any company: holding mode, every company's pending items and progress, grouped; resolve any item from there. Approve with `/approve`, move/mark done with `holding jira move KAN-12 "Done"`.
 
-**Communication setting** (per company, `holding communication jira+chat|chat`, default `jira+chat`):
+**Communication setting** (per company, `holding company set communication jira+chat|chat`, default `jira+chat`):
 - `jira+chat`: questions/decisions/progress are commented on the card AND go to the CEO inbox; answer either place.
-- `chat`: no question/decision/progress comments on cards; answer with `/ceo` or `holding reply`. Labels, status and assignee still update on Jira.
+- `chat`: no question/decision/progress comments on cards; answer with `/ceo` or `holding inbox reply`. Labels, status and assignee still update on Jira.
 
 ## Enterprise plan (planned; in progress, next phase)
 

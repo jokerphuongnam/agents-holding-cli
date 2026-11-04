@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// holding habits [show|edit|clear] [--company ID]: the user habits the listener learned on Done (local only,
+// holding habit list|edit|clear [--company ID]: the user habits the listener learned on Done (local only,
 // ~/.config/agents-holding/state/<company>/habits.md, chmod 600). They are added to plan / tech plan / coding prompts.
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -8,9 +8,9 @@ import { join } from "node:path";
 import * as L from "./lean.mjs";
 import { resolveCompany } from "./company.mjs";
 const a = process.argv.slice(2), opt = (n) => { const i = a.indexOf(n); return i >= 0 ? a[i + 1] : undefined; };
-const cmd = a.find((x) => ["show", "edit", "clear"].includes(x)) ?? "show";
+const cmd = a.find((x) => ["list", "edit", "clear"].includes(x)) ?? "list";
 const company = resolveCompany().company;
-if (!company) { console.error("run inside a repo with .agents/company.json, pass --company ID, or holding use <company>"); process.exit(1); }
+if (!company) { console.error("run inside a repo with .agents/company.json, pass --company ID, or holding company use <company>"); process.exit(1); }
 const home = process.env.AH_HOME ?? homedir(), p = L.habitsPath(home, company);
 if (cmd === "clear") { L.saveHabits(home, company, []); console.log(`cleared ${p}`); }
 else if (cmd === "edit") {

@@ -64,12 +64,12 @@ for a in ${LIST[@]+"${LIST[@]}"}; do case "$a" in
     grep -qsF 'AGENTS_HOLDING_DEVICE=' "$PROFILE" || printf '%s\n' 'export AGENTS_HOLDING_DEVICE="$(security find-generic-password -s agents-holding-device -a "$USER" -w 2>/dev/null)"' >> "$PROFILE" ;;
   *) warn "unknown agent '$a' (grok|claude|codex)";; esac; done
 
-case ",$AGENTS," in *,grok,*) bash "$DEST/scripts/sync-commands.sh" && say "Grok slash commands synced into ~/.grok/commands (refresh: holding sync-commands)" || warn "holding sync-commands failed; rerun it later";; esac
+case ",$AGENTS," in *,grok,*) bash "$DEST/scripts/sync-commands.sh" && say "Grok slash commands synced into ~/.grok/commands (refresh: holding setup sync)" || warn "holding setup sync failed; rerun it later";; esac
 
 cat <<NEXT
 
 Done. Next (guide: https://github.com/$REPO/blob/main/full/SETUP.md):
-  1. In your repo, register it for the listener:  holding add-project --jira-project <KEY> [--agent grok|claude|codex]
-  2. Pick the CLI the listener runs (default grok):  holding agent claude     (or codex / grok)
-  3. holding listener on --repo <repo>   then   holding doctor --repo <repo>
+  1. In your repo, register it for the listener:  holding project add --jira-project <KEY> [--agent grok|claude|codex]
+  2. Pick the CLI the listener runs (default grok):  holding company set agent claude     (or codex / grok)
+  3. holding listener start --repo <repo>   then   holding doctor --repo <repo>
 NEXT
