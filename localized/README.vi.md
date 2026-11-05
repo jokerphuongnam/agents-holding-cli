@@ -56,21 +56,6 @@ Sau đó mở agent, xác thực `agents-holding` trên trình duyệt (tạo ke
 
 Trong Codex dùng `!holding …` để có câu trả lời tức thì, hoặc `/prompts:holding` và `/prompts:ceo`. Danh sách đầy đủ: chạy `holding help`.
 
-## Gói và bảng giá
-
-| Gói | Credit / tháng | Giá |
-|---|---:|---:|
-| free | 1,500 | $0 |
-| starter | 4,000 | $2 |
-| lite | 6,000 | $2.5 |
-| pro | 20,000 | $7.5 |
-| power | 80,000 | $25 |
-| max | 180,000 | $50 |
-| ultra | 300,000 | $75 |
-| enterprise | tùy chỉnh | liên hệ |
-
-Chỉ thao tác sinh việc mới tốn credit (ví dụ một lần agent chạy là 2 credit); xem trạng thái, billing và các tra cứu khác đều miễn phí. Muốn nâng gói, gửi key id (không gửi key) tới **phuongnamp99@gmail.com**. Chi tiết: [bảng giá](../docs/localized/PRICING.vi.md).
-
 ## Tài liệu
 
 - [Hướng dẫn cài đặt](../full/localized/SETUP.vi.md)

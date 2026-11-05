@@ -56,21 +56,6 @@ grok mcp add --transport http agents-holding https://mznrffnvmhmiudvfuquk.supaba
 
 Codex では `!holding …` で即答、または `/prompts:holding` と `/prompts:ceo` を使います。全一覧は `holding help` で確認できます。
 
-## プランと料金
-
-| プラン | クレジット / 月 | 価格 |
-|---|---:|---:|
-| free | 1,500 | $0 |
-| starter | 4,000 | $2 |
-| lite | 6,000 | $2.5 |
-| pro | 20,000 | $7.5 |
-| power | 80,000 | $25 |
-| max | 180,000 | $50 |
-| ultra | 300,000 | $75 |
-| enterprise | 個別設定 | お問い合わせ |
-
-クレジットを消費するのは作業を生む操作だけです（例：エージェント実行 1 回 = 2 クレジット）。ステータスや billing などの確認は無料です。アップグレードは key id（キー本体ではありません）を **phuongnamp99@gmail.com** に送ってください。詳細：[料金表](../docs/localized/PRICING.ja.md)。
-
 ## ドキュメント
 
 - [セットアップガイド](../full/localized/SETUP.ja.md)

@@ -56,21 +56,6 @@ Then open your agent, authenticate `agents-holding` in the browser (create a Fre
 
 In Codex use `!holding …` for instant answers, or `/prompts:holding` and `/prompts:ceo`. Full list: run `holding help`.
 
-## Plans and pricing
-
-| Plan | Credits / month | Price |
-|---|---:|---:|
-| free | 1,500 | $0 |
-| starter | 4,000 | $2 |
-| lite | 6,000 | $2.5 |
-| pro | 20,000 | $7.5 |
-| power | 80,000 | $25 |
-| max | 180,000 | $50 |
-| ultra | 300,000 | $75 |
-| enterprise | custom | contact us |
-
-Only actions that create work cost credits (for example an agent run is 2 credits); status, billing and other lookups are free. To upgrade, send your key id (never the key) to **phuongnamp99@gmail.com**. Details: [PRICING.md](docs/PRICING.md).
-
 ## Docs
 
 - [Setup guide (SETUP.md)](full/SETUP.md)

@@ -56,21 +56,6 @@ grok mcp add --transport http agents-holding https://mznrffnvmhmiudvfuquk.supaba
 
 In Codex nutzt du `!holding …` für sofortige Antworten oder `/prompts:holding` und `/prompts:ceo`. Vollständige Liste: `holding help` ausführen.
 
-## Pläne und Preise
-
-| Plan | Credits / Monat | Preis |
-|---|---:|---:|
-| free | 1,500 | $0 |
-| starter | 4,000 | $2 |
-| lite | 6,000 | $2.5 |
-| pro | 20,000 | $7.5 |
-| power | 80,000 | $25 |
-| max | 180,000 | $50 |
-| ultra | 300,000 | $75 |
-| enterprise | individuell | auf Anfrage |
-
-Nur Aktionen, die Arbeit erzeugen, kosten Credits (ein Agent-Lauf kostet z. B. 2 Credits); Status, Billing und andere Abfragen sind kostenlos. Für ein Upgrade schick deine Key-ID (nie den Key) an **phuongnamp99@gmail.com**. Details: [Preise](../docs/localized/PRICING.de.md).
-
 ## Dokumentation
 
 - [Installationsanleitung](../full/localized/SETUP.de.md)

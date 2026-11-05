@@ -56,21 +56,6 @@ grok mcp add --transport http agents-holding https://mznrffnvmhmiudvfuquk.supaba
 
 在 Codex 中用 `!holding …` 获得即时回答，或使用 `/prompts:holding` 和 `/prompts:ceo`。完整列表：运行 `holding help`。
 
-## 套餐与价格
-
-| 套餐 | 积分 / 月 | 价格 |
-|---|---:|---:|
-| free | 1,500 | $0 |
-| starter | 4,000 | $2 |
-| lite | 6,000 | $2.5 |
-| pro | 20,000 | $7.5 |
-| power | 80,000 | $25 |
-| max | 180,000 | $50 |
-| ultra | 300,000 | $75 |
-| enterprise | 定制 | 联系我们 |
-
-只有产生工作的操作才消耗积分（例如一次 agent 运行 = 2 积分）；查看状态、billing 等查询都免费。如需升级，请把 key id（不是 key 本身）发送到 **phuongnamp99@gmail.com**。详情：[价格表](../docs/localized/PRICING.zh-CN.md)。
-
 ## 文档
 
 - [安装指南](../full/localized/SETUP.zh-CN.md)

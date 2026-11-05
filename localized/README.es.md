@@ -56,21 +56,6 @@ Después abre tu agente, autentica `agents-holding` en el navegador (crea una ke
 
 En Codex usa `!holding …` para respuestas instantáneas, o `/prompts:holding` y `/prompts:ceo`. Lista completa: ejecuta `holding help`.
 
-## Planes y precios
-
-| Plan | Créditos / mes | Precio |
-|---|---:|---:|
-| free | 1,500 | $0 |
-| starter | 4,000 | $2 |
-| lite | 6,000 | $2.5 |
-| pro | 20,000 | $7.5 |
-| power | 80,000 | $25 |
-| max | 180,000 | $50 |
-| ultra | 300,000 | $75 |
-| enterprise | a medida | consultar |
-
-Solo cuestan créditos las acciones que generan trabajo (por ejemplo, una ejecución del agente son 2 créditos); el estado, billing y otras consultas son gratis. Para mejorar tu plan, envía tu key id (nunca la key) a **phuongnamp99@gmail.com**. Detalles: [precios](../docs/localized/PRICING.es.md).
-
 ## Documentación
 
 - [Guía de instalación](../full/localized/SETUP.es.md)

@@ -56,21 +56,6 @@ Ouvrez ensuite votre agent, authentifiez `agents-holding` dans le navigateur (cr
 
 Dans Codex, utilisez `!holding …` pour des réponses instantanées, ou `/prompts:holding` et `/prompts:ceo`. Liste complète : lancez `holding help`.
 
-## Formules et tarifs
-
-| Formule | Crédits / mois | Prix |
-|---|---:|---:|
-| free | 1,500 | $0 |
-| starter | 4,000 | $2 |
-| lite | 6,000 | $2.5 |
-| pro | 20,000 | $7.5 |
-| power | 80,000 | $25 |
-| max | 180,000 | $50 |
-| ultra | 300,000 | $75 |
-| enterprise | sur mesure | nous contacter |
-
-Seules les actions qui créent du travail coûtent des crédits (par exemple, une exécution de l'agent coûte 2 crédits) ; le statut, billing et les autres consultations sont gratuits. Pour changer de formule, envoyez votre key id (jamais la key) à **phuongnamp99@gmail.com**. Détails : [tarifs](../docs/localized/PRICING.fr.md).
-
 ## Documentation
 
 - [Guide d'installation](../full/localized/SETUP.fr.md)

@@ -56,21 +56,6 @@ grok mcp add --transport http agents-holding https://mznrffnvmhmiudvfuquk.supaba
 
 Codex에서는 즉시 응답을 위해 `!holding …`을 쓰거나 `/prompts:holding`, `/prompts:ceo`를 사용하세요. 전체 목록: `holding help` 실행.
 
-## 플랜과 요금
-
-| 플랜 | 크레딧 / 월 | 가격 |
-|---|---:|---:|
-| free | 1,500 | $0 |
-| starter | 4,000 | $2 |
-| lite | 6,000 | $2.5 |
-| pro | 20,000 | $7.5 |
-| power | 80,000 | $25 |
-| max | 180,000 | $50 |
-| ultra | 300,000 | $75 |
-| enterprise | 맞춤 | 문의 |
-
-작업을 만드는 동작에만 크레딧이 듭니다(예: 에이전트 실행 1회 = 2크레딧). 상태, billing 등 조회는 무료입니다. 업그레이드하려면 key id(키 자체가 아님)를 **phuongnamp99@gmail.com**으로 보내세요. 자세히: [요금표](../docs/localized/PRICING.ko.md).
-
 ## 문서
 
 - [설치 가이드](../full/localized/SETUP.ko.md)
