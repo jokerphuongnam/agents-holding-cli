@@ -47,4 +47,5 @@ test("default process has an enabled built-in rule; custom process and company o
 });
 function ruleFileForTest(repo, company) { return join(repo, `.agents/${company}-company/jira-listener-rules.json`); }
 
+test("CLI can dry-run a custom rule without enabling or writing", async () => { const r = { id: "comment-label", enabled: true, trigger: { event: "comment_created", project: "NAIL" }, conditions: { labels: ["automation"] }, actions: [{ type: "label", target: "issue", label: "triaged" }] }; const i = sub("Coding"); i.fields.labels = ["automation"]; const out = await evaluate(async () => ({}), [r], i, "comment_created", { dry: true }); assert.equal(out[0].label, "triaged"); assert.equal(out[0].dry_run, true); });
 test("default-process lookup is read-only and explicit for custom workflows", async () => { const calls = []; const call = async (name, args) => { calls.push([name,args]); return { custom: false }; }; assert.equal(await defaultProcess("acme", call), true); assert.deepEqual(calls, [["get_company_flow", { company: "acme" }]]); assert.equal(await defaultProcess("acme", async () => ({ custom: true })), false); });
