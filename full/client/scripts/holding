@@ -131,7 +131,8 @@ case "$noun" in
   billing) case "$verb" in ""|usage|vi|en) srv "$@" ;; *) bash "$here/ah-cli.sh" billing "$verb" "$@"; exit $? ;; esac ;;
   status) case " $verb $* " in *" --server "*) exec bash "$here/ah-cli.sh" status ;; esac; exec node "$here/status.mjs" status ${verb:+"$verb"} "$@" ;;
   doctor) case " $verb $* " in *" --server "*) exec bash "$here/ah-cli.sh" doctor ;; esac; exec bash "$here/doctor.sh" ${verb:+"$verb"} "$@" ;;
-  notify) exec node "$here/status.mjs" notify ${verb:+"$verb"} "$@" ;;
+  notify) case "$verb" in send|list|group) srv "$@" ;; *) exec node "$here/status.mjs" notify ${verb:+"$verb"} "$@" ;; esac ;;
+  report) srv "$@" ;;  # report hub: server decides which types/keys the caller may see
   setup) case "$verb" in sync) exec bash "$here/sync-commands.sh" "$@" ;; open) exec bash "$here/open-setup.sh" "$@" ;; *) usage ;; esac ;;
   habit) case "$verb" in ""|list|edit|clear) exec node "$here/habits.mjs" "${verb:-list}" "$@" ;; *) usage ;; esac ;;
   flow) case "$verb" in ""|show|list) srv "$@" ;; *) echo "/flow $verb needs the agent: run it inside grok/claude/codex." >&2; exit 2 ;; esac ;;

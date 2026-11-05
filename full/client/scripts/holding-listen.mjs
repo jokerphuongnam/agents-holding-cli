@@ -118,15 +118,18 @@ const autostartPlist = join(homedir(), "Library/LaunchAgents/com.agentsholding.j
 // Every 60s (server marks the Jira Listener offline after ~2.5 min without one). Back after an outage: post the offline
 // comment once on every card that changed meanwhile (text from the server, task language), then reconcile replays the change.
 const myJira = {}; // enterprise: this key's Jira account; work starts only on cards assigned to it
-const heartbeat = (state = "online") => Promise.all(companyList.map((company) => mcp("listener_heartbeat", { company, host: hostname(), pid: process.pid, autostart: existsSync(autostartPlist), version: "4", state, meta: localMeta() })
+let lastBeat = 0;
+const heartbeatIfStale = () => { if (Date.now() - lastBeat > 300000) heartbeat(); };
+const heartbeat = (state = "online") => (lastBeat = Date.now(), Promise.all(companyList.map((company) => mcp("listener_heartbeat", { company, host: hostname(), pid: process.pid, autostart: existsSync(autostartPlist), version: "4", state, meta: localMeta() })
   .then(async (r) => { if (r?.communication) commMode[company] = r.communication; if (r?.enterprise) myJira[company] = r.jira_account ?? null; L.writeStatus(homedir(), { companies: { [company]: { heartbeat_at: new Date().toISOString(), heartbeat_ok: true } } });
     if (state !== "online" || !(r?.was_offline || r?.missed?.length)) return;
     log(`Jira Listener back online for ${company} (server saw it offline since ${r.offline_since ?? "?"}); ${r.missed?.length ?? 0} card(s) changed meanwhile`);
     for (const m of r.missed ?? []) if (m.issue && m.comment) await comms(m.issue, m.comment);
     reconcile(company, r.offline_since ?? undefined).catch((e) => log("reconcile failed:", e.message)); })
-  .catch((e) => { log("heartbeat failed:", e.message); L.writeStatus(homedir(), { companies: { [company]: { heartbeat_at: new Date().toISOString(), heartbeat_ok: false } } }); })));
+  .catch((e) => { log("heartbeat failed:", e.message); L.writeStatus(homedir(), { companies: { [company]: { heartbeat_at: new Date().toISOString(), heartbeat_ok: false } } }); }))));
 L.writeStatus(homedir(), { pid: process.pid, started_at: new Date().toISOString(), notify: L.notifyOn(homedir()), running: null, companies: {} });
-setInterval(heartbeat, Number(process.env.AH_HEARTBEAT_SEC ?? 60) * 1000);
+// keep-alive every 10 min (was 60s); joins re-announce only if the last beat is > 5 min old
+setInterval(heartbeat, Number(process.env.AH_HEARTBEAT_SEC ?? 600) * 1000);
 
 // Auto-Done / Verified on Develop: poll gh for real merged PRs linked to issue keys (never forge Jira events).
 const mergedPrSeen = new Set();
@@ -705,7 +708,7 @@ function grokArgs(prompt, sid, o = {}) {
 let ref = 0;
 // Watchdog (every 30s): a socket with nothing received for > AH_STALE_SEC (default 120s; Phoenix heartbeats are answered every 25s)
 // is closed -> the normal reconnect path; the user gets one notification per outage.
-const sockets = {}, lastRx = {}, downNotified = {}, staleMs = Number(process.env.AH_STALE_SEC ?? 120) * 1000;
+const sockets = {}, lastRx = {}, downNotified = {}, staleMs = Number(process.env.AH_STALE_SEC ?? 300) * 1000;
 setInterval(() => {
   for (const c of companyList) {
     if (!L.socketStale(lastRx[c], Date.now(), staleMs)) continue;
@@ -754,7 +757,7 @@ async function connect(company) {
   };
   ws.onmessage = (m) => {
     const msg = JSON.parse(m.data); lastRx[company] = Date.now();
-    if (msg.event === "phx_reply" && msg.topic === topic) { log("join", msg.payload.status, "company", company); if (msg.payload.status === "ok") { backoffs[company] = 1000; heartbeat(); rt("joined"); if (!joinedOnce[company]) { joinedOnce[company] = true; reconcile(company).catch((e) => log("reconcile failed:", e.message)); } if (downNotified[company]) { downNotified[company] = false; L.desktopNotify(homedir(), "agents-holding", `Listener reconnected (${company})`); reconcile(company).catch((e) => log("reconcile failed:", e.message)); } } else rt(`join ${msg.payload.status}`); }
+    if (msg.event === "phx_reply" && msg.topic === topic) { log("join", msg.payload.status, "company", company); if (msg.payload.status === "ok") { backoffs[company] = 1000; heartbeatIfStale(); rt("joined"); if (!joinedOnce[company]) { joinedOnce[company] = true; reconcile(company).catch((e) => log("reconcile failed:", e.message)); } if (downNotified[company]) { downNotified[company] = false; L.desktopNotify(homedir(), "agents-holding", `Listener reconnected (${company})`); reconcile(company).catch((e) => log("reconcile failed:", e.message)); } } else rt(`join ${msg.payload.status}`); }
     if (msg.event === "broadcast" && msg.payload?.event === "next_action") {
       const p = { ...(msg.payload.payload ?? {}), company };
       if (p.enterprise && company in myJira && p.assignee_account !== myJira[company]) { log("skip", p.issue ?? "", "(assigned to someone else)"); return; }

@@ -50,6 +50,12 @@ if [ -n "$HOOK" ]; then # zero-model path: Grok UserPromptSubmit hook (global; G
   mkdir -p "$HOME/.grok/hooks"
   printf '{"hooks":{"UserPromptSubmit":[{"hooks":[{"type":"command","command":"bash %s/ah-hook.sh","timeout":30}]}]}}\n' "$SD" > "$HOME/.grok/hooks/agents-holding.json"
   echo "hook: ~/.grok/hooks/agents-holding.json -> $SD/ah-hook.sh (pure-data commands answer instantly, no model)"
+  # Claude Code: same UserPromptSubmit contract (exit 2 = prompt blocked, stderr shown, no model turn); merged into ~/.claude/settings.json
+  if [ -d "$HOME/.claude" ] && command -v node >/dev/null; then
+    node -e 'const fs=require("fs"),p=process.argv[1],cmd=process.argv[2];let j={};try{j=JSON.parse(fs.readFileSync(p,"utf8"))}catch{}
+      j.hooks??={};const L=(j.hooks.UserPromptSubmit??=[]).filter(h=>!JSON.stringify(h).includes("ah-hook.sh"));L.push({hooks:[{type:"command",command:cmd,timeout:30}]});j.hooks.UserPromptSubmit=L;
+      fs.writeFileSync(p,JSON.stringify(j,null,2)+"\n")' "$HOME/.claude/settings.json" "bash $SD/ah-hook.sh" && echo "hook: ~/.claude/settings.json UserPromptSubmit -> $SD/ah-hook.sh (Claude Code: instant, no model)"; fi
+  echo "Codex: no prompt hook; run instant commands with Codex's local shell escape:  !holding <noun> <verb>  (no model turn)"
 fi
 if [ -n "$OWNER" ]; then
   GC="$HOME/.grok/config.toml"; touch "$GC"
