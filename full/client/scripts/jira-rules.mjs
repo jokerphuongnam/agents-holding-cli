@@ -1,7 +1,7 @@
 // Company-defined Jira Listener rules. Local process JSON, deterministic planning/execution (no model).
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 import { homedir } from "node:os";
 import { client as jiraClient } from "./jira.mjs";
 
