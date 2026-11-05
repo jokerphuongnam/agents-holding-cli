@@ -9,7 +9,7 @@ isco() { [ -d "$HOME/.config/agents-holding/state/$1" ] || grep -q "\"company\":
 n=$#; i=0; while [ $i -lt $n ]; do x="$1"; shift; i=$((i+1)); case "$x" in @?*) if isco "${x#@}"; then set -- "$@" --company "${x#@}"; else set -- "$@" "$x"; fi ;; *) set -- "$@" "$x" ;; esac; done
 usage() { cat <<'USAGE'
 usage: holding <noun> <verb> [args]   (chat: /<noun> <verb> ...; no verb = list/show)
-  jira attach <KEY> <file...> | figma connect | figma export <url> [--out f.png] [--attach KEY] | confluence page create|update <SPACE> "<title>" --file md [--attach png]
+  jira attach <KEY> <file...> | figma connect [--switch] | figma status | figma logout | figma export <url> [--out f.png] [--attach KEY] | atlassian connect [--switch] | atlassian status | atlassian logout | confluence page create|update <SPACE> "<title>" --file md [--attach png]
   update            update the client: scripts, agent configs + sandbox profiles, slash commands, restart the Jira Listener (safe to rerun; chat: /holding update)
   help [group|command]                the commands YOUR key can run (aliases: document, docs)
   staff list | add <role> [--agent P --model M --effort E] | remove <role>   (add: review the staff policy, arrow-key menu)
@@ -58,8 +58,8 @@ case " $* " in *" --all "*) case "$noun $verb" in "status "|"status --all"|"task
 case "$noun" in update|upgrade|help|document|docs|-h|--help) ;; *) [ "${AH_NO_UPDATE_CHECK:-}" = 1 ] || bash "$here/update.sh" --check 2>/dev/null </dev/tty || true ;; esac
 case "$noun" in
   update|upgrade) exec bash "$here/update.sh" ${verb:+"$verb"} "$@" ;;
-  figma) case "$verb" in connect) exec node "$here/attach.mjs" figma-connect ;; export) exec node "$here/attach.mjs" figma-export "$@" ;; *) usage ;; esac ;;
-  atlassian) case "$verb" in connect) exec node "$here/attach.mjs" atlassian-connect ;; *) usage ;; esac ;;
+  figma) case "$verb" in connect) exec node "$here/attach.mjs" figma-connect "$@" ;; status) exec node "$here/attach.mjs" figma-status ;; logout) exec node "$here/attach.mjs" figma-logout ;; export) exec node "$here/attach.mjs" figma-export "$@" ;; *) usage ;; esac ;;
+  atlassian) case "$verb" in connect) exec node "$here/attach.mjs" atlassian-connect "$@" ;; status) exec node "$here/attach.mjs" atlassian-status ;; logout) exec node "$here/attach.mjs" atlassian-logout ;; *) usage ;; esac ;;
   confluence) case "$verb" in page) exec node "$here/attach.mjs" confluence-page "$@" ;; *) usage ;; esac ;;
   help|document|docs) exec node "$here/help.mjs" ${verb:+"$verb"} "$@" ;;
   -h|--help) echo "Run: holding help   (commands available for your key; holding help <group|command> for details)"; exec node "$here/help.mjs" ;;
