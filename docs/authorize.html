@@ -29,11 +29,15 @@ const msg = { invalid_key: "That license key was not accepted. Check it and try 
   device_bound: "This key is already used on its maximum number of machines. Contact the owner to allow another machine." }[q.get("error")] || (q.get("error") ? "Sign-in failed: " + q.get("error") : "");
 const MCP = action.replace(/\/authorize$/, "");
 document.getElementById("imp").onclick = () => { f.hidden = false; document.getElementById("k").focus(); };
-document.getElementById("gen").onclick = async () => { const e = document.getElementById("err"); e.hidden = true;
-  try { const r = await fetch(MCP + "/free-signup", { method: "POST", headers: { "Content-Type": "application/json", "X-AH-Lang": (navigator.language || "en").slice(0, 2) },
+document.getElementById("gen").onclick = async () => { const e = document.getElementById("err"), b = document.getElementById("gen"); e.hidden = true; b.disabled = true;
+  const show = (t) => { e.textContent = t; e.hidden = false; b.disabled = false; };
+  let r, j = null;
+  try { r = await fetch(MCP + "/free-signup", { method: "POST", headers: { "Content-Type": "application/json", "X-AH-Lang": (navigator.language || "en").slice(0, 2) },
       body: JSON.stringify({ device: dev, device_name: (q.get("client_name") || "browser") + " on " + (navigator.platform || "web"), lang: (navigator.language || "en").slice(0, 2) }) });
-    const j = await r.json(); if (!j.ok) throw new Error(j.message || "failed");
-    document.getElementById("k").value = j.key; j.key = ""; f.requestSubmit ? f.requestSubmit() : f.submit();   // signs in with it, never displayed
-  } catch (x) { e.textContent = String(x.message || x); e.hidden = false; } };
+  } catch (x) { return show("Could not reach the agents-holding server (" + String(x.message || x) + "). Check your connection, then try again."); }
+  try { j = await r.json(); } catch (x) {}
+  if (!j || !j.ok || !j.key) return show((j && (j.message || j.error_description || j.error)) || ("Generate key failed (HTTP " + r.status + "). Try again later or use Import key."));
+  document.getElementById("k").value = j.key; j.key = ""; f.requestSubmit ? f.requestSubmit() : f.submit();   // signs in with it, never displayed
+};
 if (msg) { const e = document.getElementById("err"); e.textContent = msg; e.hidden = false; }
 </script></body></html>
