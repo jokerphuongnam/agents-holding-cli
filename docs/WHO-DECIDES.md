@@ -1,5 +1,7 @@
 # Who decides what
 
+Languages: [Tiếng Việt](localized/WHO-DECIDES.vi.md) · [日本語](localized/WHO-DECIDES.ja.md) · [한국어](localized/WHO-DECIDES.ko.md) · [简体中文](localized/WHO-DECIDES.zh-CN.md) · [Español](localized/WHO-DECIDES.es.md) · [Français](localized/WHO-DECIDES.fr.md) · [Deutsch](localized/WHO-DECIDES.de.md)
+
 
 > This is the **default** flow. Everyone can customize their own flow as they wish: pick a per-task template with the label `ah-flow:<full|no_plan|no_dev|quick>`, set a company flow at `/jira setup`, or design your own custom flow (`/flow edit`).
 

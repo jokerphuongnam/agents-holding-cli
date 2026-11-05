@@ -1,5 +1,7 @@
 # Agent providers: which AI runs each staff
 
+Languages: [Tiếng Việt](localized/PROVIDERS.vi.md) · [日本語](localized/PROVIDERS.ja.md) · [한국어](localized/PROVIDERS.ko.md) · [简体中文](localized/PROVIDERS.zh-CN.md) · [Español](localized/PROVIDERS.es.md) · [Français](localized/PROVIDERS.fr.md) · [Deutsch](localized/PROVIDERS.de.md)
+
 The lean runner and `/ceo` talk to **providers** through one small interface (the `AgentProvider` protocol). They are not tied to a particular CLI.
 
 | Kind | What it is | Where it comes from |
@@ -214,11 +216,9 @@ Output parsing is picked from the first word:
 
 `holding provider list` prints each built-in's full effective template, then the company's default command and per-staff commands. `/staff list` shows `<staff> - $ <command…>`.
 
-## Sub-agent presets (headless) / Preset sub agent (chạy nền)
+## Sub-agent presets (headless)
 
-> **VI:** Chọn preset là tạo một sub agent để nhân sự gọi chạy nền (headless) khi làm task — **không** mở cửa sổ chat. Với LLM chạy trên máy, cài xong rồi mở chat với nó là sai cách; cách đúng là thêm nó làm sub agent runner.
->
-> **EN:** A preset creates a sub agent the staff runs headless in the background for each task — it does **not** open a chat. For a local LLM, installing it and chatting with it is the wrong way; add it as a sub-agent runner.
+A preset creates a sub agent the staff runs headless in the background for each task — it does **not** open a chat. For a local LLM, installing it and chatting with it is the wrong way; add it as a sub-agent runner.
 
 `holding staff presets` lists every preset with a detect-installed check (binary on PATH, or the local server answering `/models`):
 
@@ -233,25 +233,25 @@ Output parsing is picked from the first word:
 | vllm | vLLM server | `http://localhost:8000/v1` |
 | openai-compatible | any compatible endpoint | set `baseURL` in `~/.config/agents-holding/agents.json` |
 
-### Sai vs đúng / Wrong vs right
+### Wrong vs right
 
-**Sai / Wrong**
+**Wrong**
 1. `ollama pull qwen2.5-coder`
-2. `ollama run qwen2.5-coder` → một cửa sổ chat mở ra / a chat opens.
-3. Copy task vào chat, copy kết quả ra / paste the task in, copy the answer out. Nhân sự không dùng được nó / the staff can't use it.
+2. `ollama run qwen2.5-coder` → a chat opens.
+3. Paste the task in, copy the answer out. The staff can't use it.
 
-**Đúng / Right**
-1. `ollama pull qwen2.5-coder` (hoặc bật server LM Studio / llama.cpp / vLLM).
-2. `holding staff presets` → thấy `✅ ollama`.
+**Right**
+1. `ollama pull qwen2.5-coder` (or start the LM Studio / llama.cpp / vLLM server).
+2. `holding staff presets` → see `✅ ollama`.
 3. `holding staff add backend-engineer --preset ollama --model qwen2.5-coder`
-4. `holding staff test backend-engineer` → chạy nền, không mở chat / runs headless, no chat.
-5. `/ceo KAN-12` → khi tới bước của backend-engineer, nhân sự tự gọi sub agent đó / the staff calls that runner on its own.
+4. `holding staff test backend-engineer` → runs headless, no chat.
+5. `/ceo KAN-12` → when it is backend-engineer's turn, the staff calls that runner on its own.
 
-## Built-in token savings for staff runs / Tiết kiệm token khi gọi staff
+## Built-in token savings for staff runs
 
 On by default for every staff (sub-agent) call; `AH_SUBAGENT_OPT=0` turns it off.
 - **Slim brief:** pasted file contents are replaced by the file path (the staff opens what it needs); chat history is never sent.
-- **Same session for follow-ups:** a follow-up ("tiếp tục…", "continue…", "also…", or `--continue`) to the same staff, company and repo within 30 minutes resumes that staff's session instead of starting a new one (Grok CLI; other CLIs start fresh). `--new` forces a new session.
+- **Same session for follow-ups:** a follow-up ("continue…", "tiếp tục…", "also…", or `--continue`) to the same staff, company and repo within 30 minutes resumes that staff's session instead of starting a new one (the grok CLI; other CLIs start fresh). `--new` forces a new session.
 - **Short answers:** every staff replies in one fixed template: status, summary (≤ 3 sentences), changes (≤ 8 items), next. No logs.
 - **Cache-friendly prefix:** system prompt and staff context (persona + skills, in a fixed order, no dates or ids) always come first and stay identical between runs; the task comes last, so the CLI's prompt caching applies.
 - **Batching:** `holding staff run <staff> "task 1 ;; task 2 ;; task 3" --batch` sends small tasks of the same staff in one call (up to 6) and prints one short result per task.

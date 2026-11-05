@@ -1,45 +1,47 @@
-# Quy tắc, quyền và quy trình của nhân sự
+# Staff rules, permissions and processes
 
-Mỗi company có **một cấu hình chung**. Trong đó có mặc định cho cả company, và mỗi nhân sự có thể có thêm phần riêng. holding tự chuyển cấu hình này thành cấu hình riêng của từng agent mỗi lần chạy. Chỉ chủ sở hữu hoặc admin company mới sửa được, và nhân sự không thể tự nới lỏng quyền của mình.
+Languages: [Tiếng Việt](localized/STAFF-POLICY.vi.md) · [日本語](localized/STAFF-POLICY.ja.md) · [한국어](localized/STAFF-POLICY.ko.md) · [简体中文](localized/STAFF-POLICY.zh-CN.md) · [Español](localized/STAFF-POLICY.es.md) · [Français](localized/STAFF-POLICY.fr.md) · [Deutsch](localized/STAFF-POLICY.de.md)
 
-## Quy tắc và quyền
+Each company has **one shared configuration**. It includes company-wide defaults, and each staff member can have an extra section of their own. holding turns this into each agent's own config every time that agent runs. Only the owner or a company admin can change it, and staff cannot loosen their own permissions.
+
+## Rules and permissions
 ```
-holding staff policy show <nhân sự|*>                      xem cấu hình (dùng * cho cả company)
-holding staff policy set <nhân sự|*> <quyền> on|off         ví dụ: mark_done, pr_merge, push_protected, call_staff
-holding staff policy rule add <nhân sự|*> "<quy tắc>"       quy tắc dạng chữ, AI sẽ đọc khi làm việc
-holding staff policy git set <nhân sự|*> branch_pattern "^NAIL-[0-9]+$"
-holding staff policy check <nhân sự> branch|commit|pr|push <giá trị>
+holding staff policy show <staff|*>                      show config (* = whole company)
+holding staff policy set <staff|*> <permission> on|off   e.g. mark_done, pr_merge, push_protected, call_staff
+holding staff policy rule add <staff|*> "<rule>"         plain-text rules the AI reads while working
+holding staff policy git set <staff|*> branch_pattern "^NAIL-[0-9]+$"
+holding staff policy check <staff> branch|commit|pr|push <value>
 ```
-Các quy tắc git (tên branch, định dạng commit, tiêu đề PR, các mục bắt buộc trong PR) được server kiểm tra. Vi phạm sẽ bị từ chối kèm lý do rõ ràng.
+Git rules (branch name, commit format, PR title, required PR checklist items) are checked by the server. Violations are refused with a clear reason.
 
-Khi thêm nhân sự (`holding staff add <vai trò>`), menu dùng phím mũi tên sẽ cho xem mặc định theo vai trò: chấp nhận luôn hoặc chỉnh lại. Đặt `AH_NONINTERACTIVE=1` để dùng mặc định mà không hỏi.
+When you add staff (`holding staff add <role>`), an arrow-key menu shows the role defaults: accept them or edit. Set `AH_NONINTERACTIVE=1` to take the defaults without asking.
 
-## Chặn file
+## File denylist
 ```
-holding company deny add <đường dẫn> [--replace <file>]     chặn file với mọi nhân sự
-holding staff deny add <nhân sự> <đường dẫn> [--replace <file>]
-holding company deny list | holding staff deny list <nhân sự>
+holding company deny add <path> [--replace <file>]     block a file for every staff
+holding staff deny add <staff> <path> [--replace <file>]
+holding company deny list | holding staff deny list <staff>
 ```
-Khi AI đọc file bị chặn, nó chỉ nhận được một lời nhắc rằng file này bị chặn, không bao giờ thấy nội dung thật. Nếu có `--replace` (ví dụ `.env` → `.env.example`), AI sẽ nhận nội dung file thay thế. File thay thế được quét trước để chắc chắn không chứa khoá thật. Danh sách chặn của company và của nhân sự được cộng lại với nhau, và nhân sự không xoá được mục mà company đã chặn.
+When the AI reads a blocked file, it only gets a note that the file is blocked — never the real contents. With `--replace` (for example `.env` → `.env.example`), the AI gets the replacement file's contents instead. The replacement is scanned first so it cannot leak a real secret. Company and staff denylists are combined, and staff cannot remove an entry the company already blocked.
 
-## Quy trình của company (Jira Listener)
+## Company processes (Jira Listener)
 ```
 holding company process templates | list | setup
 holding company process add --template linked-done --from MARLIN --to NAIL
 holding company process remove <id>
 
 ```
-Ví dụ: khi task ở dự án X chuyển sang trạng thái S, Jira Listener tự làm việc đã định (chuyển trạng thái, comment, gán người, báo CEO) trên các task liên kết ở dự án Y, Z. Listener chỉ dùng link Jira thật, mỗi việc chỉ làm một lần, và không chạy vòng lặp.
+Example: when a task in project X moves to status S, the Jira Listener does the configured work (change status, comment, assign, notify the CEO) on linked tasks in projects Y and Z. The Listener only uses real Jira links, does each action once, and never loops.
 
-## Cập nhật
-`holding update`, hoặc gõ `/holding update` trong chat. Lệnh này cập nhật client, tạo lại cấu hình agent, đồng bộ lại lệnh chat và khởi động lại Jira Listener. Chạy lại nhiều lần cũng an toàn. Khi client đã cũ, AI sẽ được nhắc và tự chạy lệnh này giúp bạn.
+## Update
+`holding update`, or type `/holding update` in chat. This updates the client, regenerates agent config, re-syncs chat commands and restarts the Jira Listener. Running it again is safe. When the client is outdated, the AI is prompted and can run this for you.
 
-## Đính kèm, Figma, Confluence
+## Attachments, Figma, Confluence
 ```
-holding jira attach NAIL-12 anh-man-hinh.png log.txt         đính kèm file trên máy vào issue
-holding figma connect                                        lưu token Figma vào Keychain (gõ ẩn, kiểm tra bằng /v1/me)
-holding figma export "<link Figma có node-id>" --attach NAIL-12   xuất frame ra PNG rồi đính kèm
-holding confluence page create NAIL "Đặc tả màn hình" --file spec.md --attach man-hinh.png
-holding confluence page update NAIL "Đặc tả màn hình" --file spec.md
+holding jira attach NAIL-12 screenshot.png log.txt         attach local files to an issue
+holding figma connect                                        save a Figma token in the Keychain (hidden prompt, checked with /v1/me)
+holding figma export "<Figma link with node-id>" --attach NAIL-12   export a frame as PNG and attach it
+holding confluence page create NAIL "Screen spec" --file spec.md --attach screen.png
+holding confluence page update NAIL "Screen spec" --file spec.md
 ```
-Các lệnh này dùng token Atlassian đã lưu trong Keychain và không bao giờ in token ra. Nhân sự cần có quyền `jira_attach` (mặc định có), `figma_export` (mặc định có) và `confluence_write` (mặc định chỉ CEO, lead, manager). Thêm `--dry` để xem trước mà không gửi gì đi.
+These commands use the Atlassian token already in the Keychain and never print the token. Staff need `jira_attach` (on by default), `figma_export` (on by default) and `confluence_write` (CEO, lead and manager only by default). Add `--dry` to preview without sending anything.

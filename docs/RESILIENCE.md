@@ -1,5 +1,7 @@
 # Resilience: what happens when something breaks
 
+Languages: [Tiếng Việt](localized/RESILIENCE.vi.md) · [日本語](localized/RESILIENCE.ja.md) · [한국어](localized/RESILIENCE.ko.md) · [简体中文](localized/RESILIENCE.zh-CN.md) · [Español](localized/RESILIENCE.es.md) · [Français](localized/RESILIENCE.fr.md) · [Deutsch](localized/RESILIENCE.de.md)
+
 The Jira Listener handles three kinds of failure without losing work. It never invents Jira events.
 
 ## 1. Agent compaction / context loss / mid-run death → checkpoint + resume
@@ -62,11 +64,11 @@ Everything that needs you (a staff question, a 1/2/3 decision, a hire, an agent 
 
 1. **Get a key.** Setup offers two options: **Generate key** (a new Free key for this Mac, 1,500 credits a month, one Free key per machine, ever) or **Import key** (a key you already have). The key is asked at a hidden prompt and kept only in the macOS Keychain.
 2. **Lost the key on this Mac?** Run Generate key again: this machine's Free key is recovered (same credits and history, new secret; the old one stops working). Paid keys: Import key.
-3. **Check it.** `holding key show` (key id, plan, credits, machines), `holding credit show`, `holding billing`. To upgrade or add credits, send your key id (never the key) to the owner. Full Vietnamese price sheet: [docs/PRICING.md](PRICING.md) (also linked from `holding billing`).
+3. **Check it.** `holding key show` (key id, plan, credits, machines), `holding credit show`, `holding billing`. To upgrade or add credits, send your key id (never the key) to the owner. Full price sheet: [PRICING.md](PRICING.md) (also linked from `holding billing`).
 4. **Plans (credits a month).** Free 1,500 · Starter 4,000 · Lite 6,000 · Pro 20,000 · Power 80,000 · Max 180,000 · Ultra 300,000 · Marketplace 20,000 for $10 · Enterprise custom — details in [PRICING.md](PRICING.md).
 5. **What costs.** next action 2; advance, Jira updates, staff brief, record artifact, assign, CEO, inbox post / reply 1 each. Everything else is free; model tokens are never counted.
 6. **Extra credits** from the owner: for the period, until the key is renewed (held 90 days at most), or until used up (they survive expiry but only work while the key is active).
-7. **Out of credits or expired.** The Jira Listener stops with "Key không còn hiệu lực hoặc đã hết credit, liên hệ owner để gia hạn/thêm credit". Jira changes made meanwhile are not replayed; after renewal the Jira Listener reconciles each open card's current state.
+7. **Out of credits or expired.** The Jira Listener stops with "Key is no longer valid or out of credits; contact the owner to renew or add credits". Jira changes made meanwhile are not replayed; after renewal the Jira Listener reconciles each open card's current state.
 
 ## Enterprise plan (planned; next phase)
 
