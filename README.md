@@ -63,3 +63,7 @@ Compaction/resume, blocked agents + fallback, MCP server problems + reconcile: [
 
 ## Sub agents (headless)
 `holding staff presets` → `holding staff add <role> --preset <id>`. **VI:** chọn preset là tạo sub agent để nhân sự gọi chạy nền, không mở chat. Chi tiết và ví dụ sai/đúng với LLM trên máy: [docs/PROVIDERS.md](docs/PROVIDERS.md#sub-agent-presets-headless--preset-sub-agent-chạy-nền).
+
+## Commands
+
+Run `holding help` to see the commands your key can use (`holding help <group|command>` for details). See full/SETUP.md "Help".

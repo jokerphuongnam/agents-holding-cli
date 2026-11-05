@@ -197,3 +197,11 @@ Lost your Free key on this Mac? Run Generate key again: it recovers this machine
 Adding the MCP server is enough: type `/holding <noun> <verb>` (e.g. `/holding staff list`, `/holding key show`, `/holding help`), or `/ceo`, `/staff ...`, `/key ...`.
 The server tells the agent to answer these by calling its `cli` tool directly and printing the output verbatim (no file exploration; a legacy local `.agents/<company>` tree is never used, import it with `holding company migrate`).
 Grok CLI (1.0.70) does not list MCP prompts in its `/` menu, so to get native menu entries either type `install agents-holding commands` in Grok (it calls `setup_commands` and writes `~/.grok/commands`), or run `holding setup sync` if you have the CLI and key. Claude Code lists the MCP prompts natively as `/mcp__agents-holding__holding`, `/mcp__agents-holding__ceo`, ...
+
+## Help: `holding help`
+
+`holding help` (aliases `holding document`, `holding docs`; `holding --help` points here) lists, grouped and numbered, exactly the commands
+YOUR key can run: the server checks the key, plan, role and owner binding and returns the list (Vietnamese or English from your language).
+`holding help <group|command>` shows details, e.g. `holding help staff` or `holding help 2.1`. Without a valid key you only see the setup and
+key commands (key generate/import/show, setup, doctor, help). Offline it uses the last list cached for your key (stored under a hash of the key,
+never the key itself) or else the setup-only list.
