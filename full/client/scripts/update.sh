@@ -26,7 +26,17 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 norm_ver() { local v="${1:-0}"; v="${v//[^0-9]/}"; [ ${#v} -eq 8 ] && v="${v}00"; echo "${v:-0}"; }
 ver() { norm_ver "$(cat "$here/VERSION" 2>/dev/null || echo 0)"; }
 ver_raw() { cat "$here/VERSION" 2>/dev/null || echo 0; }
-behind() { local a b; a=$(norm_ver "$1"); b=$(norm_ver "$2"); echo $(( 10#$b - 10#$a )); }
+behind() {
+  # YYYYMMDDNN integer delta. Same-day builds → NN span (01→10 = 9). Cross-day can be large; callers may label it.
+  local a b; a=$(norm_ver "$1"); b=$(norm_ver "$2"); echo $(( 10#$b - 10#$a ));
+}
+behind_label() {
+  local n; n=$(behind "$1" "$2")
+  if [ "$n" -le 0 ] 2>/dev/null; then echo ""
+  elif [ "$n" -le 99 ] 2>/dev/null; then echo " ($n updates behind)"
+  else echo " (newer build available)"
+  fi
+}
 
 ah_refresh_package() {
   local dest="${AH_INSTALL_DIR:-$HOME/.agents-holding}" url branch tmp
@@ -57,7 +67,7 @@ if [ "${1:-}" = "--check" ]; then
   [ -n "$req" ] || exit 0
   cur="$(ver)"; rn="$(norm_ver "$req")"
   [ "$cur" -lt "$rn" ] 2>/dev/null || exit 0
-  n="$(behind "$cur" "$rn")"; echo "agents-holding client $(ver_raw) -> $req ($n updates behind)."
+  echo "agents-holding client $(ver_raw) -> $req$(behind_label "$cur" "$rn")."
   if [ "${AH_AUTO_UPDATE:-}" = 1 ]; then exec bash "$here/update.sh" --yes; fi
   [ -t 0 ] || { echo "Run: holding update"; exit 0; }
   pick="$(node -e 'import("'"$here"'/menu.mjs").then(async m=>{const i=await m.select("Update now?",["Update now","Later"]);console.log(i)}).catch(()=>console.log(1))')"
@@ -96,5 +106,5 @@ after_raw="$(ver_raw)"; after="$(ver)"; n="$(behind "$before" "$after")"
 if [ "$before" -eq "$after" ] 2>/dev/null; then
   echo "Done: client $before_raw -> $after_raw  (holding on PATH: $(command -v holding 2>/dev/null || echo ~/.local/bin/holding))"
 else
-  echo "Done: client $before_raw -> $after_raw ($n updates)  (holding on PATH: $(command -v holding 2>/dev/null || echo ~/.local/bin/holding))"
+  echo "Done: client $before_raw -> $after_raw$(behind_label "$before" "$after")  (holding on PATH: $(command -v holding 2>/dev/null || echo ~/.local/bin/holding))"
 fi
