@@ -1,7 +1,8 @@
-# Companies / Công ty
+# Companies
+
+Languages: [Tiếng Việt](localized/COMPANIES.vi.md) · [日本語](localized/COMPANIES.ja.md) · [한국어](localized/COMPANIES.ko.md) · [简体中文](localized/COMPANIES.zh-CN.md) · [Español](localized/COMPANIES.es.md) · [Français](localized/COMPANIES.fr.md) · [Deutsch](localized/COMPANIES.de.md)
 
 One holding, many companies. Each company has its own staff, Jira board, Jira Listener and settings; settings it does not override follow the holding defaults.
-Một holding có nhiều công ty. Mỗi công ty có nhân sự, bảng Jira, Jira Listener và cấu hình riêng; cái gì không đặt riêng thì theo mặc định của holding.
 
 Chat: `/ceo companies` (list) · `/ceo company <verb> ...` (same verbs as below). Terminal: `holding company <verb>`.
 
@@ -20,9 +21,8 @@ Chat: `/ceo companies` (list) · `/ceo company <verb> ...` (same verbs as below)
 | `holding company migrate <folder> [--parent P] [--name N] [--slug S] [--dry-run]` | Bring an older local company (`.agents/*-company`) into holding. See below. |
 
 Only companies connected to holding are listed. Older local-only companies are not shown (and never deleted) until you migrate them.
-Chỉ công ty đã kết nối holding mới hiện trong danh sách. Công ty cũ chỉ có ở máy sẽ ẩn (không bị xoá) cho tới khi bạn chuyển nó vào.
 
-## Migrating an older local company / Chuyển công ty cũ vào holding
+## Migrating an older local company
 
 `holding company migrate <repo or .agents/x-company folder>`
 1. Backs up the folder to `~/.config/agents-holding/backups/<name>-<time>.tgz` (originals stay on disk).
@@ -35,12 +35,11 @@ After migrating, only `.agents/company.json` is read. The old `.agents/<x>-compa
 Suggested layout for what you keep: `.agents/cache/` and `.agents/plans/` (personal, keep untracked) and `.agents/custom-skills/<id>/` (private repo skills, never published). Holding does not require a specific location for cache or plans.
 Migrate child companies (`children/<child>` pointing to another repo) separately before removing the parent's old folder.
 
-## Staff limits per plan / Giới hạn staff theo gói
+## Staff limits per plan
 
 Each company's roster can hold at most this many staff (CEO included). Applies to `/staff add`, `holding company staff move|assign`, `holding company migrate` and new companies. Full pricing (credits, devices, action costs): [PRICING.md](PRICING.md).
-Mỗi công ty có tối đa số staff dưới đây (tính cả CEO). Áp dụng cho thêm staff, chuyển staff, migrate và tạo công ty mới. Giá không đổi.
 
-| Plan / Gói | Max staff per company |
+| Plan | Max staff per company |
 |---|---|
 | Free | 5 |
 | Starter | 10 |
@@ -49,13 +48,13 @@ Mỗi công ty có tối đa số staff dưới đây (tính cả CEO). Áp dụ
 | Marketplace | 25 |
 | Power | 40 |
 | Max | 60 |
-| Ultra | Unlimited / Không giới hạn |
-| Enterprise | Unlimited / Không giới hạn |
+| Ultra | Unlimited |
+| Enterprise | Unlimited |
 | Older keys without a credit plan: trial / monthly / yearly | 20 / 30 / 50 |
 
-At the limit you get: "Đã đạt giới hạn N staff của gói X. Hãy cho nghỉ (fire) một staff trước hoặc nâng cấp gói." Migrate keeps the first N staff and reports how many were skipped.
+At the limit you get: "Staff limit of N for plan X reached. Fire a staff member first, or upgrade the plan." Migrate keeps the first N staff and reports how many were skipped.
 
-## Board columns / Các cột trên bảng
+## Board columns
 
 New companies get: To Do → In Progress → Product Work → BA Question → Planned → Pre Coding → **Reopened** → Coding → QC → In Review → **Blocked** → Done.
 - **Reopened**: move a card here when a test fails; the agent resumes Coding.
