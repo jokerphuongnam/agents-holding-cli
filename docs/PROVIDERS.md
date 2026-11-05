@@ -246,3 +246,13 @@ Output parsing is picked from the first word:
 3. `holding staff add backend-engineer --preset ollama --model qwen2.5-coder`
 4. `holding staff test backend-engineer` → chạy nền, không mở chat / runs headless, no chat.
 5. `/ceo KAN-12` → khi tới bước của backend-engineer, nhân sự tự gọi sub agent đó / the staff calls that runner on its own.
+
+## Built-in token savings for staff runs / Tiết kiệm token khi gọi staff
+
+On by default for every staff (sub-agent) call; `AH_SUBAGENT_OPT=0` turns it off.
+- **Slim brief:** pasted file contents are replaced by the file path (the staff opens what it needs); chat history is never sent.
+- **Same session for follow-ups:** a follow-up ("tiếp tục…", "continue…", "also…", or `--continue`) to the same staff, company and repo within 30 minutes resumes that staff's session instead of starting a new one (Grok CLI; other CLIs start fresh). `--new` forces a new session.
+- **Short answers:** every staff replies in one fixed template: status, summary (≤ 3 sentences), changes (≤ 8 items), next. No logs.
+- **Cache-friendly prefix:** system prompt and staff context (persona + skills, in a fixed order, no dates or ids) always come first and stay identical between runs; the task comes last, so the CLI's prompt caching applies.
+- **Batching:** `holding staff run <staff> "task 1 ;; task 2 ;; task 3" --batch` sends small tasks of the same staff in one call (up to 6) and prints one short result per task.
+Model choice and token budgets per task stay yours (`holding staff set`).

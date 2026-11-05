@@ -5,11 +5,12 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as L from "./lean.mjs";
-import { runStaff } from "./provider-run.mjs";
+import { runStaff, runBatch } from "./provider-run.mjs";
+import * as S from "./subagent.mjs";
 import { resolveCompany, localCompanies } from "./company.mjs";
 const a = process.argv.slice(2), flag = (n) => a.includes(n), opt = (n) => { const i = a.indexOf(n); return i >= 0 ? a[i + 1] : undefined; };
 const pos = a.filter((x, i) => !x.startsWith("--") && !(i > 0 && a[i - 1] === "--company"));
-const [staff, ...rest] = pos, task = rest.join(" ");
+const [staff, ...rest] = pos, task = rest.join(" "); // --continue / --new force or skip reusing the last session; --batch: tasks split on ";;"
 if (!staff || !task) { console.error('usage: holding staff run <staff> "<task>" [--company X] [--json]'); process.exit(1); }
 const company = resolveCompany().company;
 if (!company) { console.error("run inside a repo with .agents/company.json, pass --company, or holding company use <company>"); process.exit(1); }
@@ -36,15 +37,19 @@ if (!process.argv.includes("--proceed")) {
     process.exit(st.kind === "needs_hire" ? 3 : 4);
   }
 }
+if (flag("--batch")) { const parts = task.split(";;").map((x) => x.trim()).filter(Boolean); const bb = await mcp("staff_brief", { company, role: staff, text: parts.join("\n"), max_skills: 2 }).catch(() => null);
+  const rs = await runBatch(parts.map((t) => ({ role: staff, kind: code ? "code" : "text", task: t })), { company, cwd: process.cwd(), noTools: !code, context: L.contextOf({ brief: bb, lang }), system: "Answer each task yourself now." });
+  rs.forEach((x, n) => console.log(`${n + 1}. ${S.renderShort(x)}`)); process.exit(rs.some((x) => x.status === "blocked") ? 1 : 0); }
 const b = await mcp("staff_brief", { company, role: staff, text: task, max_skills: 2 }).catch(() => null);
 function repoFor(co) { const here = process.cwd(); try { const c = localCompanies().find((x) => x.company === co); const rs = c?.repos ?? []; if (!rs.length || rs.some((r) => here === r || here.startsWith(r + "/"))) return here; return rs[0]; } catch { return here; } }
 const r = await runStaff({ company, role: staff, kind: code ? "code" : "text", noTools: !code, cwd: repoFor(company),
   schema: code ? undefined : { type: "object", properties: { summary: { type: "string" }, steps: { type: "array", items: { type: "string" } } }, required: ["summary", "steps"] },
   system: code ? "Implement the task in this repo, run the tests, summarise files changed." : "No tools in this run (ignore persona rules about tools, MCP, sessions or delegating to other staff): the user asked you directly, produce the deliverable yourself now.",
   context: L.contextOf({ brief: b, lang }),
-  prompt: task });
+  prompt: task, continue: flag("--continue") ? true : flag("--new") ? false : undefined });
 const tag = `${staff} - ${r.provider} · ${r.model ?? "default"} - ${r.effort ?? "default"}`;
 if (flag("--json")) { console.log(JSON.stringify({ staff, company, provider: r.provider, model: r.model, effort: r.effort, result: r.result ?? r.text, error: r.error })); process.exit(r.error ? 1 : 0); }
 if (r.error) { console.error(`[${staff}] (${tag}) failed: ${r.error}`); process.exit(1); }
-const o = r.result; console.log(`[${staff}] (${tag})`);
+const o = r.result; console.log(`[${staff}] (${tag})${r.reused ? " (same session)" : ""}`);
+if (r.short) { console.log(S.renderShort(r.short)); process.exit(0); }
 console.log(o && typeof o === "object" ? [o.summary, ...(o.steps ?? []).map((x) => `- ${x}`)].filter(Boolean).join("\n") : (o ?? r.text ?? ""));

@@ -305,9 +305,9 @@ export function leanGrokHome(home) {
   try { if (!existsSync(tf) && existsSync(rtf)) writeFileSync(tf, readFileSync(rtf)); } catch {}
   return d;
 }
-export function leanGrokArgs({ sid, model, text, prompt, schema, system, tools, maxTurns, effort, context }) {
+export function leanGrokArgs({ sid, model, text, prompt, schema, system, tools, maxTurns, effort, context, resume = false }) {
   if (!text && !maxTurns) maxTurns = codeMaxTurns();
-  return ["--trust", "--always-approve", "--session-id", sid, ...(model ? ["--model", model] : []), ...(effort ? ["--reasoning-effort", effort] : []),
+  return ["--trust", "--always-approve", resume ? "--resume" : "--session-id", sid, ...(model ? ["--model", model] : []), ...(effort ? ["--reasoning-effort", effort] : []),
     "--tools", tools ?? (text ? "read_file" : CODE_TOOLS), ...(maxTurns || text ? ["--max-turns", String(maxTurns ?? 1)] : []), "--disable-web-search", "--no-subagents", "--no-plan",
     ...(system ? ["--system-prompt-override", system] : []), ...(context ? ["--rules", context] : []), "--json-schema", JSON.stringify(schema), "--output-format", "json", "--single", prompt];
 }

@@ -7,6 +7,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import * as L from "./lean.mjs";
 import { getProvider } from "./providers/index.mjs";
+import * as S from "./subagent.mjs";
 export function simpleSpawn(cwd, buf) {
   return (args, o = {}) => new Promise((res) => {
     const env = { ...(o.env ?? process.env), ...(o.home ? { GROK_HOME: o.home } : {}) }; delete env.AGENTS_HOLDING_KEY; // staff runs never get server access
@@ -16,15 +17,28 @@ export function simpleSpawn(cwd, buf) {
     ch.on("close", (c, s) => { clearTimeout(t); res(c ?? s); }); ch.on("error", () => { clearTimeout(t); res(127); });
   });
 }
-export async function runStaff({ home = homedir(), company, role, kind = "text", prompt, system, schema, cwd = process.cwd(), stageModel = null, noTools = false, context = null }) {
+export async function runStaff({ home = homedir(), company, role, kind = "text", prompt, system, schema, cwd = process.cwd(), stageModel = null, noTools = false, context = null, files = [], history = null, continue: cont, opt = S.optOn() }) {
+  // history is accepted only to be dropped: staff never get the chat history (subagent.mjs).
+  let sess = null;
+  if (opt) { const sl = S.slimBrief(prompt, { cwd, history }); prompt = [sl.text, S.fileRefs([...files, ...sl.files], cwd)].filter(Boolean).join("\n\n");
+    ({ system, context } = S.stablePrefix(system, context)); schema = schema ?? S.SUMMARY_SCHEMA; sess = S.sessionFor(home, { company, role, cwd, kind }, prompt, { continue: cont }); }
   const cfg = L.loadAgentCfg(home, company), text = kind !== "code";
   const r = L.resolveAgent({ cfg, text, role, stageModel });
   if (r.command) { const { runCommand } = await import("./providers/command.mjs");
     const res = await runCommand(r.binding, { prompt, system, context, cwd }).catch((e) => ({ result: {}, exitCode: 1, error: e.message }));
     return { ...res, provider: "command", command: r.command, model: null, effort: null }; }
   const prov = await getProvider(r.agent, home, { providers: { ...(L.loadGlobalCfg(home).providers ?? {}), ...(cfg.providers ?? {}) } });
-  const buf = [], sid = randomUUID(), logDir = join(home, ".config/agents-holding/logs"); mkdirSync(logDir, { recursive: true });
+  const buf = [], sid = sess?.sid ?? randomUUID(), logDir = join(home, ".config/agents-holding/logs"); mkdirSync(logDir, { recursive: true });
   const ctx = { spawn: simpleSpawn(cwd, buf), stdout: () => Buffer.concat(buf).toString("utf8"), leanHome: r.agent === "grok" ? L.leanGrokHome(home) : null, logDir, log: () => {} };
-  const res = await prov.run({ prompt, system, context, schema, kind, text, cwd, model: r.model, effort: r.effort, sid, bin: r.bin, noTools }, ctx).catch((e) => ({ result: {}, exitCode: 1, error: e.message }));
-  return { ...res, provider: r.agent, model: r.model, effort: r.effort };
+  const res = await prov.run({ prompt, system, context, schema, kind, text, cwd, model: r.model, effort: r.effort, sid, resume: !!sess?.resume, bin: r.bin, noTools }, ctx).catch((e) => ({ result: {}, exitCode: 1, error: e.message }));
+  if (opt && !res.error && (prov.supportsResume ?? false)) S.rememberSession(home, { company, role, cwd, kind }, sid);
+  return { ...res, ...(opt ? { short: S.shortResult(res.error ? { ...res.result, error: res.error } : res.result) } : {}), reused: !!sess?.resume && (prov.supportsResume ?? false), provider: r.agent, model: r.model, effort: r.effort };
+}
+/** Several small same-type tasks -> as few staff calls as possible; returns one short result per task, in input order. */
+export async function runBatch(tasks, common = {}) {
+  const out = []; for (const b of S.batchTasks(tasks)) {
+    const one = b.length === 1, t0 = b[0];
+    const r = await runStaff({ ...common, role: t0.role, kind: t0.kind ?? "text", prompt: S.batchPrompt(b), schema: one ? undefined : S.BATCH_SCHEMA, continue: false });
+    S.splitBatch(b, r.error ? { status: "blocked", summary: r.error } : r.result).forEach((x, n) => { out[b[n].i] = { ...x, batched: b.length, provider: r.provider }; });
+  } return out;
 }
