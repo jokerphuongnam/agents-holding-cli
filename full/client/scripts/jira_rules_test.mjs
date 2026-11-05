@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { template, validateRule, planRule, evaluate, saveRules, loadRules } from "./jira-rules.mjs";
+import { template, validateRule, planRule, evaluate, saveRules, loadRules, defaultProcess } from "./jira-rules.mjs";
 const sub = (status = "Done") => ({ key: "NAIL-2", fields: { status: { name: status, statusCategory: { key: status === "Done" ? "done" : "in-progress" } }, issuetype: { name: "Sub-task" }, parent: { key: "NAIL-1" }, labels: [] } });
 const parent = (type = "Task", status = "In Progress") => ({ key: "NAIL-1", fields: { issuetype: { name: type }, status: { name: status, statusCategory: { key: "in-progress" } } } });
 test("built-in template includes epics, is an opt-in CLI template, and validates", () => {
@@ -46,3 +46,5 @@ test("default process has an enabled built-in rule; custom process and company o
  rules = loadRules(repo, "acme", { project: "ACME", defaultProcess: true }).rules; assert.equal(rules.length, 1); assert.equal(rules[0].enabled, false);
 });
 function ruleFileForTest(repo, company) { return join(repo, `.agents/${company}-company/jira-listener-rules.json`); }
+
+test("default-process lookup is read-only and explicit for custom workflows", async () => { const calls = []; const call = async (name, args) => { calls.push([name,args]); return { custom: false }; }; assert.equal(await defaultProcess("acme", call), true); assert.deepEqual(calls, [["get_company_flow", { company: "acme" }]]); assert.equal(await defaultProcess("acme", async () => ({ custom: true })), false); });

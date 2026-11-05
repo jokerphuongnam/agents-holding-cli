@@ -116,10 +116,10 @@ async function main(argv) {
   const co = resolveCompany().company; if (!co) throw new Error("no company: run in a company repo or pass --company");
   let repo = process.cwd(); const ri = argv.indexOf("--repo"); if (ri >= 0) repo = resolve(argv.splice(ri, 2)[1]); else while (!existsSync(join(repo, ".agents")) && repo !== dirname(repo)) repo = dirname(repo);
   const cmd = argv.shift() ?? "list";
-  const templateProject = flag("--project")?.toUpperCase();
   const flag = (n) => { const i = argv.indexOf(n); return i < 0 ? null : argv.splice(i, 2)[1]; };
   const has = (n) => { const i = argv.indexOf(n); if (i < 0) return false; argv.splice(i, 1); return true; };
   flag("--company"); // company was already resolved from this option
+  const templateProject = flag("--project")?.toUpperCase();
   const { defaultProcess } = await import("./jira-rules.mjs");
   const isDefault = await defaultProcess(co, async (name, args) => {
     const { readFileSync } = await import("node:fs");
