@@ -20,7 +20,7 @@ f.action = action;
 for (const k of ["client_id","redirect_uri","response_type","code_challenge","code_challenge_method","state","scope","resource"]) {
   if (!q.has(k)) continue; const i = document.createElement("input"); i.type = "hidden"; i.name = k; i.value = q.get(k); f.appendChild(i); }
 // 1 key = 1 machine: a stable id for this browser profile, generated once and kept in localStorage.
-let dev = ""; try { dev = localStorage.getItem("ah_device_id") || ""; if (!dev) { dev = "web-" + crypto.randomUUID().replace(/-/g, ""); localStorage.setItem("ah_device_id", dev); } } catch (e) {}
+let dev = ""; const qd = (q.get("ah_device") || ""); try { dev = /^mac-[0-9a-f]{32}$/.test(qd) ? qd : (localStorage.getItem("ah_device_id") || ""); if (dev === qd && dev) localStorage.setItem("ah_device_id", dev); if (!dev) { dev = "web-" + crypto.randomUUID().replace(/-/g, ""); localStorage.setItem("ah_device_id", dev); } } catch (e) {}
 if (dev) for (const [k, v] of [["device_id", dev], ["device_name", (q.get("client_name") || "browser") + " on " + (navigator.platform || "web")]]) {
   const i = document.createElement("input"); i.type = "hidden"; i.name = k; i.value = v; f.appendChild(i); }
 if (q.get("client_name")) document.getElementById("client").textContent = q.get("client_name");
