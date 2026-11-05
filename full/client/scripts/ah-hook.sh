@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Grok UserPromptSubmit hook (~/.grok/hooks/agents-holding.json, installed by holding setup sync): answers deterministic
+# Grok / Claude Code / Codex UserPromptSubmit hook (~/.grok/hooks/agents-holding.json, installed by holding setup sync): answers deterministic
 # agents-holding slash commands (/staff list, /key list, /jira list ...) WITHOUT a model turn. It runs `holding <cmd>` and blocks
 # the prompt (exit 2): Grok shows our stderr to the user and never sends the prompt to the model. Anything else: exit 0
 # (untouched). /ceo always passes through: the CEO is the current chat session; it delegates with /staff run (holding staff run <staff>),
