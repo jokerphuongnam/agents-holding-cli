@@ -98,7 +98,7 @@ call() { # call <cmd> <args> -> $tmp/txt
 osascript -l JavaScript -e 'function run(a){return JSON.stringify({jsonrpc:"2.0",id:1,method:"tools/call",params:{name:"cli",arguments:Object.assign({command:a[0],args:a[1]},a[2]?{company:a[2]}:{},a[3]?{owner_session:a[3]}:{},a[4]?{secret_key:a[4]}:{})}})}' \
   "$1" "$2" "$CO" "$SESS" "$SK" > "$tmp/body.json"
 code="$({ printf 'header = "Authorization: Bearer %s"\n' "$KEY"; [ -n "$DEV" ] && printf 'header = "X-AH-Device: %s"\n' "$DEV"; signcfg "$MCP_URL" "$tmp/body.json"; true; } |
-  curl -sS --retry 2 --retry-delay 1 -K - -X POST "$MCP_URL" -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" -H "X-AH-Client: ah-cli" -H "X-AH-Lang: ${LANGH:-en}" \
+  curl -sS --retry 2 --retry-delay 1 -K - -X POST "$MCP_URL" -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" -H "X-AH-Client: $([ -n "${AH_STAFF:-}" ] && echo ah-staff || echo ah-cli)" -H "X-AH-Version: $(cat "$(dirname "${BASH_SOURCE[0]}")/VERSION" 2>/dev/null || echo 0)" -H "X-AH-Lang: ${LANGH:-en}" \
   --max-time "${AH_CLI_TIMEOUT:-45}" --data-binary "@$tmp/body.json" -o "$tmp/out.json" -w '%{http_code}')" || { stale "server unreachable"; exit 1; }
 osascript -l JavaScript -e 'function run(a){ObjC.import("Foundation");const s=$.NSString.stringWithContentsOfFileEncodingError(a[0],4,null).js;let j;
   try{j=JSON.parse(s)}catch(e){return "HTTP "+a[1]+": "+s.slice(0,300)}

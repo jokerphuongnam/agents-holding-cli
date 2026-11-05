@@ -14,6 +14,11 @@ import * as L from "./lean.mjs";
 import * as P from "./providers/index.mjs";
 import * as R from "./registry.mjs";
 import * as X from "./resilience.mjs";
+import * as POL from "./policy.mjs";
+import * as XT from "./crossteam.mjs";
+import { client as jiraRaw } from "./jira.mjs";
+import { readFileSync as readFileSync_AH } from "node:fs";
+const AH_CLIENT_VERSION = (() => { try { return readFileSync_AH(new URL("./VERSION", import.meta.url), "utf8").trim(); } catch { return "0"; } })();
 
 const args = process.argv.slice(2);
 const opt = (n, d) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : d; };
@@ -93,7 +98,7 @@ function creditOk() {
 async function mcp(name, a) {
   if (O.governed(name)) a = O.outbound(name, a); // single outbound allowlist (telemetry / crawl / billing)
   let r, body;
-  try { r = await fetch(`${base}/functions/v1/mcp`, { method: "POST", signal: AbortSignal.timeout(Number(process.env.AH_MCP_TIMEOUT_MS ?? 60000)), headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", Authorization: `Bearer ${key}`, ...deviceHeaders },
+  try { r = await fetch(`${base}/functions/v1/mcp`, { method: "POST", signal: AbortSignal.timeout(Number(process.env.AH_MCP_TIMEOUT_MS ?? 60000)), headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", "X-AH-Version": AH_CLIENT_VERSION, Authorization: `Bearer ${key}`, ...deviceHeaders },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: a } }) }); body = await r.text(); }
   catch (e) { const c = X.classifyServer({ err: e }); serverDown(c); throw new X.ServerError(c); }
   const c = X.classifyServer({ status: r.status, body });
@@ -331,7 +336,8 @@ function spawnGrok(gargs, out, issue, sid, o = {}) {
   return new Promise((res) => {
     const env = o.env ?? (o.home ? { ...process.env, GROK_HOME: o.home } : { ...process.env, AGENTS_HOLDING_KEY: key });
     if (o.home) delete env.AGENTS_HOLDING_KEY; // lean runs need no server access
-    const ch = spawn("nice", ["-n", "10", o.bin ?? grokBin, ...gargs], { cwd: repo, env, stdio: ["ignore", "pipe", "pipe"] });
+    const w = POL.wrapLaunch({ co: company, role: o.role ?? "staff", bin: o.bin ?? grokBin, args: gargs, env, cwd: repo }); // unified staff policy + OS sandbox
+    const ch = spawn("nice", ["-n", "10", w.bin, ...w.args], { cwd: repo, env: w.env, stdio: ["ignore", "pipe", "pipe"] });
     let lastOut = Date.now(); // claude/codex have no grok events file: stdout activity counts as progress
     ch.stdout.on("data", (d) => { lastOut = Date.now(); appendFileSync(out, d); if (o.collect) o.collect.push(d); }); ch.stderr.on("data", (d) => { lastOut = Date.now(); appendFileSync(out, d); });
     const t0 = Date.now(); let warned = "";
@@ -384,10 +390,12 @@ async function leanModelOnce(kind, issue, stage, prompt, role, context, rsv, { s
   const prov = command ? (await import("./providers/command.mjs")).commandProvider(binding) : await P.getProvider(agent, homedir());
   log(`lean ${kind} call for ${issue} ${stage}${role ? ` staff ${role}` : ""} agent ${agent} session ${sid} ${model ?? "default model"}${effort ? ` effort ${effort}` : ""} prompt ${prompt.length} chars -> ${out}`);
   // AgentProvider protocol (providers/): built-in CLIs spawn via ctx.spawn; HTTP providers (openai-compatible, custom) run their own loop
-  const ctx = { spawn: (args, so = {}) => { if (so.env) delete so.env.AGENTS_HOLDING_KEY; return spawnGrok(args, out, issue, sid, { collect: buf, ...so }); },
+  const ctx = { spawn: (args, so = {}) => { if (so.env) delete so.env.AGENTS_HOLDING_KEY; return spawnGrok(args, out, issue, sid, { collect: buf, role, ...so }); },
     stdout: () => Buffer.concat(buf).toString("utf8"), grokUsage: (s) => usageOf(s, leanHome), leanHome, logDir, log: (m) => log(`lean ${kind} ${issue}: ${m}`) };
   const t0 = Date.now();
-  const res = await prov.run({ prompt, system, context, schema, kind, text, cwd: repo, model, effort, sid, bin }, ctx).catch((e) => ({ result: {}, usage: null, exitCode: 1, error: e.message }));
+  if (role) context = [context, POL.rulesText(POL.loadPolicy(homedir(), company, role))].filter(Boolean).join("\n\n");
+  prompt = POL.redactText(prompt); if (context) context = POL.redactText(context);
+  const res = await prov.run({ prompt, system, context, schema, kind, text, cwd: repo, model, effort, sid, bin, company, role }, ctx).catch((e) => ({ result: {}, usage: null, exitCode: 1, error: e.message }));
   const wall = Date.now() - t0, code = res.exitCode ?? 0;
   if (res.text) appendFileSync(out, res.text); // HTTP providers: keep the answer in the run log too
   const r = res.result, u = res.usage;
@@ -790,3 +798,17 @@ else {
 log("holding listener run:", registry.projects.length, "project(s),", companyList.length, "company subscription(s)", lean ? "LEAN" : "legacy", dryJira ? "DRY-JIRA" : listenerJira ? "jira-by-listener" : "jira-by-agent", "mcp", mcpServers().join(","), "timeout", runTimeoutMs / 60000, "min");
 for (const c of companyList) connect(c).catch(fail(c));
 }
+
+// Cross-team linked propagation (generic; rules: holding company link add <SRC> --to P1,P2). Real Jira links only; per-target isolation.
+async function crossTeamSweep() {
+  if (!listenerJira || !jiraCfg || dryJira) return;
+  let layer = null; try { const d = await mcp("staff_policy_get", { company, staff: "*" }); layer = (d?.data ?? d)?.company; } catch (e) { return log("cross-team: policy read failed:", e.message); }
+  if (!layer?.cross_team?.length && !layer?.processes?.length) return;
+  const boardCo = (pk) => registry.projects.flatMap((p) => p.boards ?? []).find((b) => b.project_key === pk)?.company;
+  const allowed = (pk) => { const co = boardCo(pk); if (!co) return process.env.AH_CROSS_STRICT === "0";
+    try { const p = POL.loadPolicy(homedir(), co, "jira-listener"); return p?.permissions?.jira_transition !== false; } catch { return process.env.AH_CROSS_STRICT === "0"; } };
+  const res = await XT.sweep(jiraRaw(jiraCfg), layer, { stateDir: join(homedir(), ".config/agents-holding/state", company), allowed, log,
+    notify: async (a) => { appendFileSync(join(homedir(), ".config/agents-holding/state", company, "ceo-notices.log"), `${new Date().toISOString()} [${a.process}] ${a.text}\n`); log(`CEO notice: ${a.text}`); } });
+  const bad = res.filter((r) => !r.ok); if (bad.length) log(`cross-team: ${bad.length} target(s) failed; will retry next sweep`);
+}
+setInterval(() => { crossTeamSweep().catch((e) => log("cross-team sweep failed:", e.message)); }, Number(process.env.AH_CROSS_SEC ?? 120) * 1000);

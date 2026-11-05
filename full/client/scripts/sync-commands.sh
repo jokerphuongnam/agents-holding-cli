@@ -26,7 +26,7 @@ DEV="${AGENTS_HOLDING_DEVICE:-$(kc agents-holding-device || true)}"
 tmp="$(mktemp -d)"; chmod 700 "$tmp"; trap 'rm -rf "$tmp"' EXIT
 rpc() { # $1 = JSON body, $2 = out file; key only via curl config on stdin
   { printf 'header = "Authorization: Bearer %s"\n' "$KEY"; [ -n "$DEV" ] && printf 'header = "X-AH-Device: %s"\n' "$DEV"; true; } |
-    curl -fsS --retry 3 --retry-all-errors --retry-delay 1 -K - -X POST "$MCP_URL" -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" --data "$1" -o "$2"; }
+    curl -fsS --retry 3 --retry-all-errors --retry-delay 1 -K - -X POST "$MCP_URL" -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" -H "X-AH-Version: $(cat "$(dirname "${BASH_SOURCE[0]}")/VERSION" 2>/dev/null || echo 0)" --data "$1" -o "$2"; }
 js() { osascript -l JavaScript -e 'function run(a){ObjC.import("Foundation");const s=$.NSString.stringWithContentsOfFileEncodingError(a[0],4,null).js;const j=JSON.parse(s);if(j.error)throw new Error(j.error.message);'"$1"'}' "${@:2}"; }
 rpc '{"jsonrpc":"2.0","id":1,"method":"prompts/list"}' "$tmp/list.json" || { echo "server unreachable or key rejected" >&2; exit 1; }
 names="$(js 'return j.result.prompts.map(p=>p.name).join("\n")' "$tmp/list.json")"

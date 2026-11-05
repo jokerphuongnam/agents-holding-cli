@@ -10,6 +10,8 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { adfText, jiraToken, WORK_LABEL, isAgentText } from "./lean.mjs";
 import { load as loadReg } from "./registry.mjs";
+import { readFileSync as readFileSync_AH } from "node:fs";
+const AH_CLIENT_VERSION = (() => { try { return readFileSync_AH(new URL("./VERSION", import.meta.url), "utf8").trim(); } catch { return "0"; } })();
 
 const clip = (s, n) => { s = String(s ?? "").replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n - 1) + "…" : s; };
 export const ago = (iso, now = Date.now()) => { const m = Math.round((now - Date.parse(iso)) / 60000); return !iso || isNaN(m) ? "-" : m < 1 ? "just now" : m < 60 ? `${m}m ago` : m < 1440 ? `${Math.round(m / 60)}h ago` : `${Math.round(m / 1440)}d ago`; };
@@ -111,7 +113,7 @@ async function serverUsage(company, issue) { // tokens per task from the server 
   try {
     const { execFileSync } = await import("node:child_process"); const kc = (s) => execFileSync("security", ["find-generic-password", "-s", s, "-a", process.env.USER, "-w"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
     const key = process.env.AGENTS_HOLDING_KEY || kc("agents-holding-license"); let dev = process.env.AGENTS_HOLDING_DEVICE; try { dev ||= kc("agents-holding-device"); } catch {}
-    const r = await fetch(process.env.AH_MCP_URL ?? "https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp", { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream", ...(dev ? { "X-AH-Device": dev } : {}) },
+    const r = await fetch(process.env.AH_MCP_URL ?? "https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp", { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream", "X-AH-Version": AH_CLIENT_VERSION, ...(dev ? { "X-AH-Device": dev } : {}) },
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "usage", arguments: { days: 365 } } }) });
     const d = JSON.parse((await r.json()).result.content[0].text); const t = d.tokens?.per_task?.[issue];
     return t ? { input: t.input, output: t.output, cached: t.cached, runs: t.runs } : null;
