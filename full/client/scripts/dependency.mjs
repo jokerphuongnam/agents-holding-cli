@@ -14,6 +14,7 @@ import {
   lstatSync, statSync, rmSync, cpSync, symlinkSync,
 } from "node:fs";
 import { homedir, platform } from "node:os";
+import { pathToFileURL } from "node:url";
 import { join, dirname, basename, resolve, relative } from "node:path";
 import { spawnSync, execFileSync } from "node:child_process";
 import { resolveCompany as _resolveCompany } from "./company.mjs";
@@ -590,6 +591,7 @@ if (asJson) argv.splice(jsonIdx, 1);
 const purge = argv.includes("--purge");
 const revoke = argv.includes("--revoke");
 const cleaned = argv.filter((a) => a !== "--purge" && a !== "--revoke");
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
 const verb = (cleaned[0] || "list").toLowerCase();
 const rest = cleaned.slice(1);
 
@@ -629,4 +631,6 @@ try {
 } catch (e) {
   console.error(String(e?.message || e));
   process.exit(1);
+}
+
 }
