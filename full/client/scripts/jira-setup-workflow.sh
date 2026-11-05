@@ -22,7 +22,7 @@ api() { local m=$1 p=$2; shift 2; printf 'user = "%s:%s"\n' "$EMAIL" "$TOKEN" | 
 # Company flow: AH_FLOW_JSON=<file> with [{"name":"Verified on Develop","category":"IN_PROGRESS"}, ...] in board order
 # (the statuses_json returned by set_company_flow / get_company_flow). Default: the built-in 10 columns.
 if [[ -n "${AH_FLOW_JSON:-}" ]]; then
-  mapfile -t WANT < <(jq -r '.[].name' "$AH_FLOW_JSON")
+  WANT=(); while IFS= read -r l; do WANT+=("$l"); done < <(jq -r '.[].name' "$AH_FLOW_JSON")
   cat_of() { jq -r --arg n "$1" '[.[]|select(.name==$n)][0].category // "IN_PROGRESS"' "$AH_FLOW_JSON"; }
 else
 WANT=("To Do" "In Progress" "Product Work" "BA Question" "Planned" "Pre Coding" "Coding" "QC" "In Review" "Done")
@@ -42,10 +42,13 @@ fi
 ALLST=$(api GET "/rest/api/3/statuses/search?projectId=$PID&maxResults=200" | jq '.values')
 
 # resolve / create statuses
-declare -A ID
+IDS=""; idget() { printf '%s\n' "$IDS" | awk -F'\t' -v n="$1" '$1==n{print $2; exit}'; }  # bash 3.2 (macOS): no associative arrays
 for n in "${WANT[@]}"; do
   id=$(jq -r --arg n "$n" '[.[]|select((.name|ascii_downcase)==($n|ascii_downcase))][0].id // empty' <<<"$ALLST")
   [[ -z "$id" ]] && id=$(jq -r --arg n "$n" '[.values[].statuses[]?|select(.name? and (.name|ascii_downcase)==($n|ascii_downcase))][0].statusReference // empty' <<<"$WFS" 2>/dev/null || true)
+  # global statuses already in the workflow (e.g. In Progress id 3) carry no name in workflows/search: look them up
+  [[ -z "$id" ]] && for r in $(jq -r '.values[].statuses[]?.statusReference' <<<"$WFS" | sort -u); do
+    [[ "$(api GET "/rest/api/3/status/$r" | jq -r '.name|ascii_downcase')" == "$(tr '[:upper:]' '[:lower:]' <<<"$n")" ]] && { id=$r; break; }; done
   if [[ -z "$id" ]]; then
     if [[ "$DRY" == --dry-run ]]; then echo "would create status $n"; id="NEW-$n"; else
       if [[ "$STYLE" == next-gen ]]; then SC="{\"type\":\"PROJECT\",\"project\":{\"id\":\"$PID\"}}"; else SC='{"type":"GLOBAL"}'; fi
@@ -54,7 +57,7 @@ for n in "${WANT[@]}"; do
       echo "created status $n id=$id"
     fi
   fi
-  ID["$n"]=$id
+  IDS="$IDS"$'\n'"$n"$'\t'"$id"
 done
 [[ "$DRY" == --dry-run ]] && { echo "dry run done"; exit 0; }
 ALLST=$(api GET "/rest/api/3/statuses/search?projectId=$PID&maxResults=200" | jq '.values')
@@ -67,7 +70,7 @@ for i in $(seq 0 $((NWF-1))); do
   # statuses currently in workflow that aren't wanted -> keep if In Progress in use (or any other unknown)
   CUR=$(jq -r '.statuses[].statusReference' <<<"$WF")
   DROPPED=()
-  REFS=(); for n in "${WANT[@]}"; do REFS+=("${ID[$n]}"); done
+  REFS=(); for n in "${WANT[@]}"; do REFS+=("$(idget "$n")"); done
   for r in $CUR; do
     if ! printf '%s\n' "${REFS[@]}" | grep -qx "$r"; then
       nm=$(jq -r --arg r "$r" '.[]|select(.id==$r).name' <<<"$ALLST")
@@ -81,7 +84,7 @@ for i in $(seq 0 $((NWF-1))); do
   for r in "${REFS[@]}"; do jq -e --arg r "$r" 'any(.[];.id==$r)' <<<"$NAMES" >/dev/null || NAMES=$(jq --argjson s "$(api GET /rest/api/3/status/$r | jq '{id,name,statusCategory:.statusCategory.key|ascii_upcase|sub("NEW";"TODO")|sub("INDETERMINATE";"IN_PROGRESS"),statusReference:.id}')" '.+[$s]' <<<"$NAMES"); done
   DJ=$( ((${#DROPPED[@]})) && printf '%s\n' "${DROPPED[@]}" | jq -R . | jq -s . || echo '[]')
   ITS=$(api GET "/rest/api/3/project/$KEY/statuses" | jq '[.[].id]')
-  MAP=$(jq -n --argjson d "$DJ" --argjson its "$ITS" --arg p "$PID" --arg to "${ID[Coding]}" 'if ($d|length)==0 then [] else [$its[]|{issueTypeId:., projectId:$p, statusMigrations:[]}] end')
+  MAP=$(jq -n --argjson d "$DJ" --argjson its "$ITS" --arg p "$PID" --arg to "$(idget Coding)" 'if ($d|length)==0 then [] else [$its[]|{issueTypeId:., projectId:$p, statusMigrations:[]}] end')
   INIT=$(jq '[.transitions[]|select(.type=="INITIAL")]' <<<"$WF")
   BODY=$(jq -n --argjson wf "$WF" --argjson refs "$REFJSON" --argjson st "$NAMES" --argjson init "$INIT" --argjson map "$MAP" '
     {statuses:$st,
@@ -98,7 +101,7 @@ done
 # ---- column order: Jira has no public API to reorder board columns (team-managed boards append new ones after Done),
 # so read the board and print the exact order to drag into.
 BID=$(api GET "/rest/agile/1.0/board?projectKeyOrId=$KEY&maxResults=1" | jq -r '.values[0].id // empty' 2>/dev/null || true)
-HAVE=(); [[ -n "$BID" ]] && mapfile -t HAVE < <(api GET "/rest/agile/1.0/board/$BID/configuration" | jq -r '.columnConfig.columns[].name' 2>/dev/null || true)
+HAVE=(); [[ -n "$BID" ]] && while IFS= read -r l; do HAVE+=("$l"); done < <(api GET "/rest/agile/1.0/board/$BID/configuration" | jq -r '.columnConfig.columns[].name' 2>/dev/null || true)  # bash 3.2 (macOS): no mapfile
 norm() { tr '[:upper:]' '[:lower:]' <<<"$1"; }
 GOT=(); for h in "${HAVE[@]}"; do for w in "${WANT[@]}"; do [[ $(norm "$h") == $(norm "$w") ]] && GOT+=("$w"); done; done
 EXP=(); for w in "${WANT[@]}"; do for g in "${GOT[@]}"; do [[ "$g" == "$w" ]] && { EXP+=("$w"); break; }; done; done

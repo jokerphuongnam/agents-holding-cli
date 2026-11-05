@@ -250,7 +250,8 @@ export function jiraClient(cfg, { dry, log }) {
       if (dry) return log(`JIRA (dry): label ${key} staff:${role ?? "(remove)"}`);
       const ops = staffLabelOps((await this.meta(key)).labels, role);
       if (ops.length) await req("PUT", `/issue/${encodeURIComponent(key)}`, { update: { labels: ops } });
-      if (role) await this.assignSelf(key, jiraUser).catch((e) => log(`Jira assignee ${key} failed: ${e.message}`)); // same moment as staff:<role>
+      if (role) return await this.assignSelf(key, jiraUser).catch((e) => { log(`Jira assignee ${key} failed: ${e.message}`); return null; }); // same moment as staff:<role>
+      return null;
     },
     // Assignee = the connected Jira account the Jira Listener uses (staff are not Jira users; staff:<role> shows which staff).
     // Set when a staff picks the card up; kept on needs-hire / needs-decision / blocked (that account's owner must act), kept at Done.
@@ -260,10 +261,13 @@ export function jiraClient(cfg, { dry, log }) {
       if (!(u in this._users)) this._users[u] = (await req("GET", `/user/search?query=${encodeURIComponent(u)}`))?.[0]?.accountId ?? null; return this._users[u];
     },
     async assignSelf(key, jiraUser = null) {
-      if (dry) return log(`JIRA (dry): assignee ${key} = ${jiraUser ?? "Jira Listener account"}`);
-      const me = (await this.userId(jiraUser).catch(() => null)) ?? await this.myself(); if (!me) return;
-      const j = await req("GET", `/issue/${encodeURIComponent(key)}?fields=assignee`); if (j?.fields?.assignee?.accountId === me) return;
-      await req("PUT", `/issue/${encodeURIComponent(key)}/assignee`, { accountId: me }); log(`JIRA: assignee ${key} = Jira Listener account`);
+      if (dry) { log(`JIRA (dry): assignee ${key} = ${jiraUser ?? "Jira Listener account"}`); return null; }
+      const me = (await this.userId(jiraUser).catch(() => null)) ?? await this.myself(); if (!me) return null;
+      const j = await req("GET", `/issue/${encodeURIComponent(key)}?fields=assignee`);
+      if (j?.fields?.assignee?.accountId !== me) {
+        await req("PUT", `/issue/${encodeURIComponent(key)}/assignee`, { accountId: me }); log(`JIRA: assignee ${key} = Jira Listener account`);
+      }
+      return me; // Jira account id to persist on tasks.assignee_account
     },
     async labels(key, add = [], remove = []) { // generic label add/remove (needs-hire / needs-decision)
       const ops = [...add.map((l) => ({ add: l })), ...remove.map((l) => ({ remove: l }))]; if (!ops.length) return;
@@ -305,9 +309,9 @@ export function leanGrokHome(home) {
   try { if (!existsSync(tf) && existsSync(rtf)) writeFileSync(tf, readFileSync(rtf)); } catch {}
   return d;
 }
-export function leanGrokArgs({ sid, model, text, prompt, schema, system, tools, maxTurns, effort, context }) {
+export function leanGrokArgs({ sid, model, text, prompt, schema, system, tools, maxTurns, effort, context, resume = false }) {
   if (!text && !maxTurns) maxTurns = codeMaxTurns();
-  return ["--trust", "--always-approve", "--session-id", sid, ...(model ? ["--model", model] : []), ...(effort ? ["--reasoning-effort", effort] : []),
+  return ["--trust", "--always-approve", resume ? "--resume" : "--session-id", sid, ...(model ? ["--model", model] : []), ...(effort ? ["--reasoning-effort", effort] : []),
     "--tools", tools ?? (text ? "read_file" : CODE_TOOLS), ...(maxTurns || text ? ["--max-turns", String(maxTurns ?? 1)] : []), "--disable-web-search", "--no-subagents", "--no-plan",
     ...(system ? ["--system-prompt-override", system] : []), ...(context ? ["--rules", context] : []), "--json-schema", JSON.stringify(schema), "--output-format", "json", "--single", prompt];
 }
@@ -347,6 +351,29 @@ export function gitHost(repo, o, exec = (c, a) => execFileSync(c, a, { cwd: repo
     catch (e) { r.msg.push(`merge NOT done (conflicts/checks?): ${String(e.message).split("\n")[0]}; not forced`); }
   }
   return r;
+}
+
+/** Read-only: recently merged PRs whose head branch looks like feature/<ISSUE-KEY> (or contains the key). Uses gh CLI; never posts fake Jira events. */
+export function pollMergedPrs(repo, { sinceHours = 48, exec = (c, a) => execFileSync(c, a, { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim() } = {}) {
+  try { exec("gh", ["auth", "status"]); } catch { return []; }
+  let raw = "[]";
+  try {
+    raw = exec("gh", ["pr", "list", "--state", "merged", "--limit", "30", "--json", "number,url,title,headRefName,baseRefName,mergedAt,headRepository"]);
+  } catch { return []; }
+  let list = []; try { list = JSON.parse(raw); } catch { return []; }
+  const since = Date.now() - sinceHours * 3600e3;
+  const out = [];
+  for (const pr of list) {
+    const mergedAt = pr.mergedAt ? Date.parse(pr.mergedAt) : 0;
+    if (mergedAt && mergedAt < since) continue;
+    const branch = String(pr.headRefName ?? "");
+    const m = branch.match(/\b([A-Z][A-Z0-9]+-\d+)\b/);
+    if (!m) continue;
+    const base = String(pr.baseRefName ?? "").toLowerCase();
+    if (!["main", "master", "develop", "development"].includes(base)) continue;
+    out.push({ key: m[1], branch, base, url: pr.url ?? null, title: pr.title ?? "", mergedAt: pr.mergedAt ?? null, number: pr.number });
+  }
+  return out;
 }
 
 // ---------- user habits: local, per company, learned on Done from the user's own comments ----------

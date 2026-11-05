@@ -16,8 +16,12 @@ usage: holding <noun> <verb> [args]   (chat: /<noun> <verb> ...; no verb = list/
   task list [all] | history [n] | plan <KEY> | set <KEY> --staff <role> | add "<description>" | split <KEY>   (add/split: in your agent)
   provider list | set [staff ...] [--agent P --model M --effort E] | set --default <role> <provider> [model] [effort] | unset <role>
   skill add <staff> <skill> | skill list --custom
+  skill where|check|set <name> public|private|sync [--dry-run]|consent <name>|run <name> <script>
   project add --jira-project KEY [--company ID] [--name N] [--auto-pr on|off] [--agent A] | remove [--repo DIR|NAME] [--jira-project KEY] | list [--json]
-  company list [--json] | use <company> | show [convention|auto-pr]
+  company list | count | overview | show [company] | use <company>   (only companies connected to holding)
+  company create <name> [--parent P] | rename <c> <name> | pause|resume|archive <c> | delete <c> --confirm <c> | move <c> --parent <P|none>
+  company staff move <role> <from> <to> | staff assign <role> <c> | link <c> <KEY> | unlink <c> | config [c] [set|unset <key> <value>] | config defaults
+  company migrate <local company folder> [--parent P] [--dry-run]   (bring an older local company into holding; originals kept)
   company set lang <code|auto> | communication [jira+chat|chat] | auto-pr on|off | convention "<text>" | agent [grok|claude|codex] [--model M]
   listener start [--repo DIR] | stop | status [--server] | logs [-f] | autostart on|off | run [--repo DIR] [--once]
   jira connect <site> <email> | setup-workflow <site> <email> <KEY> [--dry-run] | connect-events '<setup_url>' | sources
@@ -56,7 +60,7 @@ case "$noun" in
     set) if [ "${1:-}" = --default ]; then shift; exec node "$here/bind-cli.mjs" remembered set "$@"; fi; exec node "$here/bind-cli.mjs" "$@" ;;
     unset) exec node "$here/bind-cli.mjs" remembered unset "$@" ;;
     *) usage ;; esac ;;
-  skill) case "$verb" in add) exec node "$here/add-skill.mjs" "$@" ;; ""|list|browse|review|variants|library) srv "$@" ;; where|check|set|sync) exec node "$here/skills.mjs" "$verb" "$@" ;; *) usage ;; esac ;;
+  skill) case "$verb" in add) exec node "$here/add-skill.mjs" "$@" ;; ""|list|browse|review|variants|library) srv "$@" ;; where|check|set|sync|consent|run) exec node "$here/skills.mjs" "$verb" "$@" ;; *) usage ;; esac ;;
   team|enterprise|usage) srv "$@" ;;  # server decides who may run these; everyone else gets the unknown-command help
   project) case "$verb" in
     add) set +e; node "$here/projects.mjs" add "$@" || exit $?
@@ -65,9 +69,11 @@ case "$noun" in
     ""|list) exec node "$here/projects.mjs" list "$@" ;;
     *) usage ;; esac ;;
   company) case "$verb" in
-    ""|list) exec node "$here/companies-cli.mjs" list "$@" ;;
+    ""|list|count|overview|health) case " $* " in *" --local "*|*" --json "*) exec node "$here/companies-cli.mjs" list "$@" ;; esac; srv "$@" ;;  # MCP companies only
     use) exec node "$here/companies-cli.mjs" use "$@" ;;
-    show) case "${1:-}" in convention|auto-pr) srv "$@" ;; esac; exec node "$here/companies-cli.mjs" show "$@" ;;
+    show) case "${1:-}" in convention|auto-pr) srv "$@" ;; "") node "$here/companies-cli.mjs" show; srv "$@" ;; esac; srv "$@" ;;
+    create|rename|pause|resume|archive|delete|move|staff|link|unlink|config) srv "$@" ;;
+    migrate) exec node "$here/company-migrate.mjs" "$@" ;;
     set) what="${1:-}"; [ $# -gt 0 ] && shift; case "$what" in
         lang) exec node "$here/agent-cli.mjs" lang "$@" ;;
         communication) exec node "$here/inbox-cli.mjs" communication "$@" ;;
