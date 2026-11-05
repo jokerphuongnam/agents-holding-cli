@@ -216,9 +216,13 @@ const saveSessions = () => { try { writeFileSync(sessFile, JSON.stringify(sessio
 // Keychain (security add-generic-password -s <keychain_service> -a <email> -w) and is read per request, kept in memory only.
 const jiraCfg = (() => { const p = join(homedir(), ".config/agents-holding/jira.json"); try { const j = JSON.parse(readFileSync(p, "utf8"));
   if (j.token) log("WARNING: jira.json contains a token; it is ignored. Move it to the Keychain and delete the field.");
-  return j.site && j.email && j.keychain_service ? { site: j.site, email: j.email, keychain_service: j.keychain_service } : null; } catch { return null; } })();
+  if (j.site && j.email && j.keychain_service) return { site: j.site, email: j.email, keychain_service: j.keychain_service, oauth: !!j.oauth };
+  if (j.site && j.oauth) return { site: j.site, email: j.email || "", keychain_service: j.keychain_service || "", oauth: true };
+  return null; } catch { return null; } })();
 const lean = process.env.AH_LEAN !== "0";
-const jira = jiraCfg ? L.jiraClient(jiraCfg, { dry: dryJira, log }) : null;
+// Prefer legacy API-token client; OAuth handled in jiraOps via attach.atlassianToken (no browser in launchd).
+const jira = (jiraCfg && jiraCfg.email && jiraCfg.keychain_service && !jiraCfg.oauth) ? L.jiraClient(jiraCfg, { dry: dryJira, log }) : null;
+if (!jira) log("Jira client: deferred (OAuth or connect later). Listener runs; card moves wait until holding jira connect.");
 // Communication (per company, from the heartbeat; `holding company set communication jira+chat|chat`): everything the user must act on
 // (question, 1/2/3, hire, blocked, gate, QC stop, failed, which repo) ALWAYS goes to the CEO inbox + an 'Agents Holding'
 // notification; Jira comments only in jira+chat mode. Labels/status/assignee update in both modes. Runs never wait for input:
@@ -236,7 +240,7 @@ async function comms(issue, text, kind = null) {
   await jira.comment(issue, text).catch((e) => log("Jira comment failed:", e.message));
 }
 const leanHome = lean ? L.leanGrokHome(homedir()) : null;
-const listenerJira = dryJira || !!jiraCfg;
+const listenerJira = true; // auth resolved per op (OAuth or API token); missing token -> skip with log
 const sessDir = (sid, home = join(homedir(), ".grok")) => join(home, "sessions", encodeURIComponent(repo), sid);
 
 // User events on the same card within AH_DEBOUNCE_SEC (default 15s) are coalesced into ONE run (latest notice wins):
@@ -665,11 +669,18 @@ async function jiraOps(issue) {
   let ops = []; try { ops = (await mcp("jira_ops", { company, issue })).ops; } catch (e) { return log("jira_ops failed:", e.message); }
   for (const o of ops) {
     if (dryJira) { log(`JIRA (dry): ${o.notice ? `comment ${o.issue} "${o.notice}"; ` : ""}transition ${o.issue} -> ${o.to_names.join(" | ")} (else comment "${o.fallback_comment}")`); continue; }
-    if (!jiraCfg) { log(`JIRA: no ~/.config/agents-holding/jira.json; cannot move ${o.issue}`); continue; }
     try {
-      const tok = L.jiraToken(jiraCfg); if (!tok) throw new Error(`no token in Keychain service ${jiraCfg.keychain_service}`);
-      const api = (m, path, body) => fetch(`${jiraCfg.site.replace(/\/$/, "")}/rest/api/3/issue/${encodeURIComponent(o.issue)}${path}`, { method: m,
-        headers: { Authorization: "Basic " + Buffer.from(`${jiraCfg.email}:${tok}`).toString("base64"), "Content-Type": "application/json", Accept: "application/json" }, body: body && JSON.stringify(body) });
+      let authHdr = null, base = null;
+      const { atlassianToken } = await import("./attach.mjs");
+      const A = await atlassianToken();
+      if (A?.jira) { authHdr = A.auth(); base = A.jira; }
+      else if (jiraCfg) {
+        const tok = L.jiraToken(jiraCfg); if (!tok) throw new Error("no Jira token (holding jira connect)");
+        authHdr = "Basic " + Buffer.from(`${jiraCfg.email}:${tok}`).toString("base64");
+        base = `${jiraCfg.site.replace(/\/$/, "")}/rest/api/3`;
+      } else { log(`JIRA: not connected; cannot move ${o.issue} (holding jira connect)`); continue; }
+      const api = (m, path, body) => fetch(`${base}/issue/${encodeURIComponent(o.issue)}${path}`, { method: m,
+        headers: { Authorization: authHdr, "Content-Type": "application/json", Accept: "application/json" }, body: body && JSON.stringify(body) });
       const adf = (t) => ({ body: { type: "doc", version: 1, content: [{ type: "paragraph", content: [{ type: "text", text: t }] }] } });
       const cur = (await (await api("GET", "?fields=status")).json())?.fields?.status?.name ?? "";
       if (o.to_names.some((n) => n.toLowerCase() === cur.toLowerCase())) { log(`JIRA: ${o.issue} already in ${cur}`); continue; }

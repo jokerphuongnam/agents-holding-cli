@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-// holding jira <verb> : Jira working commands, deterministic (no model). Jira REST with YOUR Jira login (token in the Keychain,
-// ~/.config/agents-holding/jira.json = site, email, keychain_service), so moves/comments are real user actions: a `jira move`
-// triggers the agent flow exactly like a drag, a `jira comment` counts as user feedback.
+// holding jira <verb> : Jira working commands, deterministic (no model). Auth is lazy: OAuth 3LO in the Keychain
+// (holding jira connect -- opens the browser only when a Jira command needs it), with legacy API-token fallback.
+// Moves/comments are real user actions. Install / company create never require Jira auth.
+//   jira connect [--switch] | status | logout
 //   jira list [column] | show KEY | board | add "title" [desc] | move KEY <column> | comment KEY "text"
 //   --project KEY picks the board when this repo (or the registry) has several.
 import { readFileSync } from "node:fs";
@@ -30,11 +31,23 @@ export function pickBoard(reg, cwd, project, company = null) {
   throw new Error(`several boards (${[...new Set(pool.map((b) => b.project_key))].join(", ")}): pass --project KEY`);
 }
 
-export function client(cfg, fetchFn = fetch, token = () => jiraToken(cfg)) {
-  const site = String(cfg?.site ?? "").replace(/\/$/, "");
+/** HTTP client from resolved auth (OAuth Bearer or API-token Basic). A from attach.atlassian(). */
+export function client(A, fetchFn = fetch) {
+  if (typeof A === "function" || A?.email && !A?.auth) {
+    // legacy test shim: client(cfg, fetch, tokenFn)
+    const cfg = A, tokenFn = arguments.length >= 3 ? arguments[2] : () => jiraToken(cfg);
+    const site = String(cfg?.site ?? "").replace(/\/$/, "");
+    return async (m, path, body) => {
+      const t = typeof tokenFn === "function" ? tokenFn() : tokenFn; if (!t) throw new Error("no Jira token in the Keychain (holding jira connect)");
+      const r = await fetchFn(path.startsWith("@agile") ? `${site}/rest/agile/1.0${path.slice(6)}` : `${site}/rest/api/3${path}`, { method: m, headers: { Authorization: "Basic " + Buffer.from(`${cfg.email}:${t}`).toString("base64"), "Content-Type": "application/json", Accept: "application/json" }, body: body && JSON.stringify(body) });
+      if (!r.ok) { let d = ""; try { const j = await r.json(); d = (j.errorMessages ?? []).concat(Object.values(j.errors ?? {})).join("; "); } catch {} throw new Error(`Jira ${m} ${path.split("?")[0]} -> ${r.status}${d ? `: ${d}` : ""}`); }
+      return r.status === 204 ? null : r.json();
+    };
+  }
   return async (m, path, body) => {
-    const t = token(); if (!t) throw new Error("no Jira token in the Keychain (holding jira connect)");
-    const r = await fetchFn(path.startsWith("@agile") ? `${site}/rest/agile/1.0${path.slice(6)}` : `${site}/rest/api/3${path}`, { method: m, headers: { Authorization: "Basic " + Buffer.from(`${cfg.email}:${t}`).toString("base64"), "Content-Type": "application/json", Accept: "application/json" }, body: body && JSON.stringify(body) });
+    if (!A?.auth) throw new Error("no Jira token (holding jira connect)");
+    const url = path.startsWith("@agile") ? `${A.agile || (A.site.replace(/\/$/, "") + "/rest/agile/1.0")}${path.slice(6)}` : `${A.jira}${path}`;
+    const r = await fetchFn(url, { method: m, headers: { Authorization: A.auth(), "Content-Type": "application/json", Accept: "application/json" }, body: body && JSON.stringify(body) });
     if (!r.ok) { let d = ""; try { const j = await r.json(); d = (j.errorMessages ?? []).concat(Object.values(j.errors ?? {})).join("; "); } catch {} throw new Error(`Jira ${m} ${path.split("?")[0]} -> ${r.status}${d ? `: ${d}` : ""}`); }
     return r.status === 204 ? null : r.json();
   };
@@ -120,12 +133,20 @@ async function serverUsage(company, issue) { // tokens per task from the server 
   } catch (e) { if (process.env.AH_DEBUG) console.error(e); return null; }
 }
 
-export async function main(argv, { home = homedir(), cwd = process.cwd(), fetchFn = fetch, token, out = console.log } = {}) {
+export async function main(argv, { home = homedir(), cwd = process.cwd(), fetchFn = fetch, token, out = console.log, auth } = {}) {
   const a = [...argv]; let project = null; const i = a.indexOf("--project"); if (i >= 0) { project = a[i + 1]; a.splice(i, 2); }
   const cmd = a.shift();
-  let cfg; try { cfg = JSON.parse(readFileSync(join(home, ".config/agents-holding/jira.json"), "utf8")); }
-  catch { const vi = /^vi/i.test(process.env.AH_LANG ?? process.env.LANG ?? ""); console.error(vi ? "Chưa cấu hình Jira trên máy này (thiếu ~/.config/agents-holding/jira.json). Chạy: holding jira connect" : "Jira is not set up on this machine (~/.config/agents-holding/jira.json missing). Run: holding jira connect"); process.exitCode = 1; return; }
-  const req = client(cfg, fetchFn, token);
+  let req;
+  if (token) {
+    // Unit-test / injected token path (Basic against site in jira.json or placeholder).
+    let cfg; try { cfg = JSON.parse(readFileSync(join(home, ".config/agents-holding/jira.json"), "utf8")); }
+    catch { cfg = { site: "https://example.atlassian.net", email: "t@example.com", keychain_service: "test" }; }
+    req = client(cfg, fetchFn, token);
+  } else {
+    // Lazy: OAuth (or API-token fallback). Opens the browser only when nothing is stored yet.
+    const A = auth ?? await (await import("./attach.mjs")).atlassian(home);
+    req = client(A, fetchFn);
+  }
   const keyOf = (k) => String(k ?? "").toUpperCase();
   const b = () => pickBoard(loadReg(home), cwd, project, (() => { const i = process.argv.indexOf("--company"); return i >= 0 ? process.argv[i + 1] : null; })());
   switch (cmd) {

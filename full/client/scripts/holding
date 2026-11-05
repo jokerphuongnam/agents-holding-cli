@@ -33,7 +33,7 @@ usage: holding <noun> <verb> [args]   (chat: /<noun> <verb> ...; no verb = list/
   company migrate <local company folder> [--parent P] [--dry-run]   (bring an older local company into holding; originals kept)
   company set lang <code|auto> | communication [jira+chat|chat] | auto-pr on|off | convention "<text>" | agent [grok|claude|codex] [--model M]
   listener start [--repo DIR] | stop | status [--server] | logs [-f] | autostart on|off | run [--repo DIR] [--once]
-  jira connect <site> <email> | setup-workflow <site> <email> <KEY> [--dry-run] | connect-events '<setup_url>' | sources
+  jira connect [--switch] | status | logout   (OAuth in Keychain; legacy: jira connect <site> <email>) | setup-workflow <site> <email> <KEY> [--dry-run] | connect-events '<setup_url>' | sources
   jira list [column] | show KEY | board | add "title" [desc] | move KEY <column> | comment KEY "text"   [--project KEY]
   inbox list [--all] [KEY] | inbox reply <KEY|item> <answer> | inbox dismiss <item|KEY>
   ceo [--item <id|KEY>]               the CEO is your chat session (/ceo); --item opens one focused on a pending item
@@ -118,7 +118,12 @@ case "$noun" in
     *) usage ;; esac ;;
   jira) case "$verb" in
     attach) exec node "$here/attach.mjs" jira-attach "$@" ;;
-    connect) exec bash "$here/jira-keychain-setup.sh" "$@" ;;
+    connect)
+      # Lazy OAuth (browser). Legacy API-token: holding jira connect <site> <email>
+      if [ $# -ge 2 ] && [[ "$1" == http* ]]; then exec bash "$here/jira-keychain-setup.sh" "$@"; fi
+      exec node "$here/attach.mjs" jira-connect "$@" ;;
+    status) exec node "$here/attach.mjs" jira-status ;;
+    logout) exec node "$here/attach.mjs" jira-logout ;;
     setup-workflow) exec bash "$here/jira-setup-workflow.sh" "$@" ;;
     connect-events) exec bash "$here/jira-register-webhook.sh" "$@" ;;
     sources) srv "$@" ;;
