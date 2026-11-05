@@ -64,7 +64,7 @@ We don't take your information. We only record usage habits: the hours you usual
 Custom skills in `public/` are collected automatically by the client (personal information filtered out); to keep one private run `holding skill set <name> private`. `history/`, `assets/` and personal files are never collected.
 
 
-You can also add a **dependency**: a whole git repo of skills/scripts the AI can read. It is cloned outside the project (`~/.agents-holding/packs/<name>`); the company only stores a reference. Commands: `holding dependency add|list|update|remove <link>`. Pack scripts need consent before they run. See [COMMANDS.md](docs/COMMANDS.md#dependency).
+You can also add a **dependency**: a whole git repo of skills/scripts the AI can read. It is cloned outside the project (`~/.agents-holding/packs/<name>`); the company only stores a reference. Commands: `holding dependency add|list|update|remove <link>`, then `holding skill add|list|remove` for pack skills (`<pack>/<skill>`). Pack scripts need consent before they run. See [COMMANDS.md](docs/COMMANDS.md#dependency).
 
 ## Sub agents (headless)
 `holding staff presets` → `holding staff add <role> --preset <id>`. Choosing a preset creates a sub agent the staff runs headless — it does not open a chat. Details and wrong/right examples for local LLMs: [docs/PROVIDERS.md](docs/PROVIDERS.md#sub-agent-presets-headless).

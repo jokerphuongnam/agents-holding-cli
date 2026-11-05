@@ -30,8 +30,11 @@ Steps the staff should follow...
 
 `holding skill add <staff> <skill>` (ví dụ: `holding skill add dev code-review`). Các việc đang chờ kỹ năng sẽ kiểm tra lại và làm tiếp. `holding skill browse <staff>` liệt kê kỹ năng có thể gắn.
 
+Với skill **dependency pack**, dùng `<pack>/<skill>` hoặc tên duy nhất giữa các pack (ví dụ: `holding skill add developer demo-pack/release-notes`). `holding skill remove <staff> <skill>` gỡ skill pack. Attachment được giữ khi `holding dependency update`; gỡ dependency sẽ cảnh báo và detach.
+
 ## Liệt kê, kiểm tra, đồng bộ
 
+- `holding skill list`: skill pack (kèm pack) cùng listing server/custom
 - `holding skill list --custom`: kỹ năng riêng của bạn
 - `holding skill check`: kỹ năng nào nạp được, cái nào bị bỏ qua và đường dẫn đúng
 - `holding skill sync [--dry-run]`: gửi kỹ năng công khai ngay (cũng tự chạy)
@@ -60,4 +63,13 @@ Xem thêm: [Danh sách lệnh](../COMMANDS.md)
 
 ## Dependency (skill-pack)
 
-Thêm cả một repo git skill/script bằng `holding dependency add <git-url>`. Pack nằm ngoài project; cần `holding dependency consent` trước khi chạy script. Xem COMMANDS.md → dependency.
+Thêm cả một repo git skill/script bằng dependency, rồi gắn skill pack cho staff:
+
+```bash
+holding dependency add <git-url>
+holding skill add <staff> <pack>/<skill>
+holding skill list
+holding skill remove <staff> <pack>/<skill>
+```
+
+Pack nằm ngoài project; cần `holding dependency consent` trước khi chạy script. Xem COMMANDS.md → dependency.

@@ -70,8 +70,9 @@
 
 | コマンド | 内容 | 例 |
 |---|---|---|
-| `holding skill add <staff> <skill>` | スタッフにスキルを付ける | `holding skill add dev code-review` |
-| `holding skill list --custom \| browse <staff>` | カスタムスキル、またはスタッフ向けスキル | `holding skill list --custom` |
+| `holding skill add <staff> <skill>` | スキルを付与（カタログ・カスタム・または pack `<pack>/<skill>`） | `holding skill add dev code-review` |
+| `holding skill remove <staff> <skill>` | パックスキルをスタッフから外す（ローカル） | `holding skill remove dev demo/foo` |
+| `holding skill list [--custom] \| browse <staff>` | パックスキル（pack 付き）+ カスタム/カタログ | `holding skill list` || browse <staff>` | カスタムスキル、またはスタッフ向けスキル | `holding skill list --custom` |
 | `holding skill where \| check \| sync [--dry-run]` | スキルフォルダ・検証・同期 | `holding skill check` |
 | `holding skill private\|public <name>` | スキルを非公開・公開に | `holding skill private my-notes` |
 | `holding skill consent <name> [--revoke]` | スキルのスクリプト実行を許可 | `holding skill consent my-tool` |
@@ -160,6 +161,16 @@ holding dependency run <name> <script>
 ```
 
 パックのスキル／コマンドは Grok・Claude・Codex・ローカル AI 向けに変換されます。スクリプトは consent 後のみ実行。
+
+`holding dependency add` のあと、通常どおりパックスキルを付与します:
+
+```
+holding skill add <staff> <pack>/<skill>
+holding skill list
+holding skill remove <staff> <pack>/<skill>
+```
+
+スタッフ実行時に付与済みパックスキル（適応済み）を読み込みます。`update` は付与を維持、`remove` は警告して外します。
 
 ## 更新
 

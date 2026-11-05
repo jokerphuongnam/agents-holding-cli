@@ -70,8 +70,9 @@ Every command you can use with your key. In chat, type `/holding <command>` (for
 
 | Command | What it does | Example |
 |---|---|---|
-| `holding skill add <staff> <skill>` | Attach a skill to a staff | `holding skill add dev code-review` |
-| `holding skill list --custom \| browse <staff>` | Your custom skills, or skills for a staff | `holding skill list --custom` |
+| `holding skill add <staff> <skill>` | Attach a skill (catalog, custom, or pack `<pack>/<skill>`) | `holding skill add dev code-review` |
+| `holding skill remove <staff> <skill>` | Detach a pack skill from a staff (local) | `holding skill remove dev demo/foo` |
+| `holding skill list [--custom] \| browse <staff>` | Pack skills (with pack) + custom/catalog | `holding skill list` |
 | `holding skill where \| check \| sync [--dry-run]` | Local skill folders, validation and sync | `holding skill check` |
 | `holding skill private\|public <name>` | Make a skill private or public | `holding skill private my-notes` |
 | `holding skill consent <name> [--revoke]` | Allow a skill's scripts to run | `holding skill consent my-tool` |
@@ -166,6 +167,16 @@ holding dependency run <name> <script> # run one pack script (sandboxed; needs c
 ```
 
 Pack skills/commands are adapted for Grok, Claude, Codex and local AI. Claude-only skill formats are rewritten into portable command files. Do not commit pack contents into the product repo.
+
+After `holding dependency add`, attach a pack skill to a staff with the usual command:
+
+```
+holding skill add <staff> <pack>/<skill>   # or unique skill name across packs
+holding skill list                         # pack skills show pack=<name>
+holding skill remove <staff> <pack>/<skill>
+```
+
+Staff runs load attached pack skills (adapted). `holding dependency update` keeps attachments. `holding dependency remove` warns and detaches them.
 
 ## Update
 

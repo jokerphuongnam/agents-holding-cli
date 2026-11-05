@@ -70,8 +70,9 @@
 
 | 命令 | 作用 | 示例 |
 |---|---|---|
-| `holding skill add <staff> <skill>` | 为员工添加技能 | `holding skill add dev code-review` |
-| `holding skill list --custom \| browse <staff>` | 自定义技能或员工可用技能 | `holding skill list --custom` |
+| `holding skill add <staff> <skill>` | 为员工附加技能（目录、自定义或包 `<pack>/<skill>`） | `holding skill add dev code-review` |
+| `holding skill remove <staff> <skill>` | 从员工解除包技能（本地） | `holding skill remove dev demo/foo` |
+| `holding skill list [--custom] \| browse <staff>` | 包技能（含 pack）+ 自定义/目录 | `holding skill list` || browse <staff>` | 自定义技能或员工可用技能 | `holding skill list --custom` |
 | `holding skill where \| check \| sync [--dry-run]` | 技能目录、校验与同步 | `holding skill check` |
 | `holding skill private\|public <name>` | 设为私有或公开 | `holding skill private my-notes` |
 | `holding skill consent <name> [--revoke]` | 允许技能脚本运行 | `holding skill consent my-tool` |
@@ -160,6 +161,16 @@ holding dependency run <name> <script>
 ```
 
 包内技能/命令会适配 Grok、Claude、Codex 与本地 AI。脚本需先 consent 才能运行。
+
+`holding dependency add` 之后，用原有命令把包技能挂到员工：
+
+```
+holding skill add <staff> <pack>/<skill>
+holding skill list
+holding skill remove <staff> <pack>/<skill>
+```
+
+员工运行会加载已挂接的包技能（已适配）。`update` 保留挂接；`remove` 会警告并解除。
 
 ## 更新
 

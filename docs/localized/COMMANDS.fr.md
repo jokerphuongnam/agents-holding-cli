@@ -70,8 +70,9 @@ Toutes les commandes disponibles avec votre clé. Dans le chat, tapez `/holding 
 
 | Commande | Rôle | Exemple |
 |---|---|---|
-| `holding skill add <staff> <skill>` | Attache une compétence à un rôle | `holding skill add dev code-review` |
-| `holding skill list --custom \| browse <staff>` | Vos compétences ou celles d'un rôle | `holding skill list --custom` |
+| `holding skill add <staff> <skill>` | Attacher une skill (catalogue, custom ou pack `<pack>/<skill>`) | `holding skill add dev code-review` |
+| `holding skill remove <staff> <skill>` | Détacher une skill de pack du staff (local) | `holding skill remove dev demo/foo` |
+| `holding skill list [--custom] \| browse <staff>` | Skills de pack (avec pack) + custom/catalogue | `holding skill list` || browse <staff>` | Vos compétences ou celles d'un rôle | `holding skill list --custom` |
 | `holding skill where \| check \| sync [--dry-run]` | Dossiers, vérification et synchro | `holding skill check` |
 | `holding skill private\|public <name>` | Rend une compétence privée ou publique | `holding skill private my-notes` |
 | `holding skill consent <name> [--revoke]` | Autorise ses scripts | `holding skill consent my-tool` |
@@ -167,4 +168,14 @@ holding dependency run <name> <script>
 ```
 
 Skills/commandes du pack adaptées pour Grok, Claude, Codex et l’IA locale. Les scripts exigent un consent.
+
+Après `holding dependency add`, attachez une skill du pack :
+
+```
+holding skill add <staff> <pack>/<skill>
+holding skill list
+holding skill remove <staff> <pack>/<skill>
+```
+
+Le staff charge les skills de pack attachées (adaptées). `update` conserve les attachements ; `remove` avertit et les détache.
 

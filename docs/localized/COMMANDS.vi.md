@@ -70,8 +70,9 @@ Mọi lệnh bạn dùng được với key của mình. Trong chat gõ `/holdin
 
 | Lệnh | Chức năng | Ví dụ |
 |---|---|---|
-| `holding skill add <staff> <skill>` | Gắn kỹ năng cho nhân sự | `holding skill add dev code-review` |
-| `holding skill list --custom \| browse <staff>` | Kỹ năng riêng, hoặc kỹ năng cho một nhân sự | `holding skill list --custom` |
+| `holding skill add <staff> <skill>` | Gắn kỹ năng (catalog, custom, hoặc pack `<pack>/<skill>`) | `holding skill add dev code-review` |
+| `holding skill remove <staff> <skill>` | Gỡ skill pack khỏi nhân sự (local) | `holding skill remove dev demo/foo` |
+| `holding skill list [--custom] \| browse <staff>` | Skill pack (kèm pack) + custom/catalog | `holding skill list` || browse <staff>` | Kỹ năng riêng, hoặc kỹ năng cho một nhân sự | `holding skill list --custom` |
 | `holding skill where \| check \| sync [--dry-run]` | Thư mục kỹ năng, kiểm tra và đồng bộ | `holding skill check` |
 | `holding skill private\|public <name>` | Đặt kỹ năng riêng tư hoặc công khai | `holding skill private my-notes` |
 | `holding skill consent <name> [--revoke]` | Cho phép script của kỹ năng chạy | `holding skill consent my-tool` |
@@ -166,6 +167,16 @@ holding dependency run <name> <script>
 ```
 
 Skill/lệnh trong pack được chuyển cho Grok, Claude, Codex và AI local. Script trong pack không tự chạy — cần consent trước.
+
+Sau `holding dependency add`, gắn skill pack cho nhân sự bằng lệnh quen thuộc:
+
+```
+holding skill add <staff> <pack>/<skill>   # hoặc tên skill duy nhất giữa các pack
+holding skill list                         # skill pack hiện pack=<name>
+holding skill remove <staff> <pack>/<skill>
+```
+
+Staff load skill pack đã gắn (đã adapt). `holding dependency update` giữ attachment. `holding dependency remove` cảnh báo và gỡ chúng.
 
 ## Cập nhật
 

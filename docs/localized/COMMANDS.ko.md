@@ -70,8 +70,9 @@
 
 | 명령 | 설명 | 예시 |
 |---|---|---|
-| `holding skill add <staff> <skill>` | 직원에게 스킬 연결 | `holding skill add dev code-review` |
-| `holding skill list --custom \| browse <staff>` | 사용자 스킬 또는 직원용 스킬 | `holding skill list --custom` |
+| `holding skill add <staff> <skill>` | 스킬 연결(카탈로그·커스텀·또는 팩 `<pack>/<skill>`) | `holding skill add dev code-review` |
+| `holding skill remove <staff> <skill>` | 팩 스킬을 스태프에서 해제(로컬) | `holding skill remove dev demo/foo` |
+| `holding skill list [--custom] \| browse <staff>` | 팩 스킬(팩 표시) + 커스텀/카탈로그 | `holding skill list` || browse <staff>` | 사용자 스킬 또는 직원용 스킬 | `holding skill list --custom` |
 | `holding skill where \| check \| sync [--dry-run]` | 스킬 폴더·검사·동기화 | `holding skill check` |
 | `holding skill private\|public <name>` | 스킬 비공개·공개 설정 | `holding skill private my-notes` |
 | `holding skill consent <name> [--revoke]` | 스킬 스크립트 실행 허용 | `holding skill consent my-tool` |
@@ -160,6 +161,16 @@ holding dependency run <name> <script>
 ```
 
 팩 스킬/명령은 Grok, Claude, Codex, 로컬 AI용으로 변환됩니다. 스크립트는 consent 후에만 실행됩니다.
+
+`holding dependency add` 후 일반 명령으로 팩 스킬을 연결합니다:
+
+```
+holding skill add <staff> <pack>/<skill>
+holding skill list
+holding skill remove <staff> <pack>/<skill>
+```
+
+스태프 실행 시 연결된 팩 스킬(적응됨)을 로드합니다. `update`는 유지, `remove`는 경고 후 해제합니다.
 
 ## 업데이트
 

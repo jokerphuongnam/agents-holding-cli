@@ -30,8 +30,11 @@ Steps the staff should follow...
 
 `holding skill add <staff> <skill>`(例如 `holding skill add dev code-review`)。等待该技能的任务会重新检查并继续。`holding skill browse <staff>` 列出可添加的技能。
 
+对于**依赖包**技能，使用 `<pack>/<skill>` 或在各包中唯一的名称。`holding skill remove` 解除包技能。更新依赖会保留挂接；移除依赖会警告并解除。
+
 ## 列出、检查与同步
 
+- `holding skill list`：包技能（含 pack）以及服务器/自定义列表
 - `holding skill list --custom`:你的自定义技能
 - `holding skill check`:哪些技能可加载,哪些被忽略及正确路径
 - `holding skill sync [--dry-run]`:立即发送公开技能(也会自动运行)
@@ -60,4 +63,13 @@ Steps the staff should follow...
 
 ## Dependency（skill-pack）
 
-用 `holding dependency add <git-url>` 添加整仓技能/脚本。包在项目外；运行脚本前需 `holding dependency consent`。见 COMMANDS.md → dependency。
+用 dependency 添加整个 skills/scripts 的 git 仓库，再用 skill add 挂到员工：
+
+```bash
+holding dependency add <git-url>
+holding skill add <staff> <pack>/<skill>
+holding skill list
+holding skill remove <staff> <pack>/<skill>
+```
+
+包在项目之外；脚本需 consent。见 COMMANDS.md → dependency。

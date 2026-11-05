@@ -30,8 +30,11 @@ Steps the staff should follow...
 
 `holding skill add <staff> <skill>`(예: `holding skill add dev code-review`). 스킬을 기다리던 작업은 다시 확인 후 계속됩니다. `holding skill browse <staff>`로 연결 가능한 스킬을 봅니다.
 
+**의존성 팩** 스킬은 `<pack>/<skill>` 또는 고유 이름으로 연결. `holding skill remove`로 해제. update 시 유지, dependency 제거 시 경고 후 detach.
+
 ## 목록·검사·동기화
 
+- `holding skill list`: 팩 스킬(팩 포함)과 서버/커스텀 목록
 - `holding skill list --custom`: 사용자 스킬
 - `holding skill check`: 로드되는 스킬과 무시된 이유, 올바른 경로
 - `holding skill sync [--dry-run]`: 공개 스킬을 지금 전송(자동으로도 실행)
@@ -60,4 +63,13 @@ Steps the staff should follow...
 
 ## Dependency (skill-pack)
 
-`holding dependency add <git-url>`로 스킬/스크립트 git 저장소 전체를 추가합니다. 팩은 프로젝트 밖이며, 스크립트 실행 전 `holding dependency consent`가 필요합니다. COMMANDS.md → dependency.
+스킬/스크립트 git 저장소를 dependency 로 추가한 뒤 팩 스킬을 스태프에 연결합니다:
+
+```bash
+holding dependency add <git-url>
+holding skill add <staff> <pack>/<skill>
+holding skill list
+holding skill remove <staff> <pack>/<skill>
+```
+
+팩은 프로젝트 밖. 스크립트는 consent 필요. COMMANDS.md → dependency 참고.
