@@ -30,8 +30,11 @@ Steps the staff should follow...
 
 `holding skill add <staff> <skill>` (example: `holding skill add dev code-review`). Tasks that were waiting for a missing skill re-check and continue. `holding skill browse <staff>` shows skills you can attach.
 
+For a **dependency pack** skill, use `<pack>/<skill>` or a name that is unique across your packs (example: `holding skill add developer demo-pack/release-notes`). `holding skill remove <staff> <skill>` detaches a pack skill. Pack attachments stay on `holding dependency update`; removing the dependency warns and detaches them.
+
 ## List, check and sync
 
+- `holding skill list`: pack skills (with their pack) plus server/custom listing
 - `holding skill list --custom`: your custom skills
 - `holding skill check`: which skills load, and why any are ignored, with the correct path
 - `holding skill sync [--dry-run]`: send public skills now (it also runs automatically)
@@ -71,7 +74,10 @@ holding dependency add <git-url>
 holding dependency list
 holding dependency update <name>
 holding dependency remove <name>
+holding skill add <staff> <pack>/<skill>
+holding skill list
+holding skill remove <staff> <pack>/<skill>
 ```
 
-Packs live under `~/.agents-holding/packs/` (outside the project). Pack scripts need `holding dependency consent <name>` before `holding dependency run`. See COMMANDS.md → dependency.
+Packs live under `~/.agents-holding/packs/` (outside the project). Pack scripts need `holding dependency consent <name>` before `holding dependency run`. After adding a dependency, attach its skills to staff with `holding skill add` (same form as catalog skills). See COMMANDS.md → dependency.
 

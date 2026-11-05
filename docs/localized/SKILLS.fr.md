@@ -30,8 +30,11 @@ Steps the staff should follow...
 
 `holding skill add <staff> <skill>` (exemple : `holding skill add dev code-review`). Les tâches qui l'attendaient revérifient et reprennent. `holding skill browse <staff>` liste celles que vous pouvez attacher.
 
+Pour une skill de **pack de dépendance**, utilisez `<pack>/<skill>` ou un nom unique. `holding skill remove` détache. Les attachements restent après update ; retirer la dépendance avertit et détache.
+
 ## Lister, vérifier, synchroniser
 
+- `holding skill list` : skills de pack (avec pack) plus la liste serveur/custom
 - `holding skill list --custom` : vos compétences
 - `holding skill check` : celles qui se chargent, celles ignorées et le bon chemin
 - `holding skill sync [--dry-run]` : envoie les publiques tout de suite (aussi automatique)
@@ -60,4 +63,13 @@ Voir aussi : [Référence des commandes](../COMMANDS.md)
 
 ## Dependency (skill-pack)
 
-Ajoutez un dépôt git entier avec `holding dependency add <git-url>`. Le pack est hors projet ; `holding dependency consent` est requis avant d’exécuter des scripts. Voir COMMANDS.md → dependency.
+Ajoutez un dépôt git de skills/scripts en dépendance, puis attachez les skills du pack au staff :
+
+```bash
+holding dependency add <git-url>
+holding skill add <staff> <pack>/<skill>
+holding skill list
+holding skill remove <staff> <pack>/<skill>
+```
+
+Les packs sont hors projet ; les scripts demandent un consentement. Voir COMMANDS.md → dependency.

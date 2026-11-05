@@ -29,7 +29,7 @@ usage: holding <noun> <verb> [args]   (chat: /<noun> <verb> ...; no verb = list/
   staff add <role> --preset <id> [--model M]   attach a headless runner (no chat window)
   task list [all] | history [n] | plan <KEY> | set <KEY> --staff <role> | add "<description>" | split <KEY>   (add/split: in your agent)
   provider list | set [staff ...] [--agent P --model M --effort E] | set --default <role> <provider> [model] [effort] | unset <role>
-  skill add <staff> <skill> | skill list --custom
+  skill add <staff> <skill> | skill remove <staff> <skill> | skill list [--custom]
   skill where|check|set <name> public|private|sync [--dry-run]|consent <name>|run <name> <script>
   project add --jira-project KEY [--company ID] [--name N] [--auto-pr on|off] [--agent A] | remove [--repo DIR|NAME] [--jira-project KEY] | list [--json]
   company list | count | overview | show [company] | use <company>   (only companies connected to holding)
@@ -115,7 +115,13 @@ case "$noun" in
     *) # fall through to company process for templates/list/setup if routed that way
        case "$verb" in templates|list|setup|add|add-json|remove) exec bash "$0" company process "$verb" "$@" ;; esac
        usage ;; esac ;;
-  skill) case "$verb" in add) exec node "$here/add-skill.mjs" "$@" ;; ""|list|browse|review|variants|library|private|public) srv "$@" ;; where|check|set|sync|consent|run) exec node "$here/skills.mjs" "$verb" "$@" ;; *) usage ;; esac ;;
+  skill) case "$verb" in
+    add) exec node "$here/add-skill.mjs" "$@" ;;
+    remove) exec node "$here/pack-skills.mjs" remove "$@" ;;
+    ""|list) node "$here/pack-skills.mjs" list "$@"; srv list "$@" ;;
+    browse|review|variants|library|private|public) srv "$@" ;;
+    where|check|set|sync|consent|run) exec node "$here/skills.mjs" "$verb" "$@" ;;
+    *) usage ;; esac ;;
   team|enterprise|usage) srv "$@" ;;  # server decides who may run these; everyone else gets the unknown-command help
   project) case "$verb" in
     add) set +e; node "$here/projects.mjs" add "$@" || exit $?

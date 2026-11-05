@@ -17,6 +17,7 @@ import { homedir, platform } from "node:os";
 import { join, dirname, basename, resolve, relative } from "node:path";
 import { spawnSync, execFileSync } from "node:child_process";
 import { resolveCompany as _resolveCompany } from "./company.mjs";
+import { detachPackAttachments } from "./pack-skills.mjs";
 
 const HOME = process.env.HOME || homedir();
 const PACKS = (...p) => join(HOME, ".agents-holding", "packs", ...p);
@@ -512,6 +513,11 @@ function cmdRemove(nameOrLink, { purge = false } = {}) {
   const name = existsSync(PACKS(nameOrLink, ".git")) ? nameOrLink : (() => {
     try { return packNameFromLink(nameOrLink); } catch { return sanitizeName(nameOrLink); }
   })();
+  const detached = detachPackAttachments(company, name);
+  if (detached.length) {
+    console.log(`warn\tdetaching ${detached.length} pack-skill attachment(s) for pack=${name}:`);
+    for (const a of detached) console.log(`  ${a.staff}\t${a.ref}`);
+  }
   const refs = loadRefs(company).filter((d) => d.name !== name);
   saveRefs(company, refs);
   const still = companiesUsing(name);

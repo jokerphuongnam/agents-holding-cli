@@ -30,8 +30,11 @@ Steps the staff should follow...
 
 `holding skill add <staff> <skill>`(例: `holding skill add dev code-review`)。スキル待ちのタスクは再確認して続行します。`holding skill browse <staff>` で付けられるスキルを表示します。
 
+**依存パック**のスキルは `<pack>/<skill>` または一意な名前で付与。`holding skill remove` で外します。update では維持、dependency remove では警告してデタッチします。
+
 ## 一覧・確認・同期
 
+- `holding skill list`: パックスキル（pack 付き）とサーバー/カスタム一覧
 - `holding skill list --custom`: カスタムスキル
 - `holding skill check`: 読み込めるスキルと、無視された理由・正しいパス
 - `holding skill sync [--dry-run]`: 公開スキルを今すぐ送信(自動でも実行)
@@ -60,4 +63,13 @@ Steps the staff should follow...
 
 ## Dependency (skill-pack)
 
-`holding dependency add <git-url>` でスキル／スクリプトの git リポジトリ全体を追加できます。パックはプロジェクト外。スクリプト実行前に `holding dependency consent` が必要です。COMMANDS.md → dependency。
+スキル/スクリプトの git リポジトリを dependency として追加し、パックスキルをスタッフに付与します:
+
+```bash
+holding dependency add <git-url>
+holding skill add <staff> <pack>/<skill>
+holding skill list
+holding skill remove <staff> <pack>/<skill>
+```
+
+パックはプロジェクト外。スクリプトは consent が必要。COMMANDS.md → dependency を参照。

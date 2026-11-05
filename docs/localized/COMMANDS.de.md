@@ -70,8 +70,9 @@ Alle Befehle, die Sie mit Ihrem Schlüssel nutzen können. Im Chat `/holding <Be
 
 | Befehl | Funktion | Beispiel |
 |---|---|---|
-| `holding skill add <staff> <skill>` | Fähigkeit einer Rolle zuweisen | `holding skill add dev code-review` |
-| `holding skill list --custom \| browse <staff>` | Eigene Fähigkeiten oder die einer Rolle | `holding skill list --custom` |
+| `holding skill add <staff> <skill>` | Skill anbinden (Katalog, custom oder Pack `<pack>/<skill>`) | `holding skill add dev code-review` |
+| `holding skill remove <staff> <skill>` | Pack-Skill von Staff lösen (lokal) | `holding skill remove dev demo/foo` |
+| `holding skill list [--custom] \| browse <staff>` | Pack-Skills (mit Pack) + custom/Katalog | `holding skill list` || browse <staff>` | Eigene Fähigkeiten oder die einer Rolle | `holding skill list --custom` |
 | `holding skill where \| check \| sync [--dry-run]` | Ordner, Prüfung und Abgleich | `holding skill check` |
 | `holding skill private\|public <name>` | Fähigkeit privat oder öffentlich machen | `holding skill private my-notes` |
 | `holding skill consent <name> [--revoke]` | Skripte der Fähigkeit erlauben | `holding skill consent my-tool` |
@@ -160,6 +161,16 @@ holding dependency run <name> <script>
 ```
 
 Pack-Skills/Befehle werden für Grok, Claude, Codex und lokale KI angepasst. Skripte brauchen Consent.
+
+Nach `holding dependency add` Pack-Skills wie gewohnt anbinden:
+
+```
+holding skill add <staff> <pack>/<skill>
+holding skill list
+holding skill remove <staff> <pack>/<skill>
+```
+
+Staff lädt angehängte Pack-Skills (adaptiert). `holding dependency update` behält Anhänge. `holding dependency remove` warnt und löst sie.
 
 ## Aktualisieren
 
