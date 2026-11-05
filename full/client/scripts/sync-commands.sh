@@ -17,7 +17,11 @@ MARK="<!-- synced by agents-holding (holding setup sync); edits are overwritten 
 kc() { security find-generic-password -s "$1" -a "$USER" -w 2>/dev/null; }
 if [ -n "$OWNER" ]; then KEY="$(kc agents-holding-owner-admin-key)" || { echo "no owner key in the Keychain (agents-holding-owner-admin-key)" >&2; exit 1; }
 else KEY="${AGENTS_HOLDING_KEY:-$(kc agents-holding-license || true)}"; fi
-[ -n "$KEY" ] || { echo "no license key: run connect.sh first" >&2; exit 1; }
+if [ -z "$KEY" ]; then # MCP-only install (grok mcp add + OAuth): the key lives in the agent's OAuth session, not here
+  echo "No license key on this Mac (MCP added with OAuth only). /holding already works in your agent through the MCP server."
+  echo "To also install the native slash commands, type in Grok:  install agents-holding commands"
+  echo "  (the agent calls the agents-holding setup_commands tool and writes ~/.grok/commands), or import your key: holding key import"
+  exit 0; fi
 DEV="${AGENTS_HOLDING_DEVICE:-$(kc agents-holding-device || true)}"
 tmp="$(mktemp -d)"; chmod 700 "$tmp"; trap 'rm -rf "$tmp"' EXIT
 rpc() { # $1 = JSON body, $2 = out file; key only via curl config on stdin
