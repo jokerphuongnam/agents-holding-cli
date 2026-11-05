@@ -24,6 +24,13 @@ export async function permit(perm, { company, staff, mcp }) {
   const r = await mcp("policy_check", { company, staff, kind: "permission", key: perm });
   const d = r?.data ?? r; if (d?.ok === false) throw new Error(d.message ?? `DENIED by staff policy: ${staff} lacks permission "${perm}"`); return true;
 }
+/** Charge upload credits by real sizes (server upload_meter). No-op when dry or no company. */
+export async function meterUpload(tool, files, { company, staff, mcp, dry = false } = {}) {
+  if (dry || !company || !mcp) return 0;
+  const sizes = files.map((f) => { try { return statSync(f).size; } catch { return 0; } });
+  const r = await mcp("upload_meter", { company, staff, tool, sizes });
+  return r?.data?.credits ?? r?.credits ?? 0;
+}
 export async function jiraAttach(key, files, { fetchFn = fetch, A, dry = false } = {}) {
   if (!/^[A-Z][A-Z0-9_]*-\d+$/.test(key ?? "")) throw new Error("usage: holding jira attach <ISSUE-KEY> <file...>");
   if (!files.length) throw new Error("no files"); const fd = form(files);
@@ -32,7 +39,7 @@ export async function jiraAttach(key, files, { fetchFn = fetch, A, dry = false }
   return `attached to ${key}: ${(j ?? []).map((x) => x.filename).join(", ")}`;
 }
 // ---- Figma (OAuth through our server; no token to copy)
-export async function figmaConnect() { return (await import("./oauth.mjs")).connect("figma"); }
+export async function figmaConnect(opts) { return (await import("./oauth.mjs")).connect("figma", opts); }
 export const parseFigma = (url) => { const m = String(url).match(/figma\.com\/(?:file|design|proto)\/([A-Za-z0-9]+)[^?]*\?(?:.*&)?node-id=([0-9]+[-:][0-9]+)/); if (!m) throw new Error("need a Figma URL with node-id"); return { file: m[1], node: m[2].replace("-", ":") }; };
 export async function figmaExport(url, out, { fetchFn = fetch, token } = {}) {
   if (token === undefined) { try { token = (await (await import("./oauth.mjs")).ensure("figma")).access_token; } catch (e) { throw new Error(`${e.message} (or attach a local PNG with holding jira attach)`); } }
@@ -79,12 +86,16 @@ if (process.argv[1] && resolve(process.argv[1]) === new URL(import.meta.url).pat
   const a = process.argv.slice(2), what = a.shift(), company = flag(a, "--company") ?? process.env.AH_COMPANY, staff = flag(a, "--staff") ?? process.env.AH_STAFF, dry = a.includes("--dry") && (a.splice(a.indexOf("--dry"), 1), true);
   const mcp = (await import("./policy.mjs")).mcpCall;
   try {
-    if (what === "jira-attach") { await permit("jira_attach", { company, staff, mcp }); console.log(await jiraAttach(String(a.shift() ?? "").toUpperCase(), a, { dry })); }
-    else if (what === "figma-connect") console.log(await figmaConnect());
-    else if (what === "atlassian-connect") console.log(await (await import("./oauth.mjs")).connect("atlassian"));
-    else if (what === "figma-export") { await permit("figma_export", { company, staff, mcp }); const out = flag(a, "--out"), att = flag(a, "--attach"); const f = await figmaExport(a[0], out); console.log(`exported ${f}`);
-      if (att) { await permit("jira_attach", { company, staff, mcp }); console.log(await jiraAttach(att.toUpperCase(), [f], { dry })); } }
-    else if (what === "confluence-page") { await permit("confluence_write", { company, staff, mcp }); const act = a.shift(), file = flag(a, "--file"), att = flags(a, "--attach"); console.log(await confluencePage(act, a[0], a[1], file, att, { dry })); }
+    if (what === "jira-attach") { await permit("jira_attach", { company, staff, mcp }); const key = String(a.shift() ?? "").toUpperCase(); await meterUpload("jira_attach", a, { company, staff, mcp, dry }); console.log(await jiraAttach(key, a, { dry })); }
+    else if (what === "figma-connect") console.log(await figmaConnect({ switch: a.includes("--switch") }));
+    else if (what === "atlassian-connect") console.log(await (await import("./oauth.mjs")).connect("atlassian", { switch: a.includes("--switch") }));
+    else if (what === "figma-logout") console.log((await import("./oauth.mjs")).logout("figma"));
+    else if (what === "atlassian-logout") console.log((await import("./oauth.mjs")).logout("atlassian"));
+    else if (what === "figma-status") console.log(await (await import("./oauth.mjs")).status("figma"));
+    else if (what === "atlassian-status") console.log(await (await import("./oauth.mjs")).status("atlassian"));
+    else if (what === "figma-export") { await permit("figma_export", { company, staff, mcp }); const out = flag(a, "--out"), att = flag(a, "--attach"); await meterUpload("figma_export", [], { company, staff, mcp, dry }); const f = await figmaExport(a[0], out); console.log(`exported ${f}`);
+      if (att) { await permit("jira_attach", { company, staff, mcp }); await meterUpload("jira_attach", [f], { company, staff, mcp, dry }); console.log(await jiraAttach(att.toUpperCase(), [f], { dry })); } }
+    else if (what === "confluence-page") { await permit("confluence_write", { company, staff, mcp }); const act = a.shift(), file = flag(a, "--file"), att = flags(a, "--attach"); await meterUpload("confluence_write", [file, ...att].filter(Boolean), { company, staff, mcp, dry }); console.log(await confluencePage(act, a[0], a[1], file, att, { dry })); }
     else throw new Error("unknown command");
   } catch (e) { console.error(e.message); process.exit(1); }
 }
