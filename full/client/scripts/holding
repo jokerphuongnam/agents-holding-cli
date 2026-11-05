@@ -40,6 +40,7 @@ usage: holding <noun> <verb> [args]   (chat: /<noun> <verb> ...; no verb = list/
   key show | generate | import        your key id, plan, credits, devices (generate: new Free key; import: use an existing key on this Mac)
   credit show                         your credits
   billing [vi|en] | billing usage [days]
+  usage [--by day|staff] [--key ref]   plan + credits bar this period (own key; owner: --key)
   status [--server] | doctor [--repo DIR] [--server] | notify on|off
   setup sync [--owner] [--claude] | setup open '<setup_url>'
   habit list | edit | clear
