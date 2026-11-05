@@ -24,6 +24,7 @@ usage: holding <noun> <verb> [args]   (chat: /<noun> <verb> ...; no verb = list/
   staff deny add|remove <staff> <path> [--replace <file>] | staff deny list <staff>      (per staff; cannot remove a company deny)
   company deny add|remove <path> [--replace <file>] | company deny list                  (all staff of the company)
   company process templates | list | setup | add --template <T> --from <SRC> [--to P1,P2] [--status S] [--link-type T] | add-json '<json>' | remove <id>
+  process rule add --template parent-auto-done --project KEY [--enable] | list | remove <id> | test <id> [--issue KEY]
   staff set <staff> <provider> <model> [low|medium|high] | set <staff> "<command with {prompt}>" | unset <staff>   [--company X]
   staff run <staff> "<task>" [--proceed] | staff test <staff> | staff presets   (headless sub-agent runners, local LLMs too)
   staff add <role> --preset <id> [--model M]   attach a headless runner (no chat window)
@@ -113,7 +114,8 @@ case "$noun" in
     private|public) echo "process $verb: mark local process visibility (structure-only sync when public). See docs/PROCESSES.md"; exit 0 ;;
     library) srv process library "$@" ;;
     *) # fall through to company process for templates/list/setup if routed that way
-       case "$verb" in templates|list|setup|add|add-json|remove) exec bash "$0" company process "$verb" "$@" ;; esac
+       case "$verb" in templates|list|setup|add|add-json|remove) exec bash "$0" company process "$verb" "$@" ;;
+         rule) exec node "$here/jira-rules.mjs" "$@" ;; esac
        usage ;; esac ;;
   skill) case "$verb" in
     add) exec node "$here/add-skill.mjs" "$@" ;;

@@ -19,6 +19,7 @@ import * as X from "./resilience.mjs";
 import * as POL from "./policy.mjs";
 import * as XT from "./crossteam.mjs";
 import { client as jiraRaw } from "./jira.mjs";
+import * as JR from "./jira-rules.mjs";
 import { readFileSync as readFileSync_AH } from "node:fs";
 const AH_CLIENT_VERSION = (() => { try { return readFileSync_AH(new URL("./VERSION", import.meta.url), "utf8").trim(); } catch { return "0"; } })();
 
@@ -746,6 +747,7 @@ async function reconcile(company, sinceIso) {
         const f = res.find((i) => i.key === x.key)?.fields ?? {};
         const r = await mcp("reconcile_issue", { company, issue: x.key, status: x.status, updated: x.updated, project_key: b.project_key, summary: f.summary ?? "", labels: f.labels ?? [] });
         X.replayMark(st, [X.replayKey(x.key, x.status, x.updated)]); n++;
+        await applyJiraRules({ company, issue: x.key, event: x.status?.toLowerCase() === "done" ? "issue_transitioned" : "label_added" });
         log(`reconcile ${x.key} "${x.status}": ${r.duplicate ? "already applied" : r.replayed ? `replayed (${r.event ?? "?"}, ${r.stage_before ?? "new"} -> ${r.stage_after ?? "?"})` : `skipped (${r.reason ?? "?"})`}`);
       }
     }
@@ -753,6 +755,33 @@ async function reconcile(company, sinceIso) {
     L.writeStatus(homedir(), { companies: { [company]: { reconciled_at: new Date().toISOString(), reconciled: n } } });
   } finally { reconciling[company] = false; }
 }
+// Company-defined Jira Listener rules: real events only; deterministic planning and Jira actions use zero model tokens.
+const RULE_EVENTS = { user_move: "issue_transitioned", agent_move: "issue_transitioned", issue_transitioned: "issue_transitioned", user_comment: "comment_created", comment_created: "comment_created", task_done: "issue_transitioned", subtask_done: "all_subtasks_done", assignee_changed: "assignee_changed", label_added: "label_added" };
+async function applyJiraRules(p) {
+  if (!p.issue || !jiraCfg) return;
+  const board = registry.projects.flatMap((pr) => pr.boards ?? []).find((b) => b.project_key === p.issue.split("-")[0] && b.company === (p.company ?? company));
+  const project = registry.projects.find((pr) => pr.path && (pr.boards ?? []).includes(board));
+  if (!project) return;
+  const { rules } = JR.loadRules(project.path, p.company ?? company); if (!rules.some((r) => r.enabled)) return;
+  const stateDir = join(homedir(), ".config/agents-holding/state", p.company ?? company), auditFile = join(stateDir, "jira-rule-actions.json");
+  let audit = {}; try { audit = JSON.parse(readFileSync(auditFile, "utf8")); } catch {}
+  const updated = issueUpdated(p.issue);
+  try {
+    const A = await (await import("./attach.mjs")).atlassianToken(homedir()); if (!A?.auth) return log("rules: Jira not connected");
+    const req = jiraRaw(A), issue = await req("GET", `/issue/${encodeURIComponent(p.issue)}?fields=summary,status,issuetype,parent,labels,assignee,updated`);
+    const status = issue.fields?.status?.name, isDone = issue.fields?.status?.statusCategory?.key === "done" || status?.toLowerCase() === "done";
+    const event = RULE_EVENTS[p.event] ?? p.event, events = [...new Set([event, event === "issue_transitioned" && isDone && issue.fields?.parent ? "all_subtasks_done" : null].filter(Boolean))];
+    const actions = [];
+    for (const ev of events) { const ctx = await JR.contextFor(req, issue); for (const r of rules) for (const a of JR.planRule(r, issue, ev, ctx)) { const id = `${r.id}:${ev}:${a.index}:${a.key}:${issue.fields?.updated ?? updated}`; if (!audit[id]) actions.push({ ...a, audit_id: id }); } }
+    const result = await JR.executeActions(req, actions, { dry: dryJira,
+      runStaff: async (a) => { const cp = await import("node:child_process"); cp.execFileSync(process.execPath, [join(homedir(), ".agents-holding/scripts/run-cli.mjs"), a.staff, a.request ?? interpolateRule(a.text, issue), "--company", p.company ?? company], { cwd: project.path, stdio: "inherit" }); },
+      notify: async (a) => { appendFileSync(join(homedir(), ".config/agents-holding/state", p.company ?? company, "ceo-notices.log"), `${new Date().toISOString()} [${a.rule}] ${a.text ?? a.to}\n`); } });
+    for (const a of result) { if (a.ok && !dryJira) audit[a.audit_id] = new Date().toISOString(); log(`rule ${a.rule}: ${a.type} ${a.key} ${dryJira ? "(dry-run)" : a.ok ? "ok" : `failed: ${a.error}`}`); }
+    if (!dryJira && result.length) { mkdirSync(stateDir, { recursive: true }); writeFileSync(auditFile, JSON.stringify(Object.fromEntries(Object.entries(audit).slice(-5000)), null, 2), { mode: 0o600 }); }
+  } catch (e) { log(`rules ${p.issue}: ${e.message}`); }
+}
+const issueUpdated = () => new Date().toISOString();
+const interpolateRule = (text, issue) => String(text ?? "").replaceAll("{issue}", issue.key).replaceAll("{status}", issue.fields?.status?.name ?? "");
 const backoffs = {}, joinedOnce = {};
 async function connect(company) {
   backoffs[company] ??= 1000;
@@ -774,6 +803,7 @@ async function connect(company) {
     if (msg.event === "broadcast" && msg.payload?.event === "next_action") {
       const p = { ...(msg.payload.payload ?? {}), company };
       if (p.enterprise && company in myJira && p.assignee_account !== myJira[company]) { log("skip", p.issue ?? "", "(assigned to someone else)"); return; }
+      if (p.rules_only) { applyJiraRules(p).catch((e) => log("rules failed:", e.message)); return; }
       L.writeStatus(homedir(), { companies: { [company]: { last_event_at: new Date().toISOString(), last_event: `${p.event} ${p.issue ?? ""}`.trim() } } });
       log("next_action", company, p.event, p.issue ?? p.task_id ?? "", "stage", p.stage, p.waiting ? "(waiting on user)" : "");
       const sf = p.staffing; // staffing gate (needs-hire / needs-decision): post ONE rich comment + label, no run; cleared -> remove labels
@@ -795,6 +825,7 @@ async function connect(company) {
         comms(k, p.say);
         if (!(p.event === "staffing_choice" && !p.waiting)) return; // "3 proceed": confirm, then run
       }
+      applyJiraRules(p).catch((e) => log("rules failed:", e.message));
       if (p.waiting) return; // user gate
       if (DEBOUNCED.has(p.event)) return debounce(p); // a drag + comment arrive as 2 webhooks: one run, after both landed
       // agent_move: the agent's own advance. If a run for that issue is still active it is queued and handled

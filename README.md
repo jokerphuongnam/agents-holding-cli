@@ -77,3 +77,8 @@ Run `holding help` to see the commands your key can use (`holding help <group|co
 
 - [COMMANDS.md](docs/COMMANDS.md) · [SKILLS.md](docs/SKILLS.md) · [PRICING.md](docs/PRICING.md) · [SETUP.md](full/SETUP.md)
 - [Companies](docs/COMPANIES.md) · [Providers](docs/PROVIDERS.md) · [Staff policy](docs/STAFF-POLICY.md) · [Who decides what](docs/WHO-DECIDES.md) · [Resilience](docs/RESILIENCE.md)
+
+
+## Company-defined Jira Listener rules
+
+Customize event triggers, conditions, and actions locally per company. `/ceo` supports interview → draft → dry-run → confirm → attach. See [Jira Listener rules](docs/JIRA-LISTENER-RULES.md) for the `holding process rule add|list|remove|test` commands and the built-in parent-auto-Done template.
