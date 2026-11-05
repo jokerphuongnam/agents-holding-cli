@@ -1,3 +1,4 @@
+import "./kc-guard.mjs"; // pin keychain calls to the real login keychain (never a dialog under a fake HOME)
 // Browser OAuth for client tools (Figma, Atlassian). The token exchange runs on our server (client secrets never here);
 // tokens are kept in the Keychain (service agents-holding-oauth-<provider>) and refreshed automatically. Never printed.
 import { createServer } from "node:http";

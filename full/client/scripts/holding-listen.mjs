@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import "./kc-guard.mjs"; // pin keychain calls to the real login keychain (never a dialog under a fake HOME)
 // holding listener run: wake the LOCAL agent when the server broadcasts a next_action for this repo's company.
 // Multi-project: one process for every repo in ~/.config/agents-holding/projects.json (see registry.mjs; --repo DIR = only that repo).
 // Usage: holding listener run [--repo DIR] [--once] [--dry-jira] | [--run ISSUE --event E --stage S [--dry-jira]]   (license: $AGENTS_HOLDING_KEY or Keychain agents-holding-license|agents-holding-test-license)

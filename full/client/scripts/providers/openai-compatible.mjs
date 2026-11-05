@@ -1,3 +1,4 @@
+import "../kc-guard.mjs"; // pin keychain calls to the real login keychain (never a dialog under a fake HOME)
 // Generic adapter for any OpenAI-compatible /chat/completions endpoint (DeepSeek, Kimi/Moonshot, OpenRouter, Ollama, LM Studio, vLLM...).
 // Configured only in ~/.config/agents-holding/agents.json -> providers.<name> = { "type": "openai-compatible", "baseURL", "model",
 // "keychain": "<Keychain service holding the API key>" (omit for keyless local servers), "maxTurns", "testCommand", "supportsEffort" }.

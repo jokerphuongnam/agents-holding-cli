@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import "./kc-guard.mjs"; // pin keychain calls to the real login keychain (never a dialog under a fake HOME)
 // holding company migrate <local company folder|repo> [--parent <slug>] [--slug <slug>] [--jira KEY] [--dry-run]
 // Brings ONE older local company (.agents/<x>-company) into holding. Backs up first (~/.config/agents-holding/backups),
 // sends only names/counts (staff role ids, plan count, parent, creation time), never file contents. Originals stay on disk.

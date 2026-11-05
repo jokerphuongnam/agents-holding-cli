@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import "./kc-guard.mjs"; // pin keychain calls to the real login keychain (never a dialog under a fake HOME)
 // Unified staff policy, client side: cache, defaults on add/first launch, translation into each agent CLI's native config, OS sandbox,
 // deny stubs/replacements, secret redaction. One config per staff (server: staff_policy_get/set); holding turns it into:
 //   Claude Code  --settings <file>: permissions.allow/deny (Read/Edit/Bash) + PreToolUse hook (denied reads -> stub/replacement)

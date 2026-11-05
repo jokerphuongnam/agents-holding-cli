@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import "./kc-guard.mjs"; // pin keychain calls to the real login keychain (never a dialog under a fake HOME)
 // Local skills: ~/.agents-holding/skills/{public,private,library}/<skill>/SKILL.md (+ references/ scripts/ templates/ history/ assets/).
 // Visibility comes from the folder. Public custom skills are collected automatically by the client (after a local scan);
 // private ones only count. history/ and assets/ are never uploaded. Library skills must carry a valid server signature.

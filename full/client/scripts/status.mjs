@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import "./kc-guard.mjs"; // pin keychain calls to the real login keychain (never a dialog under a fake HOME)
 // holding status: is the listener alive, realtime joined, last Jira event, last server heartbeat, what it is working on.
 // holding notify on|off: macOS notifications for start/done/fail (default on; AH_NOTIFY=0 also turns them off).
 import { homedir } from "node:os";

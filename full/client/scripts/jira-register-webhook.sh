@@ -6,6 +6,19 @@
 # The token is only sent to your own Jira site. It is never printed, stored elsewhere or sent to agents-holding.
 # Note: /rest/webhooks/1.0/webhook needs a Jira site admin. Without admin rights, use the setup page (manual steps).
 set -euo pipefail
+# >>> ah_kc_guard (canonical: full/lib/kc-guard.sh): macOS `security` resolves the default keychain from $HOME; under a
+# temporary/fake HOME it finds none and pops "keychain not found / restore keychain" dialogs. Pin every *-generic-password
+# call to the REAL user's login keychain (passwd home, not $HOME); AH_SKIP_KEYCHAIN=1 = no keychain access (not found).
+security() {
+  case "${1:-}" in find-generic-password|add-generic-password|delete-generic-password)
+    [ "${AH_SKIP_KEYCHAIN:-}" = 1 ] && return 44
+    local rh kc; rh="$(dscl . -read "/Users/$(id -un)" NFSHomeDirectory 2>/dev/null | awk '{print $2}')"; [ -n "$rh" ] || rh="$(eval echo "~$(id -un)")"
+    kc="$rh/Library/Keychains/login.keychain-db"; [ -f "$kc" ] || kc="$rh/Library/Keychains/login.keychain"; [ -f "$kc" ] || return 44
+    command security "$@" "$kc"; return $? ;;
+  esac
+  command security "$@"
+}
+# <<< ah_kc_guard
 SETUP_URL="${1:?usage: $0 '<setup_url>'}"
 command -v python3 >/dev/null || { echo "python3 required"; exit 1; }
 : "${ATLASSIAN_EMAIL:?set ATLASSIAN_EMAIL to your Atlassian account email}"

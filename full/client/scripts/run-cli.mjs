@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import "./kc-guard.mjs"; // pin keychain calls to the real login keychain (never a dialog under a fake HOME)
 // holding staff run <staff> "task" [--company X] [--json]: run one staff directly on ITS bound provider/model/effort
 // (holding staff set). Dev/engineer roles get the code tool loop in the cwd; others answer as text.
 import { execFileSync } from "node:child_process";

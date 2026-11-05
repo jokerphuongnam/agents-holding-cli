@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import "./kc-guard.mjs"; // pin keychain calls to the real login keychain (never a dialog under a fake HOME)
 // holding skill add <staff> <skill> [--company X]: attach a skill to a staff; tasks paused on needs-decision re-check and resume.
 import { execFileSync } from "node:child_process";
 import { resolveCompany } from "./company.mjs";

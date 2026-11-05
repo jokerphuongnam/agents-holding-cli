@@ -9,6 +9,19 @@
 #   commands (/staff list, /key list, /jira list ...) instantly WITHOUT a model turn; --no-hook skips it (AH_HOOK=0 disables it live).
 # --claude: also write ~/.claude/commands (Claude Code already lists MCP prompts as /mcp__agents-holding__<name>).
 set -euo pipefail
+# >>> ah_kc_guard (canonical: full/lib/kc-guard.sh): macOS `security` resolves the default keychain from $HOME; under a
+# temporary/fake HOME it finds none and pops "keychain not found / restore keychain" dialogs. Pin every *-generic-password
+# call to the REAL user's login keychain (passwd home, not $HOME); AH_SKIP_KEYCHAIN=1 = no keychain access (not found).
+security() {
+  case "${1:-}" in find-generic-password|add-generic-password|delete-generic-password)
+    [ "${AH_SKIP_KEYCHAIN:-}" = 1 ] && return 44
+    local rh kc; rh="$(dscl . -read "/Users/$(id -un)" NFSHomeDirectory 2>/dev/null | awk '{print $2}')"; [ -n "$rh" ] || rh="$(eval echo "~$(id -un)")"
+    kc="$rh/Library/Keychains/login.keychain-db"; [ -f "$kc" ] || kc="$rh/Library/Keychains/login.keychain"; [ -f "$kc" ] || return 44
+    command security "$@" "$kc"; return $? ;;
+  esac
+  command security "$@"
+}
+# <<< ah_kc_guard
 MCP_URL="${AH_MCP_URL:-https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp}"
 OWNER=""; CLAUDE=""; HOOK=1; DIRS=()
 while [ $# -gt 0 ]; do case "$1" in --owner) OWNER=1;; --claude) CLAUDE=1;; --no-hook) HOOK="";; --dir) DIRS+=("$2"); shift;; *) echo "unknown option $1" >&2; exit 2;; esac; shift; done

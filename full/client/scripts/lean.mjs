@@ -1,3 +1,4 @@
+import "./kc-guard.mjs"; // pin keychain calls to the real login keychain (never a dialog under a fake HOME)
 // Lean runner for holding-listen (token saving, default; AH_LEAN=0 = legacy agent-driven runs).
 // Scripts do everything deterministic: read the Jira issue (REST), record artifacts, advance stages, Jira comments,
 // transitions (via jiraOps), branch + commit. The model is called only for the text it must write:

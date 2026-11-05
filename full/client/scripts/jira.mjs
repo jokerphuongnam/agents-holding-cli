@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import "./kc-guard.mjs"; // pin keychain calls to the real login keychain (never a dialog under a fake HOME)
 // holding jira <verb> : Jira working commands, deterministic (no model). Auth is lazy: OAuth 3LO in the Keychain
 // (holding jira connect -- opens the browser only when a Jira command needs it), with legacy API-token fallback.
 // Moves/comments are real user actions. Install / company create never require Jira auth.

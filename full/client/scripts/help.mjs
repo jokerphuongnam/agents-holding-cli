@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import "./kc-guard.mjs"; // pin keychain calls to the real login keychain (never a dialog under a fake HOME)
 // holding help [group|command]  (aliases: document, docs). The server decides which commands this key may run
 // (POST <mcp>/help, plan/role/owner verified server-side); this file only renders. Cache: ~/.config/agents-holding/help/<sha256(key)[0:16]>.json
 // (the key itself is never stored). Offline: that key's cached list, else the built-in no-key list.

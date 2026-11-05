@@ -8,6 +8,19 @@
 # Env: AH_MCP_URL, AH_AGENTS=grok,claude,codex (default: installed ones), AH_NO_DOCTOR=1, AH_OWNER=1 (owner Mac: also owner commands).
 # Menus are arrow-key selectors on /dev/tty (numbers still work); AH_NONINTERACTIVE=1 or CI=1 or no tty: plain numeric prompt / AH_KEY_CHOICE.
 set -euo pipefail
+# >>> ah_kc_guard (canonical: full/lib/kc-guard.sh): macOS `security` resolves the default keychain from $HOME; under a
+# temporary/fake HOME it finds none and pops "keychain not found / restore keychain" dialogs. Pin every *-generic-password
+# call to the REAL user's login keychain (passwd home, not $HOME); AH_SKIP_KEYCHAIN=1 = no keychain access (not found).
+security() {
+  case "${1:-}" in find-generic-password|add-generic-password|delete-generic-password)
+    [ "${AH_SKIP_KEYCHAIN:-}" = 1 ] && return 44
+    local rh kc; rh="$(dscl . -read "/Users/$(id -un)" NFSHomeDirectory 2>/dev/null | awk '{print $2}')"; [ -n "$rh" ] || rh="$(eval echo "~$(id -un)")"
+    kc="$rh/Library/Keychains/login.keychain-db"; [ -f "$kc" ] || kc="$rh/Library/Keychains/login.keychain"; [ -f "$kc" ] || return 44
+    command security "$@" "$kc"; return $? ;;
+  esac
+  command security "$@"
+}
+# <<< ah_kc_guard
 MCP_URL="${AH_MCP_URL:-https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp}"
 [ "${1:-}" = "--print-url" ] && { printf '%s\n' "$MCP_URL"; exit 0; }
 KSVC="agents-holding-license"; DSVC="agents-holding-device"
