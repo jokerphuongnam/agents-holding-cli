@@ -762,7 +762,8 @@ async function applyJiraRules(p) {
   const board = registry.projects.flatMap((pr) => pr.boards ?? []).find((b) => b.project_key === p.issue.split("-")[0] && b.company === (p.company ?? company));
   const project = registry.projects.find((pr) => pr.path && (pr.boards ?? []).includes(board));
   if (!project) return;
-  const { rules } = JR.loadRules(project.path, p.company ?? company); if (!rules.some((r) => r.enabled)) return;
+  const co = p.company ?? company;
+  const { rules } = JR.loadRules(project.path, co, { project: board?.project_key, defaultProcess: await JR.defaultProcess(co, mcp) }); if (!rules.some((r) => r.enabled)) return;
   const stateDir = join(homedir(), ".config/agents-holding/state", p.company ?? company), auditFile = join(stateDir, "jira-rule-actions.json");
   let audit = {}; try { audit = JSON.parse(readFileSync(auditFile, "utf8")); } catch {}
   const updated = issueUpdated(p.issue);

@@ -9,9 +9,9 @@ export const EVENTS = ["issue_transitioned", "all_subtasks_done", "assignee_chan
 export const ACTION_TYPES = ["transition", "assign", "label", "comment", "run_staff", "notify"];
 export const RULE_TEMPLATES = {
   "parent-auto-done": {
-    id: "parent-auto-done", name: "Parent auto-Done when all subtasks Done", enabled: false,
+    id: "parent-auto-done", name: "Parent auto-Done when all subtasks Done", enabled: false, builtin_default: true,
     trigger: { event: "all_subtasks_done" },
-    conditions: { issue_types: ["Sub-task"], include_epics: false, require_subtasks: true },
+    conditions: { issue_types: ["Sub-task"], include_epics: true, require_subtasks: true },
     actions: [{ type: "transition", target: "parent", to: "Done" }],
   },
 };
@@ -33,20 +33,28 @@ export function validateRule(r) {
   }
   return null;
 }
-export function template(name, { project, id, includeEpics = false } = {}) {
+export function template(name, { project, id, includeEpics = true } = {}) {
   const base = RULE_TEMPLATES[name]; if (!base) throw new Error(`unknown template ${name}; available: ${Object.keys(RULE_TEMPLATES).join(", ")}`);
   const r = structuredClone(base); r.id = id ?? r.id; r.trigger.project = project?.toUpperCase(); r.conditions.include_epics = includeEpics;
   const e = validateRule(r); if (e) throw new Error(e); return r;
+}
+export async function defaultProcess(company, call) {
+  if (!call) return false;
+  try { const r = await call("get_company_flow", { company }); return r?.custom === false; } catch { return false; }
 }
 export function ruleFile(repo, company) {
   const agents = join(repo, ".agents");
   const dir = join(agents, `${company}-company`);
   return join(existsSync(dir) ? dir : agents, "jira-listener-rules.json");
 }
-export function loadRules(repo, company) {
+export function loadRules(repo, company, { project, defaultProcess = false } = {}) {
   const file = ruleFile(repo, company); let data = { version: 1, company, rules: [] };
   try { data = { ...data, ...JSON.parse(readFileSync(file, "utf8")) }; } catch {}
-  return { file, rules: data.rules ?? [] };
+  let rules = data.rules ?? [];
+  if (defaultProcess && !rules.some((r) => r.id === "parent-auto-done")) {
+    const r = template("parent-auto-done", { project }); r.enabled = true; rules = [r, ...rules];
+  }
+  return { file, rules };
 }
 export function saveRules(file, company, rules) {
   mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
@@ -107,14 +115,30 @@ async function main(argv) {
   const { resolveCompany } = await import("./company.mjs");
   const co = resolveCompany().company; if (!co) throw new Error("no company: run in a company repo or pass --company");
   let repo = process.cwd(); const ri = argv.indexOf("--repo"); if (ri >= 0) repo = resolve(argv.splice(ri, 2)[1]); else while (!existsSync(join(repo, ".agents")) && repo !== dirname(repo)) repo = dirname(repo);
-  const { file, rules } = loadRules(repo, co), cmd = argv.shift() ?? "list";
+  const cmd = argv.shift() ?? "list";
+  const { defaultProcess } = await import("./jira-rules.mjs");
+  const isDefault = await defaultProcess(co, async (name, args) => {
+    const { readFileSync } = await import("node:fs");
+    const { licenseKey, deviceId } = await import("./skills.mjs");
+    const home = homedir(), key = licenseKey();
+    if (!key) return null;
+    const base = process.env.AH_MCP_URL ?? "https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp";
+    const headers = { "Content-Type": "application/json", Accept: "application/json, text/event-stream", Authorization: `Bearer ${key}`, "X-AH-Version": readFileSync(join(dirname(new URL(import.meta.url).pathname), "VERSION"), "utf8").trim() };
+    const device = deviceId(); if (device) headers["X-AH-Device"] = device;
+    const r = await fetch(base, { method: "POST", headers, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }), signal: AbortSignal.timeout(30000) });
+    const j = await r.json(), t = j.result?.content?.[0]?.text; if (!t || j.result?.isError) throw new Error(t ?? `MCP HTTP ${r.status}`); return JSON.parse(t);
+  });
+  const cliProject = flag("--project")?.toUpperCase();
+  let projectKey = cliProject;
+  if (!projectKey) { try { const reg = JSON.parse(readFileSync(join(homedir(), ".config/agents-holding/projects.json"), "utf8")); projectKey = reg.projects?.find((p) => p.path === repo)?.boards?.find((b) => b.company === co)?.project_key; } catch {} }
+  const { file, rules } = loadRules(repo, co, { project: projectKey, defaultProcess: isDefault });
   const flag = (n) => { const i = argv.indexOf(n); return i < 0 ? null : argv.splice(i, 2)[1]; };
   const has = (n) => { const i = argv.indexOf(n); if (i < 0) return false; argv.splice(i, 1); return true; };
   flag("--company"); // company was already resolved from this option
   if (cmd === "list") { console.log(`${file}\n${rules.length ? rules.map((r) => `${r.id}: ${r.enabled ? "enabled" : "draft"}; ${r.trigger.event}; ${r.actions.map((a) => a.type).join(", ")}`).join("\n") : "No rules. Add: holding process rule add --template parent-auto-done --project NAIL"}`); return; }
   if (cmd === "add") {
     let r; const json = flag("--json"), t = flag("--template");
-    if (json) r = JSON.parse(json); else r = template(t ?? "parent-auto-done", { project: flag("--project"), id: flag("--id"), includeEpics: has("--include-epics") });
+    if (json) r = JSON.parse(json); else r = template(t ?? "parent-auto-done", { project: flag("--project"), id: flag("--id"), includeEpics: !has("--exclude-epics") });
     const err = validateRule(r); if (err) throw new Error(err);
     const enable = has("--enable"), replace = has("--replace"); if (replace && !enable) r.enabled = rules.find((x) => x.id === r.id)?.enabled ?? false; else r.enabled = enable;
     if (rules.some((x) => x.id === r.id) && !replace) throw new Error(`rule ${r.id} exists; use --replace to change it`);

@@ -24,7 +24,7 @@ usage: holding <noun> <verb> [args]   (chat: /<noun> <verb> ...; no verb = list/
   staff deny add|remove <staff> <path> [--replace <file>] | staff deny list <staff>      (per staff; cannot remove a company deny)
   company deny add|remove <path> [--replace <file>] | company deny list                  (all staff of the company)
   company process templates | list | setup | add --template <T> --from <SRC> [--to P1,P2] [--status S] [--link-type T] | add-json '<json>' | remove <id>
-  process rule add --template parent-auto-done --project KEY [--enable] | list | remove <id> | test <id> [--issue KEY]
+  process rule add --template parent-auto-done --project KEY [--exclude-epics] [--enable] | list | remove <id> | test <id> [--issue KEY]
   staff set <staff> <provider> <model> [low|medium|high] | set <staff> "<command with {prompt}>" | unset <staff>   [--company X]
   staff run <staff> "<task>" [--proceed] | staff test <staff> | staff presets   (headless sub-agent runners, local LLMs too)
   staff add <role> --preset <id> [--model M]   attach a headless runner (no chat window)
