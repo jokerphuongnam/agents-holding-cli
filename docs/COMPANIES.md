@@ -37,7 +37,7 @@ Migrate child companies (`children/<child>` pointing to another repo) separately
 
 ## Staff limits per plan / Giới hạn staff theo gói
 
-Each company's roster can hold at most this many staff (CEO included). Applies to `/staff add`, `holding company staff move|assign`, `holding company migrate` and new companies. Pricing is unchanged.
+Each company's roster can hold at most this many staff (CEO included). Applies to `/staff add`, `holding company staff move|assign`, `holding company migrate` and new companies. Full pricing (credits, devices, action costs): [PRICING.md](PRICING.md).
 Mỗi công ty có tối đa số staff dưới đây (tính cả CEO). Áp dụng cho thêm staff, chuyển staff, migrate và tạo công ty mới. Giá không đổi.
 
 | Plan / Gói | Max staff per company |
