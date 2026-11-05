@@ -56,8 +56,12 @@ grok mcp add --transport http agents-holding https://mznrffnvmhmiudvfuquk.supaba
 
 Claude Code, Codex, `grok` CLI에서 똑같이 동작합니다(Codex는 훅 신뢰를 한 번 묻습니다). 전체 목록: `holding help` 실행.
 
+→ [COMMANDS.md](../docs/COMMANDS.md) · [SKILLS.md](../docs/SKILLS.md)
+
 ## 문서
 
+- [COMMANDS.md](../docs/COMMANDS.md)
+- [SKILLS.md](../docs/SKILLS.md)
 - [설치 가이드](../full/localized/SETUP.ko.md)
 - [요금표](../docs/localized/PRICING.ko.md)
 - 명령 참조: `holding help`(또는 `holding help <그룹|명령>`) 실행

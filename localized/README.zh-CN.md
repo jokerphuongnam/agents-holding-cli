@@ -56,8 +56,12 @@ grok mcp add --transport http agents-holding https://mznrffnvmhmiudvfuquk.supaba
 
 在 Claude Code、Codex 和 `grok` CLI 中用法相同（Codex 会询问一次是否信任 hook）。完整列表：运行 `holding help`。
 
+→ [COMMANDS.md](../docs/COMMANDS.md) · [SKILLS.md](../docs/SKILLS.md)
+
 ## 文档
 
+- [COMMANDS.md](../docs/COMMANDS.md)
+- [SKILLS.md](../docs/SKILLS.md)
 - [安装指南](../full/localized/SETUP.zh-CN.md)
 - [价格表](../docs/localized/PRICING.zh-CN.md)
 - 命令参考：运行 `holding help`（或 `holding help <分组|命令>`）

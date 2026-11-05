@@ -56,8 +56,12 @@ Sau đó mở agent, xác thực `agents-holding` trên trình duyệt (tạo ke
 
 Dùng giống nhau trong Claude Code, Codex và CLI `grok` (Codex hỏi một lần để tin cậy hook). Danh sách đầy đủ: chạy `holding help`.
 
+→ [COMMANDS.md](../docs/COMMANDS.md) · [SKILLS.md](../docs/SKILLS.md)
+
 ## Tài liệu
 
+- [COMMANDS.md](../docs/COMMANDS.md)
+- [SKILLS.md](../docs/SKILLS.md)
 - [Hướng dẫn cài đặt](../full/localized/SETUP.vi.md)
 - [Bảng giá](../docs/localized/PRICING.vi.md)
 - Tra cứu lệnh: chạy `holding help` (hoặc `holding help <nhóm|lệnh>`)

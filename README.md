@@ -56,8 +56,12 @@ Then open your agent, authenticate `agents-holding` in the browser (create a Fre
 
 Works the same in Claude Code, Codex and the `grok` CLI (Codex asks once to trust the hook). Full list: run `holding help`.
 
+→ [COMMANDS.md](docs/COMMANDS.md) · [SKILLS.md](docs/SKILLS.md)
+
 ## Docs
 
+- [COMMANDS.md](docs/COMMANDS.md)
+- [SKILLS.md](docs/SKILLS.md)
 - [Setup guide (SETUP.md)](full/SETUP.md)
 - [Pricing (PRICING.md)](docs/PRICING.md)
 - Command reference: run `holding help` (or `holding help <group|command>`), see also [SETUP.md, section 4](full/SETUP.md#4-use-it-in-chat-instant-zero-ai-tokens)

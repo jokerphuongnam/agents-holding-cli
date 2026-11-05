@@ -56,8 +56,12 @@ grok mcp add --transport http agents-holding https://mznrffnvmhmiudvfuquk.supaba
 
 Claude Code、Codex、`grok` CLI で同じように使えます（Codex ではフックの信頼確認が一度だけ出ます）。全一覧は `holding help` で確認できます。
 
+→ [COMMANDS.md](../docs/COMMANDS.md) · [SKILLS.md](../docs/SKILLS.md)
+
 ## ドキュメント
 
+- [COMMANDS.md](../docs/COMMANDS.md)
+- [SKILLS.md](../docs/SKILLS.md)
 - [セットアップガイド](../full/localized/SETUP.ja.md)
 - [料金表](../docs/localized/PRICING.ja.md)
 - コマンドリファレンス：`holding help`（または `holding help <グループ|コマンド>`）を実行

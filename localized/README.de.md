@@ -56,8 +56,12 @@ grok mcp add --transport http agents-holding https://mznrffnvmhmiudvfuquk.supaba
 
 Funktioniert gleich in Claude Code, Codex und dem `grok` CLI (Codex fragt einmal, ob du dem Hook vertraust). Vollständige Liste: `holding help` ausführen.
 
+→ [COMMANDS.md](../docs/COMMANDS.md) · [SKILLS.md](../docs/SKILLS.md)
+
 ## Dokumentation
 
+- [COMMANDS.md](../docs/COMMANDS.md)
+- [SKILLS.md](../docs/SKILLS.md)
 - [Installationsanleitung](../full/localized/SETUP.de.md)
 - [Preise](../docs/localized/PRICING.de.md)
 - Befehlsreferenz: `holding help` (oder `holding help <Gruppe|Befehl>`) ausführen

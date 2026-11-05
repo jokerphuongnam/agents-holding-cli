@@ -56,8 +56,12 @@ Ouvrez ensuite votre agent, authentifiez `agents-holding` dans le navigateur (cr
 
 Fonctionne de la même façon dans Claude Code, Codex et le CLI `grok` (Codex demande une fois de faire confiance au hook). Liste complète : lancez `holding help`.
 
+→ [COMMANDS.md](../docs/COMMANDS.md) · [SKILLS.md](../docs/SKILLS.md)
+
 ## Documentation
 
+- [COMMANDS.md](../docs/COMMANDS.md)
+- [SKILLS.md](../docs/SKILLS.md)
 - [Guide d'installation](../full/localized/SETUP.fr.md)
 - [Tarifs](../docs/localized/PRICING.fr.md)
 - Référence des commandes : lancez `holding help` (ou `holding help <groupe|commande>`)
