@@ -116,6 +116,9 @@ async function main(argv) {
   const co = resolveCompany().company; if (!co) throw new Error("no company: run in a company repo or pass --company");
   let repo = process.cwd(); const ri = argv.indexOf("--repo"); if (ri >= 0) repo = resolve(argv.splice(ri, 2)[1]); else while (!existsSync(join(repo, ".agents")) && repo !== dirname(repo)) repo = dirname(repo);
   const cmd = argv.shift() ?? "list";
+  const flag = (n) => { const i = argv.indexOf(n); return i < 0 ? null : argv.splice(i, 2)[1]; };
+  const has = (n) => { const i = argv.indexOf(n); if (i < 0) return false; argv.splice(i, 1); return true; };
+  flag("--company"); // company was already resolved from this option
   const { defaultProcess } = await import("./jira-rules.mjs");
   const isDefault = await defaultProcess(co, async (name, args) => {
     const { readFileSync } = await import("node:fs");
@@ -132,9 +135,6 @@ async function main(argv) {
   let projectKey = cliProject;
   if (!projectKey) { try { const reg = JSON.parse(readFileSync(join(homedir(), ".config/agents-holding/projects.json"), "utf8")); projectKey = reg.projects?.find((p) => p.path === repo)?.boards?.find((b) => b.company === co)?.project_key; } catch {} }
   const { file, rules } = loadRules(repo, co, { project: projectKey, defaultProcess: isDefault });
-  const flag = (n) => { const i = argv.indexOf(n); return i < 0 ? null : argv.splice(i, 2)[1]; };
-  const has = (n) => { const i = argv.indexOf(n); if (i < 0) return false; argv.splice(i, 1); return true; };
-  flag("--company"); // company was already resolved from this option
   if (cmd === "list") { console.log(`${file}\n${rules.length ? rules.map((r) => `${r.id}: ${r.enabled ? "enabled" : "draft"}; ${r.trigger.event}; ${r.actions.map((a) => a.type).join(", ")}`).join("\n") : "No rules. Add: holding process rule add --template parent-auto-done --project NAIL"}`); return; }
   if (cmd === "add") {
     let r; const json = flag("--json"), t = flag("--template");
