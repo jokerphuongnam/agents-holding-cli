@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # holding update [--check] [--yes]: safe, idempotent client update.
-#  1) pull the client scripts (git fast-forward only; refuses on local edits, never force)
+#  1) refresh client scripts (git ff-only if a checkout; else re-download the free package)
 #  2) regenerate native agent configs + sandbox profiles (policy cache sync per staff)
 #  3) re-sync slash commands   4) restart the Jira Listener if it is installed
 # --check: only compare the local build with the server's required build; outdated -> arrow menu (AH_AUTO_UPDATE=1 = update without asking).
+# Version: YYYYMMDDNN (build NN that day). Old 8-digit YYYYMMDD = YYYYMMDD00 for compare.
 set -uo pipefail
 
-# Ensure `holding` is on PATH: symlink into ~/.local/bin + idempotent PATH line in the shell profile.
 ah_ensure_holding_path() {
   local bin="$HOME/.local/bin" dest="${AH_INSTALL_DIR:-$HOME/.agents-holding}" src profile line
   mkdir -p "$bin"
@@ -21,26 +21,63 @@ ah_ensure_holding_path() {
   fi
   case ":$PATH:" in *":$bin:"*) ;; *) export PATH="$bin:$PATH";; esac
 }
-here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; ver() { cat "$here/VERSION" 2>/dev/null || echo 0; }
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+norm_ver() { local v="${1:-0}"; v="${v//[^0-9]/}"; [ ${#v} -eq 8 ] && v="${v}00"; echo "${v:-0}"; }
+ver() { norm_ver "$(cat "$here/VERSION" 2>/dev/null || echo 0)"; }
+ver_raw() { cat "$here/VERSION" 2>/dev/null || echo 0; }
+behind() { local a b; a=$(norm_ver "$1"); b=$(norm_ver "$2"); echo $(( 10#$b - 10#$a )); }
+
+ah_refresh_package() {
+  local dest="${AH_INSTALL_DIR:-$HOME/.agents-holding}" url branch tmp
+  branch="${AH_BRANCH:-main}"
+  url="${AH_FREE_REPO:-https://github.com/jokerphuongnam/agents-holding-free.git}"
+  tmp="$(mktemp -d "${TMPDIR:-/tmp}/ah-update.XXXXXX")"
+  if ! git clone -q --depth 1 --branch "$branch" "$url" "$tmp/src" 2>/dev/null; then
+    echo "   package download failed (network?); keeping current scripts" >&2
+    rm -rf "$tmp"; return 1
+  fi
+  mkdir -p "$dest"
+  rm -rf "$tmp/stage"; mkdir -p "$tmp/stage"
+  cp -R "$tmp/src/full/client/scripts/." "$tmp/stage/"
+  if command -v rsync >/dev/null; then rsync -a --delete "$tmp/stage/" "$dest/scripts/"
+  else rm -rf "$dest/scripts"; mkdir -p "$dest/scripts"; cp -R "$tmp/stage/." "$dest/scripts/"; fi
+  chmod -R a+rX "$dest/scripts" 2>/dev/null || true
+  find "$dest/scripts" -type f \( -name '*.sh' -o -name 'holding' -o -name '*.mjs' \) -exec chmod a+x {} \; 2>/dev/null || true
+  rm -rf "$tmp"
+  here="$dest/scripts"
+  return 0
+}
+
 if [ "${1:-}" = "--check" ]; then
   stamp="$HOME/.config/agents-holding/cache/update-check"; mkdir -p "$(dirname "$stamp")"
   [ -f "$stamp" ] && [ $(( $(date +%s) - $(stat -f %m "$stamp" 2>/dev/null || stat -c %Y "$stamp" 2>/dev/null || echo 0) )) -lt 86400 ] && exit 0
   touch "$stamp"
-  req="$(bash "$here/ah-cli.sh" client version 2>/dev/null | sed -n 's/.*required[^0-9]*\([0-9]\{8\}\).*/\1/p' | head -1)"
-  [ -n "$req" ] && [ "$(ver)" -lt "$req" ] 2>/dev/null || exit 0
-  echo "agents-holding client $(ver) is older than required $req."
+  req="$(bash "$here/ah-cli.sh" client version 2>/dev/null | sed -nE 's/.*required[^0-9]*([0-9]{8,10}).*/\1/p' | head -1)"
+  [ -n "$req" ] || exit 0
+  cur="$(ver)"; rn="$(norm_ver "$req")"
+  [ "$cur" -lt "$rn" ] 2>/dev/null || exit 0
+  n="$(behind "$cur" "$rn")"; echo "agents-holding client $(ver_raw) -> $req ($n updates behind)."
   if [ "${AH_AUTO_UPDATE:-}" = 1 ]; then exec bash "$here/update.sh" --yes; fi
   [ -t 0 ] || { echo "Run: holding update"; exit 0; }
   pick="$(node -e 'import("'"$here"'/menu.mjs").then(async m=>{const i=await m.select("Update now?",["Update now","Later"]);console.log(i)}).catch(()=>console.log(1))')"
   [ "$pick" = 0 ] && exec bash "$here/update.sh" --yes; exit 0
 fi
-before="$(ver)"; root="$(git -C "$here" rev-parse --show-toplevel 2>/dev/null || true)"
-echo "1/4 client scripts ($before)"
-if [ -n "$root" ]; then
+
+before_raw="$(ver_raw)"; before="$(ver)"
+root="$(git -C "$here" rev-parse --show-toplevel 2>/dev/null || true)"
+echo "1/4 client scripts ($before_raw)"
+if [ -n "$root" ] && [ -d "$root/.git" ] && git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+   && [ "$(cd "$here/.." && pwd 2>/dev/null)" != "$(cd "${AH_INSTALL_DIR:-$HOME/.agents-holding}" && pwd 2>/dev/null)" ]; then
+  # Dev checkout only (not the ~/.agents-holding package install)
   if [ -n "$(git -C "$root" status --porcelain -- "$here" 2>/dev/null)" ]; then echo "   local edits in $here: not pulling (commit or stash them, then rerun)";
   else git -C "$root" pull --ff-only -q 2>&1 | sed 's/^/   /' || echo "   pull failed (network?); continuing with the current scripts"; fi
-else echo "   $here is not a git checkout: reinstall from the package to update the scripts"; fi
-echo "   now $(ver)"
+else
+  echo "   package install: downloading latest agents-holding-free (${AH_BRANCH:-main})"
+  ah_refresh_package || true
+fi
+echo "   now $(ver_raw)"
+
 echo "2/4 native agent configs + sandbox profiles"
 for co in $(ls "$HOME/.config/agents-holding/state" 2>/dev/null); do
   for role in $(node -e 'try{const c=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(Object.keys(c.staff||{}).join(" "))}catch{}' "$HOME/.config/agents-holding/state/$co/policy.json" 2>/dev/null); do
@@ -51,8 +88,13 @@ echo "   (configs are also regenerated on every launch)"
 echo "3/4 slash commands"; bash "$here/sync-commands.sh" 2>&1 | tail -1 | sed 's/^/   /'
 echo "4/4 Jira Listener"
 lbl=com.agentsholding.jira-listener
-if launchctl print "gui/$(id -u)/$lbl" >/dev/null 2>&1; then launchctl kickstart -k "gui/$(id -u)/$lbl" && echo "   restarted"; 
+if launchctl print "gui/$(id -u)/$lbl" >/dev/null 2>&1; then launchctl kickstart -k "gui/$(id -u)/$lbl" && echo "   restarted";
 elif command -v systemctl >/dev/null && systemctl --user is-active -q agents-holding-listener 2>/dev/null; then systemctl --user restart agents-holding-listener && echo "   restarted";
 else echo "   not installed as a service (start: holding jira listen)"; fi
 ah_ensure_holding_path "$here/holding"
-echo "Done: client $before -> $(ver)  (holding on PATH: $(command -v holding 2>/dev/null || echo ~/.local/bin/holding))"
+after_raw="$(ver_raw)"; after="$(ver)"; n="$(behind "$before" "$after")"
+if [ "$before" -eq "$after" ] 2>/dev/null; then
+  echo "Done: client $before_raw -> $after_raw  (holding on PATH: $(command -v holding 2>/dev/null || echo ~/.local/bin/holding))"
+else
+  echo "Done: client $before_raw -> $after_raw ($n updates)  (holding on PATH: $(command -v holding 2>/dev/null || echo ~/.local/bin/holding))"
+fi
