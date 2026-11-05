@@ -11,6 +11,7 @@ usage() { cat <<'USAGE'
 usage: holding <noun> <verb> [args]   (chat: /<noun> <verb> ...; no verb = list/show)
   jira attach <KEY> <file...> | figma connect [--switch] | figma status | figma logout | figma export <url> [--out f.png] [--attach KEY] | atlassian connect [--switch] | atlassian status | atlassian logout | confluence page create|update <SPACE> "<title>" --file md [--attach png]
   update            update the client: scripts, agent configs + sandbox profiles, slash commands, restart the Jira Listener (safe to rerun; chat: /holding update)
+  skill private <name> | skill public <name>   set custom skill visibility (new skills default public)
   help [group|command]                the commands YOUR key can run (aliases: document, docs)
   staff list | add <role> [--agent P --model M --effort E] | remove <role>   (add: review the staff policy, arrow-key menu)
   staff policy show <staff|*> | set <staff|*> <permission> on|off | rule add|remove <staff|*> "<text>" | git set|unset <staff|*> <field> <value>
@@ -85,7 +86,7 @@ case "$noun" in
     set) if [ "${1:-}" = --default ]; then shift; exec node "$here/bind-cli.mjs" remembered set "$@"; fi; exec node "$here/bind-cli.mjs" "$@" ;;
     unset) exec node "$here/bind-cli.mjs" remembered unset "$@" ;;
     *) usage ;; esac ;;
-  skill) case "$verb" in add) exec node "$here/add-skill.mjs" "$@" ;; ""|list|browse|review|variants|library) srv "$@" ;; where|check|set|sync|consent|run) exec node "$here/skills.mjs" "$verb" "$@" ;; *) usage ;; esac ;;
+  skill) case "$verb" in add) exec node "$here/add-skill.mjs" "$@" ;; ""|list|browse|review|variants|library|private|public) srv "$@" ;; where|check|set|sync|consent|run) exec node "$here/skills.mjs" "$verb" "$@" ;; *) usage ;; esac ;;
   team|enterprise|usage) srv "$@" ;;  # server decides who may run these; everyone else gets the unknown-command help
   project) case "$verb" in
     add) set +e; node "$here/projects.mjs" add "$@" || exit $?
