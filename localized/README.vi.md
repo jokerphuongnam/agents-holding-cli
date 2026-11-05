@@ -54,7 +54,7 @@ Sau đó mở agent, xác thực `agents-holding` trên trình duyệt (tạo ke
 | `/holding feedback "<text>"` | Gửi góp ý cho owner |
 | `/holding update` | Cập nhật client trên máy |
 
-Trong Codex dùng `!holding …` để có câu trả lời tức thì, hoặc `/prompts:holding` và `/prompts:ceo`. Danh sách đầy đủ: chạy `holding help`.
+Dùng giống nhau trong Claude Code, Codex và CLI `grok` (Codex hỏi một lần để tin cậy hook). Danh sách đầy đủ: chạy `holding help`.
 
 ## Tài liệu
 

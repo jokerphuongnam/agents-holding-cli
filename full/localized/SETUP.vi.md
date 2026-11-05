@@ -76,7 +76,7 @@ Sau khi cài, các lệnh thuần dữ liệu được hook hoặc shell trả l
 |---|---|
 | CLI `grok` | `/holding key show`: hook UserPromptSubmit (`~/.grok/hooks/agents-holding.json`) trả lời ngay |
 | Claude Code | `/holding key show`: hook UserPromptSubmit trong `~/.claude/settings.json` trả lời ngay |
-| Codex CLI | `!holding key show` (lệnh shell cục bộ của Codex); slash command: `/prompts:holding`, `/prompts:ceo` |
+| Codex CLI | `/holding key show`: hook UserPromptSubmit trong `~/.codex/hooks.json` trả lời ngay (Codex hỏi một lần để tin cậy hook mới); `!holding key show` cũng dùng được |
 | Terminal bất kỳ | `holding key show` |
 
 Mỗi câu trả lời tức thì kết thúc bằng `(agents-holding: instant, no model)`.

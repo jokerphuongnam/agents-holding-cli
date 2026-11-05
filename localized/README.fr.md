@@ -54,7 +54,7 @@ Ouvrez ensuite votre agent, authentifiez `agents-holding` dans le navigateur (cr
 | `/holding feedback "<text>"` | Envoyer un avis au propriétaire |
 | `/holding update` | Mettre à jour le client local |
 
-Dans Codex, utilisez `!holding …` pour des réponses instantanées, ou `/prompts:holding` et `/prompts:ceo`. Liste complète : lancez `holding help`.
+Fonctionne de la même façon dans Claude Code, Codex et le CLI `grok` (Codex demande une fois de faire confiance au hook). Liste complète : lancez `holding help`.
 
 ## Documentation
 

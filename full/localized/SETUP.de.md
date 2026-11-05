@@ -76,7 +76,7 @@ Nach der Installation beantworten der Hook oder deine Shell reine Datenbefehle l
 |---|---|
 | CLI `grok` | `/holding key show`: der UserPromptSubmit-Hook (`~/.grok/hooks/agents-holding.json`) antwortet sofort |
 | Claude Code | `/holding key show`: der UserPromptSubmit-Hook in `~/.claude/settings.json` antwortet sofort |
-| Codex CLI | `!holding key show` (lokaler Shell-Escape von Codex); Slash-Befehle: `/prompts:holding`, `/prompts:ceo` |
+| Codex CLI | `/holding key show`: der UserPromptSubmit-Hook in `~/.codex/hooks.json` antwortet sofort (Codex fragt einmal, ob du dem neuen Hook vertraust); `!holding key show` geht auch |
 | Jedes Terminal | `holding key show` |
 
 Jede sofortige Antwort endet mit `(agents-holding: instant, no model)`.

@@ -54,7 +54,7 @@ grok mcp add --transport http agents-holding https://mznrffnvmhmiudvfuquk.supaba
 | `/holding feedback "<text>"` | 오너에게 피드백 보내기 |
 | `/holding update` | 로컬 클라이언트 업데이트 |
 
-Codex에서는 즉시 응답을 위해 `!holding …`을 쓰거나 `/prompts:holding`, `/prompts:ceo`를 사용하세요. 전체 목록: `holding help` 실행.
+Claude Code, Codex, `grok` CLI에서 똑같이 동작합니다(Codex는 훅 신뢰를 한 번 묻습니다). 전체 목록: `holding help` 실행.
 
 ## 문서
 

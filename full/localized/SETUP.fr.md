@@ -76,7 +76,7 @@ Après l'installation, les commandes qui renvoient seulement des données sont t
 |---|---|
 | CLI `grok` | `/holding key show`: le hook UserPromptSubmit (`~/.grok/hooks/agents-holding.json`) répond instantanément |
 | Claude Code | `/holding key show`: le hook UserPromptSubmit de `~/.claude/settings.json` répond instantanément |
-| Codex CLI | `!holding key show` (l'échappement shell local de Codex) ; commandes slash : `/prompts:holding`, `/prompts:ceo` |
+| Codex CLI | `/holding key show` : le hook UserPromptSubmit de `~/.codex/hooks.json` répond instantanément (Codex demande une fois de faire confiance au nouveau hook) ; `!holding key show` fonctionne aussi |
 | N'importe quel terminal | `holding key show` |
 
 Chaque réponse instantanée se termine par `(agents-holding: instant, no model)`.

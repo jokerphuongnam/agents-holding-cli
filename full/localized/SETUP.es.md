@@ -76,7 +76,7 @@ Tras la instalación, los comandos que solo devuelven datos los responde localme
 |---|---|
 | CLI `grok` | `/holding key show`: el hook UserPromptSubmit (`~/.grok/hooks/agents-holding.json`) responde al instante |
 | Claude Code | `/holding key show`: el hook UserPromptSubmit de `~/.claude/settings.json` responde al instante |
-| Codex CLI | `!holding key show` (el escape a shell local de Codex); comandos de barra: `/prompts:holding`, `/prompts:ceo` |
+| Codex CLI | `/holding key show`: el hook UserPromptSubmit de `~/.codex/hooks.json` responde al instante (Codex pide una vez confiar en el hook nuevo); `!holding key show` también funciona |
 | Cualquier terminal | `holding key show` |
 
 Cada respuesta instantánea termina con `(agents-holding: instant, no model)`.

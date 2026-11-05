@@ -76,7 +76,7 @@ agents-holding への **最初の** メッセージ（例：`/holding key show`�
 |---|---|
 | CLI `grok` | `/holding key show`: UserPromptSubmit フック（`~/.grok/hooks/agents-holding.json`）が即答 |
 | Claude Code | `/holding key show`: `~/.claude/settings.json` の UserPromptSubmit フックが即答 |
-| Codex CLI | `!holding key show` （Codex のローカルシェル実行）。スラッシュコマンド：`/prompts:holding`、`/prompts:ceo` |
+| Codex CLI | `/holding key show`：`~/.codex/hooks.json` の UserPromptSubmit フックが即答（新しいフックの信頼確認が一度だけ出ます）。`!holding key show` も使えます |
 | 任意のターミナル | `holding key show` |
 
 即答の最後には `(agents-holding: instant, no model)` が付きます。

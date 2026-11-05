@@ -76,7 +76,7 @@ agents-holding에 보내는 **첫** 메시지(예: `/holding key show`)에서는
 |---|---|
 | CLI `grok` | `/holding key show`: UserPromptSubmit 훅(`~/.grok/hooks/agents-holding.json`)이 즉시 응답 |
 | Claude Code | `/holding key show`: `~/.claude/settings.json`의 UserPromptSubmit 훅이 즉시 응답 |
-| Codex CLI | `!holding key show` (Codex 로컬 셸 실행). 슬래시 명령: `/prompts:holding`, `/prompts:ceo` |
+| Codex CLI | `/holding key show`: `~/.codex/hooks.json`의 UserPromptSubmit 훅이 즉시 응답(새 훅 신뢰 확인을 한 번 묻습니다); `!holding key show`도 됩니다 |
 | 아무 터미널 | `holding key show` |
 
 즉시 응답은 항상 `(agents-holding: instant, no model)`로 끝납니다.

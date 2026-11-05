@@ -76,7 +76,7 @@ https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp
 |---|---|
 | CLI `grok` | `/holding key show`: UserPromptSubmit hook（`~/.grok/hooks/agents-holding.json`）即时回答 |
 | Claude Code | `/holding key show`: `~/.claude/settings.json` 中的 UserPromptSubmit hook 即时回答 |
-| Codex CLI | `!holding key show` （Codex 的本地 shell 转义）；斜杠命令：`/prompts:holding`、`/prompts:ceo` |
+| Codex CLI | `/holding key show`：`~/.codex/hooks.json` 中的 UserPromptSubmit hook 即时回答（Codex 会询问一次是否信任新 hook）；`!holding key show` 同样可用 |
 | 任意终端 | `holding key show` |
 
 每个即时回答都以 `(agents-holding: instant, no model)` 结尾。
