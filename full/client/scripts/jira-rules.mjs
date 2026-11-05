@@ -119,6 +119,7 @@ async function main(argv) {
   const flag = (n) => { const i = argv.indexOf(n); return i < 0 ? null : argv.splice(i, 2)[1]; };
   const has = (n) => { const i = argv.indexOf(n); if (i < 0) return false; argv.splice(i, 1); return true; };
   flag("--company"); // company was already resolved from this option
+  const explicitEnable = argv.includes("--enable");
   const templateProject = flag("--project")?.toUpperCase();
   const { defaultProcess } = await import("./jira-rules.mjs");
   const isDefault = await defaultProcess(co, async (name, args) => {
