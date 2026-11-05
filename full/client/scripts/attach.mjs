@@ -1,5 +1,5 @@
 // holding jira attach | figma connect|export | confluence page create|update. Tokens stay in the Keychain and in memory; never printed.
-import { readFileSync, existsSync, writeFileSync, statSync } from "node:fs";
+import { readFileSync, existsSync, writeFileSync, statSync, mkdirSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { execFileSync } from "node:child_process";
@@ -7,13 +7,56 @@ import { jiraToken } from "./lean.mjs";
 
 const flag = (a, f) => { const i = a.indexOf(f); if (i < 0) return undefined; const v = a[i + 1]; a.splice(i, 2); return v; };
 const flags = (a, f) => { const out = []; let v; while ((v = flag(a, f)) !== undefined) out.push(v); return out; };
-/** Atlassian access: OAuth 3LO (holding atlassian connect) first, else the Jira API token from holding jira connect. */
+/** Persist site (and account label) for tools that only need the site — never the token. */
+export function syncJiraConfig(tok, home = homedir()) {
+  if (!tok?.site) return;
+  const dir = join(home, ".config/agents-holding"); try { mkdirSync(dir, { recursive: true }); } catch {}
+  const path = join(dir, "jira.json");
+  let cur = {}; try { cur = JSON.parse(readFileSync(path, "utf8")); } catch {}
+  const next = { ...cur, site: String(tok.site).replace(/\/$/, ""), oauth: true };
+  if (tok.account) next.account = tok.account;
+  if (tok.email) next.email = tok.email;
+  // Drop legacy keychain_service when on OAuth so status is unambiguous; keep email if user had API token for fallback.
+  writeFileSync(path, JSON.stringify(next, null, 2) + "\n", { mode: 0o600 });
+}
+function oauthBases(t) {
+  const cloud = t.cloud_id;
+  return {
+    jira: `https://api.atlassian.com/ex/jira/${cloud}/rest/api/3`,
+    agile: `https://api.atlassian.com/ex/jira/${cloud}/rest/agile/1.0`,
+    wiki: `https://api.atlassian.com/ex/confluence/${cloud}/wiki/rest/api`,
+    site: t.site, cloud_id: cloud, kind: "oauth",
+    auth: () => `Bearer ${t.access_token}`,
+  };
+}
+function apiTokenBases(cfg, tk) {
+  const site = cfg.site.replace(/\/$/, "");
+  return {
+    jira: `${site}/rest/api/3`, agile: `${site}/rest/agile/1.0`, wiki: `${site}/wiki/rest/api`,
+    site, email: cfg.email, kind: "api_token",
+    auth: () => "Basic " + Buffer.from(`${cfg.email}:${tk}`).toString("base64"),
+  };
+}
+/** Resolve Atlassian access without prompting. OAuth Keychain first, else API token from jira.json + Keychain. */
+export async function atlassianToken(home = homedir()) {
+  const O = await import("./oauth.mjs");
+  const t = await O.token("atlassian");
+  if (t?.cloud_id && t?.access_token) { syncJiraConfig(t, home); return oauthBases(t); }
+  try {
+    const cfg = JSON.parse(readFileSync(join(home, ".config/agents-holding/jira.json"), "utf8"));
+    const tk = jiraToken(cfg);
+    if (tk) return apiTokenBases(cfg, tk);
+  } catch {}
+  return null;
+}
+/** Atlassian access: existing token, or (interactive) open browser OAuth then resume. Never called by install/company create. */
 export async function atlassian(home = homedir()) {
-  const O = await import("./oauth.mjs"); let t = await O.token("atlassian");
-  if (t?.cloud_id) return { jira: `https://api.atlassian.com/ex/jira/${t.cloud_id}/rest/api/3`, wiki: `https://api.atlassian.com/ex/confluence/${t.cloud_id}/wiki/rest/api`, site: t.site, auth: () => `Bearer ${t.access_token}` };
-  try { const cfg = JSON.parse(readFileSync(join(home, ".config/agents-holding/jira.json"), "utf8")); const tk = jiraToken(cfg);
-    if (tk) { const site = cfg.site.replace(/\/$/, ""); return { jira: `${site}/rest/api/3`, wiki: `${site}/wiki/rest/api`, site, auth: () => "Basic " + Buffer.from(`${cfg.email}:${tk}`).toString("base64") }; } } catch {}
-  t = await O.ensure("atlassian"); return { jira: `https://api.atlassian.com/ex/jira/${t.cloud_id}/rest/api/3`, wiki: `https://api.atlassian.com/ex/confluence/${t.cloud_id}/wiki/rest/api`, site: t.site, auth: () => `Bearer ${t.access_token}` };
+  const have = await atlassianToken(home); if (have) return have;
+  const O = await import("./oauth.mjs");
+  const t = await O.ensure("atlassian");
+  if (!t?.cloud_id) throw new Error(O.connectHint("atlassian"));
+  syncJiraConfig(t, home);
+  return oauthBases(t);
 }
 const ok = async (r, what) => { if (r.ok) return r.status === 204 ? null : r.json(); let d = ""; try { const j = await r.json(); d = (j.errorMessages ?? [j.message ?? ""]).join("; "); } catch {} throw new Error(`${what} -> ${r.status}${d ? `: ${d}` : ""}`); };
 function form(files) { const fd = new FormData(); for (const f of files) { if (!existsSync(f) || !statSync(f).isFile()) throw new Error(`file not found: ${f}`); fd.append("file", new Blob([readFileSync(f)]), basename(f)); } return fd; }
@@ -88,11 +131,15 @@ if (process.argv[1] && resolve(process.argv[1]) === new URL(import.meta.url).pat
   try {
     if (what === "jira-attach") { await permit("jira_attach", { company, staff, mcp }); const key = String(a.shift() ?? "").toUpperCase(); await meterUpload("jira_attach", a, { company, staff, mcp, dry }); console.log(await jiraAttach(key, a, { dry })); }
     else if (what === "figma-connect") console.log(await figmaConnect({ switch: a.includes("--switch") }));
-    else if (what === "atlassian-connect") console.log(await (await import("./oauth.mjs")).connect("atlassian", { switch: a.includes("--switch") }));
+    else if (what === "atlassian-connect" || what === "jira-connect") {
+      const msg = await (await import("./oauth.mjs")).connect("atlassian", { switch: a.includes("--switch") });
+      try { const tok = await (await import("./oauth.mjs")).token("atlassian"); if (tok) syncJiraConfig(tok); } catch {}
+      console.log(msg.replace(/^atlassian/, "jira"));
+    }
     else if (what === "figma-logout") console.log((await import("./oauth.mjs")).logout("figma"));
-    else if (what === "atlassian-logout") console.log((await import("./oauth.mjs")).logout("atlassian"));
+    else if (what === "atlassian-logout" || what === "jira-logout") console.log((await import("./oauth.mjs")).logout("atlassian").replace(/^atlassian/, "jira"));
     else if (what === "figma-status") console.log(await (await import("./oauth.mjs")).status("figma"));
-    else if (what === "atlassian-status") console.log(await (await import("./oauth.mjs")).status("atlassian"));
+    else if (what === "atlassian-status" || what === "jira-status") console.log((await (await import("./oauth.mjs")).status("atlassian")).replace(/^atlassian/, "jira"));
     else if (what === "figma-export") { await permit("figma_export", { company, staff, mcp }); const out = flag(a, "--out"), att = flag(a, "--attach"); await meterUpload("figma_export", [], { company, staff, mcp, dry }); const f = await figmaExport(a[0], out); console.log(`exported ${f}`);
       if (att) { await permit("jira_attach", { company, staff, mcp }); await meterUpload("jira_attach", [f], { company, staff, mcp, dry }); console.log(await jiraAttach(att.toUpperCase(), [f], { dry })); } }
     else if (what === "confluence-page") { await permit("confluence_write", { company, staff, mcp }); const act = a.shift(), file = flag(a, "--file"), att = flags(a, "--attach"); await meterUpload("confluence_write", [file, ...att].filter(Boolean), { company, staff, mcp, dry }); console.log(await confluencePage(act, a[0], a[1], file, att, { dry })); }

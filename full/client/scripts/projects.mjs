@@ -4,7 +4,7 @@
 //                       [--auto-pr on|off|server] [--agent grok|claude|codex] [--workflow NAME] [--no-validate]
 //   holding project remove [--repo DIR|NAME] [--jira-project KEY]     (no key = remove the repo)
 //   holding project list [--json]
-// Validation uses Jira REST with the API token from the Keychain (jira.json names the service; token never printed).
+// Validation uses Jira lazily (OAuth Keychain or API token). Install / company create never call this.
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
@@ -20,20 +20,28 @@ const jiraCfg = (() => { try { return JSON.parse(readFileSync(join(home, ".confi
 const reg = () => R.load(home) ?? R.empty();
 
 async function validate(site, key) {
-  if (!jiraCfg?.keychain_service) return "skipped (no ~/.config/agents-holding/jira.json; run: holding jira connect <site> <email>)";
-  const tok = L.jiraToken(jiraCfg); if (!tok) die(`no Jira token in Keychain service ${jiraCfg.keychain_service} (run: holding jira connect <site> <email>)`);
-  const r = await fetch(`${site.replace(/\/$/, "")}/rest/api/3/project/${encodeURIComponent(key)}`, { headers: { Authorization: "Basic " + Buffer.from(`${jiraCfg.email}:${tok}`).toString("base64"), Accept: "application/json" } });
-  if (!r.ok) die(`Jira project ${key} not found on ${site} (HTTP ${r.status})`);
+  const { atlassian } = await import("./attach.mjs");
+  let A;
+  try { A = await atlassian(home); }
+  catch (e) { return `skipped (${e.message})`; }
+  const base = A.jira || `${site.replace(/\/$/, "")}/rest/api/3`;
+  const r = await fetch(`${base}/project/${encodeURIComponent(key)}`, { headers: { Authorization: A.auth(), Accept: "application/json" } });
+  if (!r.ok) die(`Jira project ${key} not found on ${A.site || site} (HTTP ${r.status})`);
   const j = await r.json(); return `ok (${j.name})`;
 }
 
+async function main() {
 if (cmd === "add") {
   const repo = resolve(opt("--repo", process.cwd()));
   if (!existsSync(join(repo, ".git"))) die(`${repo} is not a git repo (run inside the repo or pass --repo)`);
   let company = opt("--company"); if (!company) { try { company = JSON.parse(readFileSync(join(repo, ".agents/company.json"), "utf8")).company; } catch {} }
   if (!company) die("which company? pass --company ID (or run /ceo in the repo to create .agents/company.json)");
   const keys = all("--jira-project"); if (!keys.length) die("pass --jira-project KEY (repeat for several boards)");
-  const site = opt("--site", jiraCfg?.site); if (!site) die("pass --site https://<you>.atlassian.net");
+  let site = opt("--site", jiraCfg?.site);
+  if (!site) {
+    try { const A = await (await import("./attach.mjs")).atlassianToken(home); site = A?.site; } catch {}
+  }
+  if (!site) die("pass --site https://<you>.atlassian.net (or: holding jira connect)");
   const ap = opt("--auto-pr"); const settings = { ...(ap && { auto_pr: ap === "on" ? true : ap === "off" ? false : null }), ...(opt("--agent") && { agent: opt("--agent") }), ...(opt("--workflow") && { workflow: opt("--workflow") }) };
   const r = reg();
   for (const k of keys) {
@@ -53,3 +61,5 @@ if (cmd === "add") {
   else if (!r.projects.length) console.log("no projects (holding project add --jira-project KEY inside a repo)");
   else for (const p of r.projects) console.log(`${p.name}  ${p.path}\n  boards: ${p.boards.map((b) => `${b.project_key}@${b.company}`).join(", ")}\n  settings: ${JSON.stringify(p.settings)}`);
 } else die("usage: projects.mjs add|remove|list");
+}
+main().catch((e) => { console.error(e.message || e); process.exit(1); });
