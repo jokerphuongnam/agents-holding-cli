@@ -54,8 +54,8 @@ if [ "$(uname -s)" = Darwin ] && [ -z "${AH_SKIP_KEYCHAIN:-}" ]; then
   if ! security find-generic-password -s agents-holding-device -a "$USER" -w >/dev/null 2>&1; then
     uuid="$(ioreg -rd1 -c IOPlatformExpertDevice 2>/dev/null | awk -F'"' '/IOPlatformUUID/{print $4}')"
     did="mac-$(printf 'agents-holding:%s' "${uuid:-unknown}" | shasum -a 256 | cut -c1-32)"
-    # -T "" allows this app; never prompt in agent bootstrap (AH_NONINTERACTIVE)
-    if ! security add-generic-password -U -T "" -s agents-holding-device -a "$USER" -w "$did" >/dev/null 2>&1; then
+    # default ACL trusts /usr/bin/security so later reads never prompt in agent bootstrap (AH_NONINTERACTIVE)
+    if ! security add-generic-password -U -s agents-holding-device -a "$USER" -w "$did" >/dev/null 2>&1; then
       progress 3/5 "Keychain write skipped (locked or denied); OAuth/device bind will retry later"
     else
       progress 3/5 "device id ready"
@@ -72,12 +72,14 @@ MCP_URL="${AH_MCP_URL:-https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp
 if [ -n "${AH_PAIR_CODE:-}" ] && [ "$(uname -s)" = Darwin ] && ! security find-generic-password -s "${AH_KC_LICENSE:-agents-holding-license}" -a "$USER" -w >/dev/null 2>&1; then
   resp="$(curl -fsS --retry 2 -X POST "${MCP_URL%/}/pair" -H "Content-Type: application/json" --data "{\"code\":\"$AH_PAIR_CODE\"}" 2>/dev/null || true)"
   tok="$(printf '%s' "$resp" | sed -n 's/.*"token" *: *"\(aho_at_[0-9a-f]*\)".*/\1/p')"
-  if [ -n "$tok" ] && security add-generic-password -U -T "" -s "${AH_KC_LICENSE:-agents-holding-license}" -a "$USER" -w "$tok" >/dev/null 2>&1; then progress 4/5 "paired (token in Keychain)"
+  if [ -n "$tok" ] && security add-generic-password -U -s "${AH_KC_LICENSE:-agents-holding-license}" -a "$USER" -w "$tok" >/dev/null 2>&1; then progress 4/5 "paired (token in Keychain)"
   else progress 4/5 "pairing failed (code expired or used): ask your agent to run install again"; fi
 else progress 4/5 "already paired or no pairing code (skipped)"; fi
 
 progress 4/5 "slash commands + instant hooks"
 SYNC=(); [ -d "$HOME/.claude" ] && SYNC+=(--claude)
+# Codex CLI: custom prompts in ~/.codex/prompts -> /prompts:holding, /prompts:ceo (keep the Grok default dir too)
+[ -d "$HOME/.codex" ] && SYNC+=(--dir "$HOME/.grok/commands" --dir "$HOME/.codex/prompts")
 if [ -x "$DEST/scripts/sync-commands.sh" ]; then
   bash "$DEST/scripts/sync-commands.sh" ${SYNC[@]+"${SYNC[@]}"} 2>&1 | tail -5 | sed 's/^/[bootstrap 4\/5] /' || true
 else
