@@ -9,6 +9,8 @@ import * as L from "./lean.mjs";
 import { runStaff, runBatch } from "./provider-run.mjs";
 import * as S from "./subagent.mjs";
 import { resolveCompany, localCompanies } from "./company.mjs";
+import { mcpCall } from "./mcp-client.mjs";
+import { localStaff, rosterEntry } from "./staff-roster.mjs";
 import { readFileSync as readFileSync_AH } from "node:fs";
 const AH_CLIENT_VERSION = (() => { try { return readFileSync_AH(new URL("./VERSION", import.meta.url), "utf8").trim(); } catch { return "0"; } })();
 const a = process.argv.slice(2), flag = (n) => a.includes(n), opt = (n) => { const i = a.indexOf(n); return i >= 0 ? a[i + 1] : undefined; };
@@ -27,13 +29,18 @@ async function mcp(name, args) {
   const j = await r.json(); if (j.error) throw new Error(j.error.message); const t = j.result?.content?.[0]?.text ?? "";
   if (j.result?.isError) throw new Error(t); try { return JSON.parse(t); } catch { return t; }
 }
+// Authoritative access check: always before any provider run, including --proceed/batch.
+const localRole = rosterEntry(localStaff(process.cwd(), company), staff);
+try { await mcpCall("staff_access", { company, role: localRole.id }); }
+catch (e) { console.error(e.message); process.exit(5); }
+
 
 const cfg = L.loadAgentCfg(process.env.HOME, company);
 const lang = L.pickLang(cfg.lang, task); L.setLang(lang);
 const code = /-dev$|engineer|developer/.test(staff);
 // staffing gate (same logic as the Jira path): no staff with the role -> fail fast; role without the skill -> ask 1/2/3
 if (!process.argv.includes("--proceed")) {
-  const st = await mcp("staffing_check", { company, request: task, staff, lang }).catch((e) => ({ kind: "ok", error: e.message }));
+  const st = await mcp("staffing_check", { company, request: task, staff: localRole.id, lang }).catch((e) => ({ kind: "ok", error: e.message }));
   if (st?.kind && st.kind !== "ok") {
     // Pack-skill attachments are local: if they cover every missing skill, continue.
     if (st.kind === "needs_decision" && Array.isArray(st.missing_skills) && st.missing_skills.length
@@ -46,10 +53,10 @@ if (!process.argv.includes("--proceed")) {
     }
   }
 }
-if (flag("--batch")) { const parts = task.split(";;").map((x) => x.trim()).filter(Boolean); const bb = await mcp("staff_brief", { company, role: staff, text: parts.join("\n"), max_skills: 2 }).catch(() => null);
+if (flag("--batch")) { const parts = task.split(";;").map((x) => x.trim()).filter(Boolean); const bb = await mcp("staff_brief", { company, role: localRole.id, text: parts.join("\n"), max_skills: 2 }).catch(() => null);
   const rs = await runBatch(parts.map((t) => ({ role: staff, kind: code ? "code" : "text", task: t })), { company, cwd: process.cwd(), noTools: !code, context: L.contextOf({ brief: bb, lang }), system: "Answer each task yourself now." });
   rs.forEach((x, n) => console.log(`${n + 1}. ${S.renderShort(x)}`)); process.exit(rs.some((x) => x.status === "blocked") ? 1 : 0); }
-let b = await mcp("staff_brief", { company, role: staff, text: task, max_skills: 2 }).catch(() => null);
+let b = await mcp("staff_brief", { company, role: localRole.id, text: task, max_skills: 2 }).catch(() => null);
 b = enrichBriefWithPackSkills(company, staff, b);
 function repoFor(co) { const here = process.cwd(); try { const c = localCompanies().find((x) => x.company === co); const rs = c?.repos ?? []; if (!rs.length || rs.some((r) => here === r || here.startsWith(r + "/"))) return here; return rs[0]; } catch { return here; } }
 const r = await runStaff({ company, role: staff, kind: code ? "code" : "text", noTools: !code, cwd: repoFor(company),

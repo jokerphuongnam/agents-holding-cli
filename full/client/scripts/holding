@@ -79,6 +79,7 @@ case "$noun" in
   -h|--help) echo "Run: holding help   (commands available for your key; holding help <group|command> for details)"; exec node "$here/help.mjs" ;;
   staff) case "$verb" in
     ""|list) set +e; out="$(bash "$here/ah-cli.sh" staff list "$@")"; rc=$?; printf '%s\n' "$out" | node "$here/staffs-local.mjs" "${AH_COMPANY:-}" "$@"; exit $rc ;;
+    sync) exec node "$here/staff-sync.mjs" "$@" ;;
     add) role="${1:-}"; bind=(); rest=(); while [ $# -gt 0 ]; do case "$1" in --agent|--provider|--model|--effort|--command|--preset) bind+=("$1" "$2"); shift 2 ;; *) rest+=("$1"); shift ;; esac; done
       bash "$here/ah-cli.sh" staff add ${rest[@]+"${rest[@]}"} || exit $?; node "$here/bind-cli.mjs" "$role" ${bind[@]+"${bind[@]}"} || exit $?
       exec node "$here/policy.mjs" init "$role" ${AH_COMPANY:+--company "$AH_COMPANY"} ;;  # role defaults + review menu (AH_NONINTERACTIVE=1: defaults)

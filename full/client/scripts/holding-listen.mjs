@@ -8,6 +8,8 @@ import * as O from "./outbound.mjs";
 import { localMeta, crawlPublic } from "./skills.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { mcpCall } from "./mcp-client.mjs";
+import { localStaff, rosterEntry } from "./staff-roster.mjs";
 import { randomUUID } from "node:crypto";
 import { homedir, hostname } from "node:os";
 import { join, resolve } from "node:path";
@@ -374,6 +376,11 @@ function spawnGrok(gargs, out, issue, sid, o = {}) {
 // ---- lean run: scripts drive the stages, the model only writes text/code (see lean.mjs) ----
 let stageModels = {}; // flow per-stage models of the current run (next_action model/chain[].model), honored by leanModel
 async function leanModel(kind, issue, stage, prompt, role = null, context = null) {
+  if (role) {
+    const id = rosterEntry(localStaff(process.cwd(), company), role).id;
+    // Never use a cached roster: check before every listener agent execution.
+    await mcpCall("staff_access", { company, role: id });
+  }
   const sid = randomUUID(), out = join(logDir, `run-${Date.now()}.log`), buf = [];
   const text = kind !== "code", schema = kind === "tech" ? L.TECH_SCHEMA : kind === "habits" ? L.HABITS_SCHEMA : text ? L.TEXT_SCHEMA : L.CODE_SCHEMA, system = kind === "tech" ? L.TECH_SYSTEM : kind === "habits" ? L.HABITS_SYSTEM : text ? L.TEXT_SYSTEM : null;
   const rsv = L.resolveAgent({ cfg: { agent: runSettings?.agent, model: runSettings?.model, text_model: runSettings?.text_model, ...L.loadAgentCfg(homedir(), company) }, text, role, stageModel: stageModels[stage] ?? null });
@@ -464,7 +471,7 @@ async function leanRunInner(p, na, depth, vis) {
   vis.briefs ??= {};
   const brief = async (role) => { // persona + 2 relevant own skills, summaries only (~1.5k tokens max), once per role per run
     if (!role || process.env.AH_BRIEF === "0") return null;
-    if (!(role in vis.briefs)) { try { vis.briefs[role] = await mcp("staff_brief", { company, role, text: `${iss.summary}\n${iss.description}`.slice(0, 2000), max_skills: 2 }); } catch (e) { log(`staff_brief ${role} failed: ${e.message}`); vis.briefs[role] = null; } }
+    if (!(role in vis.briefs)) { try { vis.briefs[role] = await mcp("staff_brief", { company, role: rosterEntry(localStaff(process.cwd(), company), role).id, text: `${iss.summary}\n${iss.description}`.slice(0, 2000), max_skills: 2 }); } catch (e) { if (/plan limit|not active/.test(e.message)) throw e; log(`staff_brief ${role} failed: ${e.message}`); vis.briefs[role] = null; } }
     return enrichBriefWithPackSkills(company, role, vis.briefs[role]);
   };
   const say = async (staff, t0, kind = null) => { const t = staff === false ? t0 : `${L.staffTag(staff)} ${t0}`; // every comment: [agent-holding] [<staff name>] ...
