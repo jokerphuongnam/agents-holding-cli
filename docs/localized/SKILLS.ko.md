@@ -57,3 +57,7 @@ Steps the staff should follow...
 - 공개 스킬이 공유되지 않음: 파일에 비밀이 있는지 확인 후 `holding skill sync --dry-run`.
 
 함께 보기: [명령어 안내](../COMMANDS.md)
+
+## Dependency (skill-pack)
+
+`holding dependency add <git-url>`로 스킬/스크립트 git 저장소 전체를 추가합니다. 팩은 프로젝트 밖이며, 스크립트 실행 전 `holding dependency consent`가 필요합니다. COMMANDS.md → dependency.

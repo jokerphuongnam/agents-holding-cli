@@ -136,6 +136,31 @@
 |---|---|---|
 | `holding feedback "<text>"` | フィードバックを送る | `holding feedback "the inbox is great"` |
 
+
+
+## codegraph
+
+```bash
+holding codegraph list|detect|status|use <name>|clear
+```
+
+Auto-detect PATH/MCP/index; 0→prism, 1→silent, several→ask once per company.
+
+## dependency
+
+スキル／スクリプト一式の git リポジトリを追加し、各エージェントが読めるようにします。パックはプロジェクト外（`~/.agents-holding/packs/<name>`）に clone；company は参照行のみ保存します。
+
+```bash
+holding dependency add <git-url>
+holding dependency list
+holding dependency update <name|url>
+holding dependency remove <name|url>
+holding dependency consent <name>
+holding dependency run <name> <script>
+```
+
+パックのスキル／コマンドは Grok・Claude・Codex・ローカル AI 向けに変換されます。スクリプトは consent 後のみ実行。
+
 ## 更新
 
 | コマンド | 内容 | 例 |

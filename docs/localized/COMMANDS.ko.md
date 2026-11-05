@@ -136,6 +136,31 @@
 |---|---|---|
 | `holding feedback "<text>"` | 피드백 보내기 | `holding feedback "the inbox is great"` |
 
+
+
+## codegraph
+
+```bash
+holding codegraph list|detect|status|use <name>|clear
+```
+
+Auto-detect PATH/MCP/index; 0→prism, 1→silent, several→ask once per company.
+
+## dependency
+
+스킬/스크립트 git 저장소(팩)를 추가해 모든 에이전트가 읽게 합니다. 팩은 프로젝트 밖(`~/.agents-holding/packs/<name>`)에 clone되며 company는 참조만 저장합니다.
+
+```bash
+holding dependency add <git-url>
+holding dependency list
+holding dependency update <name|url>
+holding dependency remove <name|url>
+holding dependency consent <name>
+holding dependency run <name> <script>
+```
+
+팩 스킬/명령은 Grok, Claude, Codex, 로컬 AI용으로 변환됩니다. 스크립트는 consent 후에만 실행됩니다.
+
 ## 업데이트
 
 | 명령 | 설명 | 예시 |

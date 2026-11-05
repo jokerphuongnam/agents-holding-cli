@@ -136,6 +136,31 @@
 |---|---|---|
 | `holding feedback "<text>"` | 发送反馈 | `holding feedback "the inbox is great"` |
 
+
+
+## codegraph
+
+```bash
+holding codegraph list|detect|status|use <name>|clear
+```
+
+Auto-detect PATH/MCP/index; 0→prism, 1→silent, several→ask once per company.
+
+## dependency
+
+添加一整仓技能/脚本 git 依赖，供所有 agent 阅读。包克隆到项目外（`~/.agents-holding/packs/<name>`）；公司只保存引用行。
+
+```bash
+holding dependency add <git-url>
+holding dependency list
+holding dependency update <name|url>
+holding dependency remove <name|url>
+holding dependency consent <name>
+holding dependency run <name> <script>
+```
+
+包内技能/命令会适配 Grok、Claude、Codex 与本地 AI。脚本需先 consent 才能运行。
+
 ## 更新
 
 | 命令 | 作用 | 示例 |

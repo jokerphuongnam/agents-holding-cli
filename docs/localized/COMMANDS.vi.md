@@ -136,6 +136,37 @@ Mọi lệnh bạn dùng được với key của mình. Trong chat gõ `/holdin
 |---|---|---|
 | `holding feedback "<text>"` | Gửi góp ý | `holding feedback "the inbox is great"` |
 
+
+
+## codegraph
+
+Chọn backend code-graph cho staff `code-graph` (theo company).
+
+```bash
+holding codegraph list
+holding codegraph detect
+holding codegraph status
+holding codegraph use <name>
+holding codegraph clear
+```
+
+Tự phát hiện CLI/MCP/index trên máy; không có gì → prism; một cái → dùng im; nhiều cái → hỏi một lần rồi `use`.
+
+## dependency
+
+Thêm một repo git skill-pack để mọi agent đọc được skill/lệnh trong đó. Pack được clone ngoài project (`~/.agents-holding/packs/<name>`); company chỉ lưu một dòng tham chiếu.
+
+```bash
+holding dependency add <git-url>
+holding dependency list
+holding dependency update <name|url>
+holding dependency remove <name|url>
+holding dependency consent <name>
+holding dependency run <name> <script>
+```
+
+Skill/lệnh trong pack được chuyển cho Grok, Claude, Codex và AI local. Script trong pack không tự chạy — cần consent trước.
+
 ## Cập nhật
 
 | Lệnh | Chức năng | Ví dụ |

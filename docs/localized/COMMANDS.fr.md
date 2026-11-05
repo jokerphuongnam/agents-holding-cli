@@ -143,3 +143,28 @@ Toutes les commandes disponibles avec votre clé. Dans le chat, tapez `/holding 
 | `holding update` | Met à jour le client, les commandes et le Jira Listener | `holding update` |
 
 Voir aussi : [Compétences](../SKILLS.md). Lancez `holding help` pour voir ce que votre clé permet.
+
+
+## codegraph
+
+```bash
+holding codegraph list|detect|status|use <name>|clear
+```
+
+Auto-detect PATH/MCP/index; 0→prism, 1→silent, several→ask once per company.
+
+## dependency
+
+Ajoutez un dépôt git skill-pack pour que tous les agents puissent le lire. Le pack est cloné hors du projet (`~/.agents-holding/packs/<name>`) ; la company ne stocke qu’une référence.
+
+```bash
+holding dependency add <git-url>
+holding dependency list
+holding dependency update <name|url>
+holding dependency remove <name|url>
+holding dependency consent <name>
+holding dependency run <name> <script>
+```
+
+Skills/commandes du pack adaptées pour Grok, Claude, Codex et l’IA locale. Les scripts exigent un consent.
+
