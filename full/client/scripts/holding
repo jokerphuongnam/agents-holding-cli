@@ -10,6 +10,7 @@ n=$#; i=0; while [ $i -lt $n ]; do x="$1"; shift; i=$((i+1)); case "$x" in @?*) 
 usage() { cat <<'USAGE'
 usage: holding <noun> <verb> [args]   (chat: /<noun> <verb> ...; no verb = list/show)
   jira attach <KEY> <file...> | figma connect [--switch] | figma status | figma logout | figma export <url> [--out f.png] [--attach KEY] | atlassian connect [--switch] | atlassian status | atlassian logout | confluence page create|update <SPACE> "<title>" --file md [--attach png]
+  codegraph list|detect|status|use <name>|clear   code-graph backend (per company; auto-detect + prism fallback)
   update            update the client: scripts, agent configs + sandbox profiles, slash commands, restart the Jira Listener (safe to rerun; chat: /holding update)
   skill private <name> | skill public <name>   set custom skill visibility (new skills default public)
   role private <name> | role public <name>     private roles never sync (process steps → private-role-<hash>)
@@ -64,6 +65,9 @@ case "$noun" in update|upgrade|help|document|docs|-h|--help) ;; *) [ "${AH_NO_UP
 case "$noun" in
   update|upgrade) exec bash "$here/update.sh" ${verb:+"$verb"} "$@" ;;
   uninstall) exec bash "$here/uninstall-local.sh" ${verb:+"$verb"} "$@" ;;
+  codegraph|code-graph) case "${verb:-status}" in
+    ""|list|detect|status|resolve|use|clear|help) exec node "$here/codegraph.mjs" "${verb:-status}" "$@" ;;
+    *) exec node "$here/codegraph.mjs" "$verb" "$@" ;; esac ;;
   figma) case "$verb" in connect) exec node "$here/attach.mjs" figma-connect "$@" ;; status) exec node "$here/attach.mjs" figma-status ;; logout) exec node "$here/attach.mjs" figma-logout ;; export) exec node "$here/attach.mjs" figma-export "$@" ;; *) usage ;; esac ;;
   atlassian) case "$verb" in connect) exec node "$here/attach.mjs" atlassian-connect "$@" ;; status) exec node "$here/attach.mjs" atlassian-status ;; logout) exec node "$here/attach.mjs" atlassian-logout ;; *) usage ;; esac ;;
   confluence) case "$verb" in page) exec node "$here/attach.mjs" confluence-page "$@" ;; *) usage ;; esac ;;

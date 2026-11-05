@@ -136,6 +136,21 @@ Every command you can use with your key. In chat, type `/holding <command>` (for
 |---|---|---|
 | `holding feedback "<text>"` | Send feedback | `holding feedback "the inbox is great"` |
 
+
+## codegraph
+
+Pick and inspect the code-graph backend used by the `code-graph` staff (per company).
+
+```bash
+holding codegraph list                 # detected on this machine + saved choice
+holding codegraph detect               # scan PATH, agent MCP configs, index folders
+holding codegraph status               # what the staff should use right now
+holding codegraph use <name>           # save choice (when several backends exist)
+holding codegraph clear                # drop saved choice
+```
+
+Detection covers common local CLIs / MCP servers / index dirs (for example `codegraph` + `.codegraph`, `cgc`/`codegraphcontext`, `code-graph`, MCP-only graph servers) and falls back to **prism** when nothing else is present. One backend → used silently. Several → ask once, then `use`. Works the same for Grok, Claude, Codex, and local AI staff (adapter is local CLI, not a chat vendor).
+
 ## Update
 
 | Command | What it does | Example |

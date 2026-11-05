@@ -57,3 +57,7 @@ Skill scripts never run on their own. Allow them once with `holding skill consen
 - A public skill was not shared: check for secrets in its files, then `holding skill sync --dry-run`.
 
 See also: [Command reference](COMMANDS.md)
+
+## Code graph backends
+
+The `code-graph` staff resolves a backend via `holding codegraph status` (auto-detect; prism fallback; `holding codegraph use <name>` when several are installed). See COMMANDS.md → codegraph.
