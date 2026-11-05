@@ -14,7 +14,7 @@ KSVC="agents-holding-license"; DSVC="agents-holding-device"
 say() { printf '\033[1;32m==>\033[0m %s\n' "$*"; }; warn() { printf '\033[1;33m!!\033[0m %s\n' "$*" >&2; }; die() { printf '\033[1;31mFAIL\033[0m %s\n' "$*" >&2; exit 1; }
 [ "$(uname)" = Darwin ] || die "macOS only (Keychain). Other systems: see full/SETUP.md"
 kc() { security find-generic-password -s "$1" -a "$USER" -w 2>/dev/null; }
-# >>> ah_menu (canonical: full/lib/menu.sh; embedded copies are checked by tests/menu_sync_test.sh)
+# >>> ah_menu (canonical: full/lib/menu.sh; embedded copies are checked by tests/menu_test.sh)
 # ah_menu VAR DEFAULT "Title" "item 1" "item 2" ...  -> arrow-key selector on /dev/tty (works under curl | bash).
 # Up/Down or k/j move, Enter chooses, 1-9 pick directly, Ctrl-C cancels (terminal restored, exit 130).
 # Sets VAR to the chosen 1-based number and returns 0. Returns 2 (VAR untouched) when not interactive:

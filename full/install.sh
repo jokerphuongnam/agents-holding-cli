@@ -13,7 +13,7 @@ DEST="${AH_INSTALL_DIR:-$HOME/.agents-holding}"; BIN="$HOME/.local/bin"; SVC="ag
 say() { printf '\033[1;32m==>\033[0m %s\n' "$*"; }; warn() { printf '\033[1;33m!!\033[0m %s\n' "$*" >&2; }
 AGENTS=""; NOKEY=""
 while [ $# -gt 0 ]; do case "$1" in --agent) AGENTS="$2"; shift 2;; --agent=*) AGENTS="${1#*=}"; shift;; --no-key) NOKEY=1; shift;; *) warn "unknown option $1"; exit 2;; esac; done
-# >>> ah_menu (canonical: full/lib/menu.sh; embedded copies are checked by tests/menu_sync_test.sh)
+# >>> ah_menu (canonical: full/lib/menu.sh; embedded copies are checked by tests/menu_test.sh)
 # ah_menu VAR DEFAULT "Title" "item 1" "item 2" ...  -> arrow-key selector on /dev/tty (works under curl | bash).
 # Up/Down or k/j move, Enter chooses, 1-9 pick directly, Ctrl-C cancels (terminal restored, exit 130).
 # Sets VAR to the chosen 1-based number and returns 0. Returns 2 (VAR untouched) when not interactive:

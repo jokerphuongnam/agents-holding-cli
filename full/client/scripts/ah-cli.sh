@@ -15,7 +15,7 @@ V="${A[0]:-}"; X="${A[1]:-}"; OWNCMD=""
 LANGH="en"; case "${AH_LANG:-${LANG:-}}" in vi*) LANGH="vi";; esac
 say() { [ "$LANGH" = vi ] && echo "$2" || echo "$1"; }
 MCP_BASE="${MCP_URL%/}"
-# >>> ah_menu (canonical: full/lib/menu.sh; embedded copies are checked by tests/menu_sync_test.sh)
+# >>> ah_menu (canonical: full/lib/menu.sh; embedded copies are checked by tests/menu_test.sh)
 # ah_menu VAR DEFAULT "Title" "item 1" "item 2" ...  -> arrow-key selector on /dev/tty (works under curl | bash).
 # Up/Down or k/j move, Enter chooses, 1-9 pick directly, Ctrl-C cancels (terminal restored, exit 130).
 # Sets VAR to the chosen 1-based number and returns 0. Returns 2 (VAR untouched) when not interactive:
