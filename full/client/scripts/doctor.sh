@@ -26,8 +26,8 @@ else
     *) ok "macOS permission: repo not in a protected folder" ;; esac
 fi
 st="$(bash "$SERVER_DIR/scripts/launchd/listener.sh" status)"
-echo "$st" | grep -q "^listener : ON" && ok "Listener running ($(echo "$st" | sed -n 's/^listener : //p'))" || bad "Listener running" "holding listener start${repo:+ --repo $repo}"
-echo "$st" | grep -q "^autostart: ON" && ok "Listener auto-starts at login" || bad "Listener auto-start at login" "holding listener autostart on (needs the listener on)"
+echo "$st" | grep -Eq "^(Jira Listener|listener) *: ON" && ok "Listener running ($(echo "$st" | sed -En "s/^(Jira Listener|listener) *: //p"))" || bad "Listener running" "holding listener start${repo:+ --repo $repo}"
+echo "$st" | grep -Eq "^autostart *: ON" && ok "Listener auto-starts at login" || bad "Listener auto-start at login" "holding listener autostart on (needs the listener on)"
 last="$(grep ' join ' "$LOG_DIR/jira-listener.log" 2>/dev/null | tail -1)"
 echo "$last" | grep -q " join ok " && ok "Last realtime join: $last" || bad "Realtime 'join ok' in jira-listener.log" "holding listener logs"
 echo; echo "Jira steps (Jira Listener events, columns) are checked server-side: run /doctor in your agent."
