@@ -191,3 +191,11 @@ claude mcp remove agents-holding --scope user; codex mcp remove agents-holding  
 - `holding key show` / `holding billing` / `holding credit show`: your key id, plan, credits, devices. To upgrade or get more credits, send your key id to the owner.
 
 Lost your Free key on this Mac? Run Generate key again: it recovers this machine's key (same credits, new secret). Paid keys: use Import key.
+
+## Help: `holding help`
+
+`holding help` (aliases `holding document`, `holding docs`; `holding --help` points here) lists, grouped and numbered, exactly the commands
+YOUR key can run: the server checks the key, plan, role and owner binding and returns the list (Vietnamese or English from your language).
+`holding help <group|command>` shows details, e.g. `holding help staff` or `holding help 2.1`. Without a valid key you only see the setup and
+key commands (key generate/import/show, setup, doctor, help). Offline it uses the last list cached for your key (stored under a hash of the key,
+never the key itself) or else the setup-only list.
