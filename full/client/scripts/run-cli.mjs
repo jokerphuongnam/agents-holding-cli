@@ -35,15 +35,22 @@ const code = /-dev$|engineer|developer/.test(staff);
 if (!process.argv.includes("--proceed")) {
   const st = await mcp("staffing_check", { company, request: task, staff, lang }).catch((e) => ({ kind: "ok", error: e.message }));
   if (st?.kind && st.kind !== "ok") {
-    console.log(st.text ?? `${st.kind}: ${(st.why ?? []).join("; ")}`);
-    if (st.kind === "needs_decision") console.log(`\n1) /staff add ${st.hire_for_skill?.[0] ?? "<role>"}   2) holding skill add ${st.role} ${st.missing_skills?.[0]}   3) holding staff run ${staff} "<task>" --proceed`);
-    process.exit(st.kind === "needs_hire" ? 3 : 4);
+    // Pack-skill attachments are local: if they cover every missing skill, continue.
+    if (st.kind === "needs_decision" && Array.isArray(st.missing_skills) && st.missing_skills.length
+        && packSkillsCover(company, staff, st.missing_skills)) {
+      /* covered by holding skill add of a dependency pack skill */
+    } else {
+      console.log(st.text ?? `${st.kind}: ${(st.why ?? []).join("; ")}`);
+      if (st.kind === "needs_decision") console.log(`\n1) /staff add ${st.hire_for_skill?.[0] ?? "<role>"}   2) holding skill add ${st.role} ${st.missing_skills?.[0]}   3) holding staff run ${staff} "<task>" --proceed`);
+      process.exit(st.kind === "needs_hire" ? 3 : 4);
+    }
   }
 }
 if (flag("--batch")) { const parts = task.split(";;").map((x) => x.trim()).filter(Boolean); const bb = await mcp("staff_brief", { company, role: staff, text: parts.join("\n"), max_skills: 2 }).catch(() => null);
   const rs = await runBatch(parts.map((t) => ({ role: staff, kind: code ? "code" : "text", task: t })), { company, cwd: process.cwd(), noTools: !code, context: L.contextOf({ brief: bb, lang }), system: "Answer each task yourself now." });
   rs.forEach((x, n) => console.log(`${n + 1}. ${S.renderShort(x)}`)); process.exit(rs.some((x) => x.status === "blocked") ? 1 : 0); }
-const b = await mcp("staff_brief", { company, role: staff, text: task, max_skills: 2 }).catch(() => null);
+let b = await mcp("staff_brief", { company, role: staff, text: task, max_skills: 2 }).catch(() => null);
+b = enrichBriefWithPackSkills(company, staff, b);
 function repoFor(co) { const here = process.cwd(); try { const c = localCompanies().find((x) => x.company === co); const rs = c?.repos ?? []; if (!rs.length || rs.some((r) => here === r || here.startsWith(r + "/"))) return here; return rs[0]; } catch { return here; } }
 const r = await runStaff({ company, role: staff, kind: code ? "code" : "text", noTools: !code, cwd: repoFor(company),
   schema: code ? undefined : { type: "object", properties: { summary: { type: "string" }, steps: { type: "array", items: { type: "string" } } }, required: ["summary", "steps"] },
