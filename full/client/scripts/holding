@@ -59,6 +59,7 @@ case "$noun" in update|upgrade|help|document|docs|-h|--help) ;; *) [ "${AH_NO_UP
 case "$noun" in
   update|upgrade) exec bash "$here/update.sh" ${verb:+"$verb"} "$@" ;;
   figma) case "$verb" in connect) exec node "$here/attach.mjs" figma-connect ;; export) exec node "$here/attach.mjs" figma-export "$@" ;; *) usage ;; esac ;;
+  atlassian) case "$verb" in connect) exec node "$here/attach.mjs" atlassian-connect ;; *) usage ;; esac ;;
   confluence) case "$verb" in page) exec node "$here/attach.mjs" confluence-page "$@" ;; *) usage ;; esac ;;
   help|document|docs) exec node "$here/help.mjs" ${verb:+"$verb"} "$@" ;;
   -h|--help) echo "Run: holding help   (commands available for your key; holding help <group|command> for details)"; exec node "$here/help.mjs" ;;

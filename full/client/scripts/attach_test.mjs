@@ -3,7 +3,7 @@ import { writeFileSync, mkdtempSync } from "node:fs";
 import { join } from "node:path"; import { tmpdir } from "node:os";
 import { jiraAttach, parseFigma, figmaExport, mdToStorage, confluencePage, permit } from "./attach.mjs";
 const d = mkdtempSync(join(tmpdir(), "att-")), png = join(d, "s.png"), md = join(d, "p.md"); writeFileSync(png, "PNG"); writeFileSync(md, "# T\n- a\n- **b**\n![x](s.png)");
-const A = { site: "https://x.atlassian.net", auth: () => "Basic SECRET" }; let n = 0; const T = async (name, f) => { await f(); n++; console.log("  ok  ", name); };
+const A = { site: "https://x.atlassian.net", jira: "https://x.atlassian.net/rest/api/3", wiki: "https://x.atlassian.net/wiki/rest/api", auth: () => "Basic SECRET" }; let n = 0; const T = async (name, f) => { await f(); n++; console.log("  ok  ", name); };
 await T("jira attach: POST attachments with no-check header", async () => { let seen; const r = await jiraAttach("NAIL-1", [png], { A, fetchFn: async (u, o) => { seen = [u, o]; return { ok: true, status: 200, json: async () => [{ filename: "s.png" }] }; } });
   assert.equal(seen[0], "https://x.atlassian.net/rest/api/3/issue/NAIL-1/attachments"); assert.equal(seen[1].headers["X-Atlassian-Token"], "no-check"); assert.match(r, /s\.png/); assert.doesNotMatch(r, /SECRET/); });
 await T("jira attach: bad key / missing file refused", async () => { await assert.rejects(jiraAttach("nail", [png], { A })); await assert.rejects(jiraAttach("NAIL-1", [join(d, "nope.png")], { A, fetchFn: async () => ({ ok: true }) }), /not found/); });
