@@ -116,6 +116,7 @@ async function main(argv) {
   const co = resolveCompany().company; if (!co) throw new Error("no company: run in a company repo or pass --company");
   let repo = process.cwd(); const ri = argv.indexOf("--repo"); if (ri >= 0) repo = resolve(argv.splice(ri, 2)[1]); else while (!existsSync(join(repo, ".agents")) && repo !== dirname(repo)) repo = dirname(repo);
   const cmd = argv.shift() ?? "list";
+  const templateProject = flag("--project")?.toUpperCase();
   const flag = (n) => { const i = argv.indexOf(n); return i < 0 ? null : argv.splice(i, 2)[1]; };
   const has = (n) => { const i = argv.indexOf(n); if (i < 0) return false; argv.splice(i, 1); return true; };
   flag("--company"); // company was already resolved from this option
@@ -131,14 +132,14 @@ async function main(argv) {
     const r = await fetch(base, { method: "POST", headers, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }), signal: AbortSignal.timeout(30000) });
     const j = await r.json(), t = j.result?.content?.[0]?.text; if (!t || j.result?.isError) throw new Error(t ?? `MCP HTTP ${r.status}`); return JSON.parse(t);
   });
-  const cliProject = flag("--project")?.toUpperCase();
+  const cliProject = templateProject;
   let projectKey = cliProject;
   if (!projectKey) { try { const reg = JSON.parse(readFileSync(join(homedir(), ".config/agents-holding/projects.json"), "utf8")); projectKey = reg.projects?.find((p) => p.path === repo)?.boards?.find((b) => b.company === co)?.project_key; } catch {} }
   const { file, rules } = loadRules(repo, co, { project: projectKey, defaultProcess: isDefault });
   if (cmd === "list") { console.log(`${file}\n${rules.length ? rules.map((r) => `${r.id}: ${r.enabled ? "enabled" : "draft"}; ${r.trigger.event}; ${r.actions.map((a) => a.type).join(", ")}`).join("\n") : "No rules. Add: holding process rule add --template parent-auto-done --project NAIL"}`); return; }
   if (cmd === "add") {
     let r; const json = flag("--json"), t = flag("--template");
-    if (json) r = JSON.parse(json); else r = template(t ?? "parent-auto-done", { project: flag("--project"), id: flag("--id"), includeEpics: !has("--exclude-epics") });
+    if (json) r = JSON.parse(json); else r = template(t ?? "parent-auto-done", { project: templateProject, id: flag("--id"), includeEpics: !has("--exclude-epics") });
     const err = validateRule(r); if (err) throw new Error(err);
     const enable = has("--enable"), replace = has("--replace"); if (replace && !enable) r.enabled = rules.find((x) => x.id === r.id)?.enabled ?? false; else r.enabled = enable;
     if (rules.some((x) => x.id === r.id) && !replace) throw new Error(`rule ${r.id} exists; use --replace to change it`);
