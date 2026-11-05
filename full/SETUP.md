@@ -191,3 +191,9 @@ claude mcp remove agents-holding --scope user; codex mcp remove agents-holding  
 - `holding key show` / `holding billing` / `holding credit show`: your key id, plan, credits, devices. To upgrade or get more credits, send your key id to the owner.
 
 Lost your Free key on this Mac? Run Generate key again: it recovers this machine's key (same credits, new secret). Paid keys: use Import key.
+
+## Only `grok mcp add` (OAuth, no connect.sh)
+
+Adding the MCP server is enough: type `/holding <noun> <verb>` (e.g. `/holding staff list`, `/holding key show`, `/holding help`), or `/ceo`, `/staff ...`, `/key ...`.
+The server tells the agent to answer these by calling its `cli` tool directly and printing the output verbatim (no file exploration; a legacy local `.agents/<company>` tree is never used, import it with `holding company migrate`).
+Grok CLI (1.0.70) does not list MCP prompts in its `/` menu, so to get native menu entries either type `install agents-holding commands` in Grok (it calls `setup_commands` and writes `~/.grok/commands`), or run `holding setup sync` if you have the CLI and key. Claude Code lists the MCP prompts natively as `/mcp__agents-holding__holding`, `/mcp__agents-holding__ceo`, ...
