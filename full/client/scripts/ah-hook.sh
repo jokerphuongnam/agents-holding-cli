@@ -19,6 +19,7 @@ security() {
 # <<< ah_kc_guard
 in="$(cat)"
 [ "${AH_HOOK:-1}" = 0 ] && exit 0
+export AH_NO_UPDATE_CHECK=1 AH_HOOK_RUN=1 AH_CLI_TIMEOUT="${AH_CLI_TIMEOUT:-8}"
 case "$in" in *'"prompt"'*) ;; *) exit 0;; esac  # Grok and Claude Code send {"prompt": ...}; non-slash prompts exit below
 here="$(cd "$(dirname "$0")" && pwd)"
 IFS=$'\t' read -r prompt cwd < <(osascript -l JavaScript -e 'function run(a){const j=JSON.parse(a[0]);return String(j.prompt||"").replace(/[\t\n]+/g," ").trim()+"\t"+(j.cwd||"")}' "$in" 2>/dev/null) || exit 0
@@ -51,6 +52,19 @@ A=(); if [ -n "$args" ]; then while IFS= read -r -d '' w; do A+=("$w"); done < <
 # @company mention -> --company X (exact local company); --all aggregates via holding (one session, every company)
 B=(); for w in ${A[@]+"${A[@]}"}; do case "$w" in @?*) if [ -d "$HOME/.config/agents-holding/state/${w#@}" ] || grep -q "\"company\": *\"${w#@}\"" "$HOME/.config/agents-holding/projects.json" 2>/dev/null; then B+=(--company "${w#@}"); else B+=("$w"); fi ;; *) B+=("$w") ;; esac; done; A=(${B[@]+"${B[@]}"})
 [ -d "$cwd" ] && cd "$cwd"
-out="$("${run[@]}" ${A[@]+"${A[@]}"} 2>&1)"; rc=$?
-printf '%s\n%s\n' "$out" "$([ $rc = 0 ] && echo "(agents-holding: instant, no model)" || echo "(agents-holding: failed, exit $rc)")" >&2
-exit 2
+# Never hang the host hook (Grok times out at 30s and prints a scary error). Hard cap ~8s.
+ah_run_cap() {
+  local cap="${AH_HOOK_TIMEOUT:-8}" outf rc
+  outf="$(mktemp -t ah-hook.XXXXXX)"
+  ( "${run[@]}" ${A[@]+"${A[@]}"} >"$outf" 2>&1 ) & local pid=$!
+  ( sleep "$cap"; kill "$pid" 2>/dev/null ) & local w=$!
+  wait "$pid" 2>/dev/null; rc=$?
+  kill "$w" 2>/dev/null; wait "$w" 2>/dev/null
+  if [ "$rc" -gt 128 ] 2>/dev/null; then
+    printf "%s\n(agents-holding: timed out after %ss — try holding %s in a terminal)\n" "$(cat "$outf" 2>/dev/null)" "$cap" "$name" >&2
+    rm -f "$outf"; exit 2
+  fi
+  printf "%s\n%s\n" "$(cat "$outf")" "$([ $rc = 0 ] && echo "(agents-holding: instant, no model)" || echo "(agents-holding: failed, exit $rc)")" >&2
+  rm -f "$outf"; exit 2
+}
+ah_run_cap

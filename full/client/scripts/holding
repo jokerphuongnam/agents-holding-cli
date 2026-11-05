@@ -60,7 +60,7 @@ denycmd() { local v="$1" sc="$2"; shift 2; local a=() rep="" force=""; while [ $
   bash "$here/ah-cli.sh" staff policy deny "$v" "$sc" "${a[@]+"${a[@]}"}" || exit $?; node "$here/policy.mjs" sync "$sc" >/dev/null 2>&1 || true; exit 0; }
 srv() { exec bash "$here/ah-cli.sh" "$noun" "$verb" "$@"; }  # server-rendered text (ah-cli.sh): command=<noun>, args=<verb ...>
 case " $* " in *" --all "*) case "$noun $verb" in "status "|"status --all"|"task list"|"task history"|"jira list"|"jira board"|"billing usage"|"staff list") exec node "$here/all-cli.mjs" "$noun" "$verb" "$@" ;; esac ;; esac
-case "$noun" in update|upgrade|help|document|docs|-h|--help) ;; *) [ "${AH_NO_UPDATE_CHECK:-}" = 1 ] || bash "$here/update.sh" --check 2>/dev/null </dev/tty || true ;; esac
+case "$noun" in update|upgrade|help|document|docs|-h|--help) ;; *) [ "${AH_NO_UPDATE_CHECK:-}" = 1 ] || [ "${AH_HOOK_RUN:-}" = 1 ] || bash "$here/update.sh" --check 2>/dev/null </dev/tty || true ;; esac
 case "$noun" in
   update|upgrade) exec bash "$here/update.sh" ${verb:+"$verb"} "$@" ;;
   uninstall) exec bash "$here/uninstall-local.sh" ${verb:+"$verb"} "$@" ;;
