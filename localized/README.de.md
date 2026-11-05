@@ -58,15 +58,15 @@ grok mcp add --transport http agents-holding https://mznrffnvmhmiudvfuquk.supaba
 
 Funktioniert gleich in Claude Code, Codex und dem `grok` CLI (Codex fragt einmal, ob du dem Hook vertraust). Vollständige Liste: `holding help` ausführen.
 
-→ [COMMANDS.md](../docs/COMMANDS.md) · [SKILLS.md](../docs/SKILLS.md)
+→ [COMMANDS.md](../docs/localized/COMMANDS.de.md) · [SKILLS.md](../docs/localized/SKILLS.de.md)
 
 ## Dokumentation
 
-- [COMMANDS.md](../docs/COMMANDS.md)
-- [SKILLS.md](../docs/SKILLS.md)
+- [COMMANDS.md](../docs/localized/COMMANDS.de.md)
+- [SKILLS.md](../docs/localized/SKILLS.de.md)
 - [Installationsanleitung](../full/localized/SETUP.de.md)
 - [Preise](../docs/localized/PRICING.de.md)
 - Befehlsreferenz: `holding help` (oder `holding help <Gruppe|Befehl>`) ausführen
-- [Firmen](../docs/COMPANIES.md) · [Wer entscheidet was](../docs/WHO-DECIDES.md) · [Ausfallsicherheit](../docs/RESILIENCE.md)
+- [Firmen](../docs/localized/COMPANIES.de.md) · [Provider](../docs/localized/PROVIDERS.de.md) · [Staff-Richtlinie](../docs/localized/STAFF-POLICY.de.md) · [Wer entscheidet was](../docs/localized/WHO-DECIDES.de.md) · [Ausfallsicherheit](../docs/localized/RESILIENCE.de.md)
 
 **Datenschutz.** Wir sammeln keine Informationen über dich. Wir erfassen nur Nutzungsgewohnheiten (wann du meist arbeitest, Chat oder Kommentare, wie du deine Tools konfigurierst). Alle verbundenen Tools und alle Daten auf deinem Rechner bleiben auf deinem Rechner.

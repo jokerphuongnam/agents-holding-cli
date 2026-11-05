@@ -58,15 +58,15 @@ grok mcp add --transport http agents-holding https://mznrffnvmhmiudvfuquk.supaba
 
 在 Claude Code、Codex 和 `grok` CLI 中用法相同（Codex 会询问一次是否信任 hook）。完整列表：运行 `holding help`。
 
-→ [COMMANDS.md](../docs/COMMANDS.md) · [SKILLS.md](../docs/SKILLS.md)
+→ [COMMANDS.md](../docs/localized/COMMANDS.zh-CN.md) · [SKILLS.md](../docs/localized/SKILLS.zh-CN.md)
 
 ## 文档
 
-- [COMMANDS.md](../docs/COMMANDS.md)
-- [SKILLS.md](../docs/SKILLS.md)
+- [COMMANDS.md](../docs/localized/COMMANDS.zh-CN.md)
+- [SKILLS.md](../docs/localized/SKILLS.zh-CN.md)
 - [安装指南](../full/localized/SETUP.zh-CN.md)
 - [价格表](../docs/localized/PRICING.zh-CN.md)
 - 命令参考：运行 `holding help`（或 `holding help <分组|命令>`）
-- [公司](../docs/COMPANIES.md) · [谁来决定](../docs/WHO-DECIDES.md) · [稳定性](../docs/RESILIENCE.md)
+- [公司](../docs/localized/COMPANIES.zh-CN.md) · [提供商](../docs/localized/PROVIDERS.zh-CN.md) · [员工政策](../docs/localized/STAFF-POLICY.zh-CN.md) · [谁决定什么](../docs/localized/WHO-DECIDES.zh-CN.md) · [韧性](../docs/localized/RESILIENCE.zh-CN.md)
 
 **隐私。** 我们不会获取你的信息，只记录使用习惯（常用的工作时间、用聊天还是评论、工具的配置方式）。你连接的所有工具和本机数据都只留在你的机器上。

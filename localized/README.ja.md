@@ -58,15 +58,15 @@ grok mcp add --transport http agents-holding https://mznrffnvmhmiudvfuquk.supaba
 
 Claude Code、Codex、`grok` CLI で同じように使えます（Codex ではフックの信頼確認が一度だけ出ます）。全一覧は `holding help` で確認できます。
 
-→ [COMMANDS.md](../docs/COMMANDS.md) · [SKILLS.md](../docs/SKILLS.md)
+→ [COMMANDS.md](../docs/localized/COMMANDS.ja.md) · [SKILLS.md](../docs/localized/SKILLS.ja.md)
 
 ## ドキュメント
 
-- [COMMANDS.md](../docs/COMMANDS.md)
-- [SKILLS.md](../docs/SKILLS.md)
+- [COMMANDS.md](../docs/localized/COMMANDS.ja.md)
+- [SKILLS.md](../docs/localized/SKILLS.ja.md)
 - [セットアップガイド](../full/localized/SETUP.ja.md)
 - [料金表](../docs/localized/PRICING.ja.md)
 - コマンドリファレンス：`holding help`（または `holding help <グループ|コマンド>`）を実行
-- [会社](../docs/COMPANIES.md) · [誰が決めるか](../docs/WHO-DECIDES.md) · [耐障害性](../docs/RESILIENCE.md)
+- [会社](../docs/localized/COMPANIES.ja.md) · [プロバイダ](../docs/localized/PROVIDERS.ja.md) · [スタッフルール](../docs/localized/STAFF-POLICY.ja.md) · [誰が何を決めるか](../docs/localized/WHO-DECIDES.ja.md) · [耐障害性](../docs/localized/RESILIENCE.ja.md)
 
 **プライバシー。** お客様の情報を取得することはありません。記録するのは利用傾向（よく作業する時間帯、チャットかコメントか、ツールの設定方法）だけです。接続したツールとマシン上のデータはすべてマシンの中にとどまります。

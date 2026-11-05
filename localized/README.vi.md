@@ -58,15 +58,15 @@ Sau đó mở agent, xác thực `agents-holding` trên trình duyệt (tạo ke
 
 Dùng giống nhau trong Claude Code, Codex và CLI `grok` (Codex hỏi một lần để tin cậy hook). Danh sách đầy đủ: chạy `holding help`.
 
-→ [COMMANDS.md](../docs/COMMANDS.md) · [SKILLS.md](../docs/SKILLS.md)
+→ [COMMANDS.md](../docs/localized/COMMANDS.vi.md) · [SKILLS.md](../docs/localized/SKILLS.vi.md)
 
 ## Tài liệu
 
-- [COMMANDS.md](../docs/COMMANDS.md)
-- [SKILLS.md](../docs/SKILLS.md)
+- [COMMANDS.md](../docs/localized/COMMANDS.vi.md)
+- [SKILLS.md](../docs/localized/SKILLS.vi.md)
 - [Hướng dẫn cài đặt](../full/localized/SETUP.vi.md)
 - [Bảng giá](../docs/localized/PRICING.vi.md)
 - Tra cứu lệnh: chạy `holding help` (hoặc `holding help <nhóm|lệnh>`)
-- [Công ty](../docs/COMPANIES.md) · [Ai quyết định](../docs/WHO-DECIDES.md) · [Độ bền vững](../docs/RESILIENCE.md)
+- [Công ty](../docs/localized/COMPANIES.vi.md) · [Provider](../docs/localized/PROVIDERS.vi.md) · [Quy tắc nhân sự](../docs/localized/STAFF-POLICY.vi.md) · [Ai quyết định](../docs/localized/WHO-DECIDES.vi.md) · [Độ bền vững](../docs/localized/RESILIENCE.vi.md)
 
 **Quyền riêng tư.** Chúng tôi không lấy thông tin của bạn, chỉ ghi nhận thói quen sử dụng (giờ bạn hay làm việc, dùng chat hay comment, cách bạn cấu hình công cụ). Mọi công cụ bạn kết nối và dữ liệu trên máy chỉ ở lại trên máy bạn.

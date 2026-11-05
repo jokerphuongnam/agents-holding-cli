@@ -58,15 +58,15 @@ Después abre tu agente, autentica `agents-holding` en el navegador (crea una ke
 
 Funciona igual en Claude Code, Codex y el CLI `grok` (Codex pide una vez confiar en el hook). Lista completa: ejecuta `holding help`.
 
-→ [COMMANDS.md](../docs/COMMANDS.md) · [SKILLS.md](../docs/SKILLS.md)
+→ [COMMANDS.md](../docs/localized/COMMANDS.es.md) · [SKILLS.md](../docs/localized/SKILLS.es.md)
 
 ## Documentación
 
-- [COMMANDS.md](../docs/COMMANDS.md)
-- [SKILLS.md](../docs/SKILLS.md)
+- [COMMANDS.md](../docs/localized/COMMANDS.es.md)
+- [SKILLS.md](../docs/localized/SKILLS.es.md)
 - [Guía de instalación](../full/localized/SETUP.es.md)
 - [Precios](../docs/localized/PRICING.es.md)
 - Referencia de comandos: ejecuta `holding help` (o `holding help <grupo|comando>`)
-- [Empresas](../docs/COMPANIES.md) · [Quién decide qué](../docs/WHO-DECIDES.md) · [Resiliencia](../docs/RESILIENCE.md)
+- [Empresas](../docs/localized/COMPANIES.es.md) · [Proveedores](../docs/localized/PROVIDERS.es.md) · [Política del personal](../docs/localized/STAFF-POLICY.es.md) · [Quién decide qué](../docs/localized/WHO-DECIDES.es.md) · [Resiliencia](../docs/localized/RESILIENCE.es.md)
 
 **Privacidad.** No recogemos tu información. Solo registramos hábitos de uso (las horas en que sueles trabajar, chat o comentarios, cómo configuras tus herramientas). Todas las herramientas que conectas y los datos de tu equipo se quedan en tu equipo.

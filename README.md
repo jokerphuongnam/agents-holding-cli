@@ -1,5 +1,7 @@
 # agents-holding
 
+Languages: **English** · [Tiếng Việt](localized/README.vi.md) · [日本語](localized/README.ja.md) · [한국어](localized/README.ko.md) · [简体中文](localized/README.zh-CN.md) · [Español](localized/README.es.md) · [Français](localized/README.fr.md) · [Deutsch](localized/README.de.md)
+
 Set up a small company and ship with it. A CEO talks to you. An engineer builds the plan. Plans live in `cache/plans/`.
 
 ```bash
@@ -37,16 +39,14 @@ The installer (`full/install.sh`) is optional: you only need it for the backgrou
 Then follow **[full/SETUP.md](full/SETUP.md)**. The full version runs on a hosted server, which holds all roles, skills and workflow logic. This repo only has the optional local client (Jira listener and setup scripts) and the sign-in page (`docs/authorize.html`).
 
 ## Companies
-Manage every company in your holding from chat (`/ceo companies`, `/ceo company ...`) or the terminal (`holding company ...`): list, details, create, rename, pause/archive/delete, staff moves, Jira links, per-company settings, migrating older local companies, custom board columns. See [docs/COMPANIES.md](docs/COMPANIES.md).
+Manage every company in your holding from chat (`/ceo companies`, `/ceo company ...`) or the terminal (`holding company ...`): list, details, create, rename, pause/archive/delete, staff moves, Jira links, per-company settings, migrating older local companies, custom board columns. See [docs/COMPANIES.md](docs/COMPANIES.md). Staff rules: [docs/STAFF-POLICY.md](docs/STAFF-POLICY.md). Providers: [docs/PROVIDERS.md](docs/PROVIDERS.md).
 
 ## Resilience
 Compaction/resume, blocked agents + fallback, MCP server problems + reconcile: [docs/RESILIENCE.md](docs/RESILIENCE.md).
 
-## Privacy / Quyền riêng tư
+## Privacy
 
-**VI:** Chúng tôi không lấy thông tin của bạn, chỉ ghi nhận thói quen sử dụng: giờ bạn hay làm việc, bạn dùng chat hay comment, và cách bạn cấu hình công cụ (như model). Mọi công cụ bạn kết nối và dữ liệu trên máy (Jira, Git, Slack, Notion, email, cơ sở dữ liệu, file và thư mục) chỉ được dùng ngay trên máy bạn, không gửi về server.
-
-**EN:** We don't take your information. We only record usage habits: the hours you usually work, chat vs comments, and how you configure your tools (such as models). Every tool you connect and all data on your machine stay on your machine.
+We don't take your information. We only record usage habits: the hours you usually work, chat vs comments, and how you configure your tools (such as models). Every tool you connect and all data on your machine (Jira, Git, Slack, Notion, email, databases, files and folders) is used only on your machine and is not sent to the server.
 
 ## Skills
 
@@ -61,11 +61,16 @@ Compaction/resume, blocked agents + fallback, MCP server problems + reconcile: [
 
 1. `holding skill where` — the paths. 2. `holding skill check` — what loads, what is ignored and why. 3. `holding skill set <name> private|public` — move it. 4. `holding skill sync` — preview what the automatic collection would take. 5. `holding skill browse <staff>` / `holding skill add <staff> <id>` — library suggestions, opt-in only.
 
-**VI:** Skill tự tạo trong `public/` được client tự động thu thập (đã lọc thông tin cá nhân); muốn giữ riêng thì `holding skill set <tên> private`. `history/`, `assets/` và file cá nhân không bao giờ được thu thập.
+Custom skills in `public/` are collected automatically by the client (personal information filtered out); to keep one private run `holding skill set <name> private`. `history/`, `assets/` and personal files are never collected.
 
 ## Sub agents (headless)
-`holding staff presets` → `holding staff add <role> --preset <id>`. **VI:** chọn preset là tạo sub agent để nhân sự gọi chạy nền, không mở chat. Chi tiết và ví dụ sai/đúng với LLM trên máy: [docs/PROVIDERS.md](docs/PROVIDERS.md#sub-agent-presets-headless--preset-sub-agent-chạy-nền).
+`holding staff presets` → `holding staff add <role> --preset <id>`. Choosing a preset creates a sub agent the staff runs headless — it does not open a chat. Details and wrong/right examples for local LLMs: [docs/PROVIDERS.md](docs/PROVIDERS.md#sub-agent-presets-headless).
 
 ## Commands
 
 Run `holding help` to see the commands your key can use (`holding help <group|command>` for details). See full/SETUP.md "Help".
+
+## Docs
+
+- [COMMANDS.md](docs/COMMANDS.md) · [SKILLS.md](docs/SKILLS.md) · [PRICING.md](docs/PRICING.md) · [SETUP.md](full/SETUP.md)
+- [Companies](docs/COMPANIES.md) · [Providers](docs/PROVIDERS.md) · [Staff policy](docs/STAFF-POLICY.md) · [Who decides what](docs/WHO-DECIDES.md) · [Resilience](docs/RESILIENCE.md)
