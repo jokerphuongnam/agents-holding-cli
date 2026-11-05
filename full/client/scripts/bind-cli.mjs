@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
+import { select } from "./menu.mjs";
 import * as A from "./agents.mjs";
 import { resolveCompany } from "./company.mjs";
 const home = process.env.HOME || homedir();
@@ -34,7 +35,8 @@ if (opt("--preset")) { const P = await import("./presets.mjs"); const p = P.PRES
 const tty = process.stdin.isTTY && !a.includes("--yes") && !process.env.AH_HOOK_RUN;
 if (tty) console.log((await import("./presets.mjs"))[/^vi/i.test(process.env.AH_LANG ?? process.env.LANG ?? "") ? "NOTE_VI" : "NOTE_EN"]);
 const defs = A.loadDefaults(home), cfg = A.loadAgentCfg(home, company);
-const rl = tty ? createInterface({ input: process.stdin, output: process.stdout }) : null;
+// one readline per text question, so the raw-mode arrow-key menus (menu.mjs) never fight readline for stdin
+const rl = tty ? { question: async (q) => { const r = createInterface({ input: process.stdin, output: process.stdout }); try { return await r.question(q); } finally { r.close(); } }, close() {} } : null;
 let shown = false;
 if (tty) { const { writeExample } = await import("./providers/command.mjs"); console.log(`example of every staff field: ${writeExample(home)}`); }
 for (const role of roles) {
@@ -46,7 +48,8 @@ for (const role of roles) {
   else {
     if (!shown) { const { listProviders } = await import("./providers/index.mjs"); for (const p of await listProviders(home)) console.log(`  ${p.ok ? "✅" : "❌"} ${p.id.padEnd(18)} ${p.name} ${p.detail}`); shown = true; }
     const fb = remembered ?? (cfg.command ? { command: cfg.command } : { provider: cfg.agent ?? A.loadGlobalCfg(home).default?.provider ?? "grok" });
-    const c = (await rl.question(`${role}:\n  1) Default  ${A.bindingLabel(role, fb)}\n  2) Custom\n  choice [1]: `)).trim();
+    const pick = await select(`${role}:`, [`Default  ${A.bindingLabel(role, fb)}`, "Custom"]);
+    const c = pick !== null ? String(pick + 1) : (await rl.question(`${role}:\n  1) Default  ${A.bindingLabel(role, fb)}\n  2) Custom\n  choice [1]: `)).trim();
     if (c === "2" || /^c/i.test(c)) {
       const cmd = (await rl.question(`  launch command, {prompt} = the task, e.g. claude -p --model sonnet --effort low "{prompt}"\n  (Enter = pick provider/model/effort instead): `)).trim();
       if (cmd) { const ask = async (k, ex, d) => (await rl.question(`  ${k.padEnd(9)} e.g. ${ex} [${d ?? ""}]: `)).trim() || d || undefined;
@@ -57,7 +60,8 @@ for (const role of roles) {
         if (ev) m.env = Object.fromEntries(ev.split(",").map((kv) => [kv.split("=")[0].trim(), kv.split("=").slice(1).join("=")])); } else {
       const provider = (await rl.question(`  provider [${fb.provider}]: `)).trim() || fb.provider;
       const model = (await rl.question(`  model [${fb.model ?? "default"}]: `)).trim() || (provider === fb.provider ? fb.model : null);
-      const effort = (await rl.question(`  effort low|medium|high [${fb.effort ?? "default"}]: `)).trim() || (provider === fb.provider ? fb.effort : null);
+      const keep = provider === fb.provider ? fb.effort : null, ei = await select("  effort:", [`keep (${keep ?? "default"})`, ...A.EFFORTS]);
+      const effort = ei !== null ? (ei ? A.EFFORTS[ei - 1] : keep) : (await rl.question(`  effort low|medium|high [${fb.effort ?? "default"}]: `)).trim() || keep;
       m = { provider, model, effort }; }
     } else m = fb;
   }
@@ -66,4 +70,4 @@ for (const role of roles) {
   try { A.setStaff(home, company, role, null); A.setStaff(home, company, role, { provider: m.provider, model: m.model ?? null, effort: m.effort ?? null }); console.log(`✅ ${A.bindingLabel(role, A.loadAgentCfg(home, company).staff[role])}`); }
   catch (e) { console.log(`❌ ${role}: ${e.message}`); }
 }
-rl?.close();
+rl?.close(); if (tty) process.stdin.destroy(); // menus + per-question readline leave the tty handle referenced

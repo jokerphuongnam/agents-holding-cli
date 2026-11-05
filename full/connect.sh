@@ -6,6 +6,7 @@
 # reading the key/device from env vars  4) adds the Keychain loader to ~/.zshrc (idempotent)  5) health check.
 # --print-url: print the server URL and exit.
 # Env: AH_MCP_URL, AH_AGENTS=grok,claude,codex (default: installed ones), AH_NO_DOCTOR=1, AH_OWNER=1 (owner Mac: also owner commands).
+# Menus are arrow-key selectors on /dev/tty (numbers still work); AH_NONINTERACTIVE=1 or CI=1 or no tty: plain numeric prompt / AH_KEY_CHOICE.
 set -euo pipefail
 MCP_URL="${AH_MCP_URL:-https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp}"
 [ "${1:-}" = "--print-url" ] && { printf '%s\n' "$MCP_URL"; exit 0; }
@@ -13,6 +14,51 @@ KSVC="agents-holding-license"; DSVC="agents-holding-device"
 say() { printf '\033[1;32m==>\033[0m %s\n' "$*"; }; warn() { printf '\033[1;33m!!\033[0m %s\n' "$*" >&2; }; die() { printf '\033[1;31mFAIL\033[0m %s\n' "$*" >&2; exit 1; }
 [ "$(uname)" = Darwin ] || die "macOS only (Keychain). Other systems: see full/SETUP.md"
 kc() { security find-generic-password -s "$1" -a "$USER" -w 2>/dev/null; }
+# >>> ah_menu (canonical: full/lib/menu.sh; embedded copies are checked by tests/menu_test.sh)
+# ah_menu VAR DEFAULT "Title" "item 1" "item 2" ...  -> arrow-key selector on /dev/tty (works under curl | bash).
+# Up/Down or k/j move, Enter chooses, 1-9 pick directly, Ctrl-C cancels (terminal restored, exit 130).
+# Sets VAR to the chosen 1-based number and returns 0. Returns 2 (VAR untouched) when not interactive:
+# AH_NONINTERACTIVE=1, CI set, or no usable /dev/tty -> callers keep their numeric/env fallback. bash 3.2 safe.
+ah_menu() {
+  local __v="$1" __d="${2:-1}" __t="$3"; shift 3
+  local __n=$# __c __k __k2 __st __oi
+  [ "${AH_NONINTERACTIVE:-0}" = 1 ] && return 2; [ -n "${CI:-}" ] && return 2
+  [ "$__n" -gt 0 ] || return 2
+  { exec 3</dev/tty; } 2>/dev/null || return 2
+  __st="$(stty -g <&3 2>/dev/null)" || { exec 3<&-; return 2; }
+  exec 4>/dev/tty
+  __c=$((__d - 1)); [ "$__c" -ge 0 ] && [ "$__c" -lt "$__n" ] || __c=0
+  __oi="$(trap -p INT)"
+  # bash's read -n turns ISIG back on, so Ctrl-C can arrive as SIGINT inside read: restore the tty, then die of SIGINT (exit 130)
+  trap 'stty "$__st" <&3 2>/dev/null; printf "\033[?25h\n" >&4; trap - INT; kill -INT $$' INT
+  stty -echo -icanon -isig min 1 time 0 <&3 2>/dev/null   # -isig: Ctrl-C arrives as a byte, handled below
+  printf '\033[?25l%s\n' "$__t" >&4
+  __ah_menu_draw() { local j=0 s; for s in "$@"; do
+      if [ "$j" -eq "$__c" ]; then printf '\033[2K  \033[1;36m❯ %d) %s\033[0m\n' $((j + 1)) "$s" >&4
+      else printf '\033[2K    %d) %s\n' $((j + 1)) "$s" >&4; fi; j=$((j + 1)); done
+    printf '\033[2K  \033[2m↑/↓ move · Enter choose · 1-%d shortcut · Ctrl-C cancel\033[0m\n' "$__n" >&4; }
+  __ah_menu_draw "$@"
+  while :; do
+    __k=""; IFS= read -rsn1 __k <&3 || break
+    case "$__k" in
+      $'\e') __k2=""; IFS= read -rsn1 -t 1 __k2 <&3 || true
+        if [ "$__k2" = "[" ] || [ "$__k2" = "O" ]; then IFS= read -rsn1 -t 1 __k2 <&3 || true
+          case "$__k2" in A) __c=$(( (__c - 1 + __n) % __n ));; B) __c=$(( (__c + 1) % __n ));; esac; fi ;;
+      k|K) __c=$(( (__c - 1 + __n) % __n ));;
+      j|J) __c=$(( (__c + 1) % __n ));;
+      [1-9]) [ "$__k" -le "$__n" ] && { __c=$((__k - 1)); printf '\033[%dA' $((__n + 1)) >&4; __ah_menu_draw "$@"; break; } ;;
+      $'\003') stty "$__st" <&3 2>/dev/null; printf '\033[?25h\n' >&4; exit 130;;   # Ctrl-C: cancel cleanly
+      ""|$'\r'|$'\n') break;;
+    esac
+    printf '\033[%dA' $((__n + 1)) >&4; __ah_menu_draw "$@"
+  done
+  stty "$__st" <&3 2>/dev/null; printf '\033[?25h' >&4
+  exec 3<&- 4>&-
+  if [ -n "$__oi" ]; then eval "$__oi"; else trap - INT; fi
+  unset -f __ah_menu_draw
+  printf -v "$__v" '%s' $((__c + 1)); return 0
+}
+# <<< ah_menu
 
 # 1. per-machine device id (sha256 of the hardware UUID; stable, not reversible) -> Keychain
 if ! kc "$DSVC" >/dev/null; then
@@ -41,8 +87,10 @@ fi; }
 if kc "$KSVC" >/dev/null && [ "${AH_REPLACE_KEY:-0}" != 1 ]; then say "A key is already in the Keychain ($KSVC). To replace it, rerun with AH_REPLACE_KEY=1."
 else
   ah_notice
-  echo "  1) Generate key   (new Free key for this machine)"; echo "  2) Import key     (enter an existing key)"
-  ch="${AH_KEY_CHOICE:-}"; [ -n "$ch" ] || read -r -p "Choose 1 or 2: " ch < /dev/tty
+  ch="${AH_KEY_CHOICE:-}"
+  if [ -z "$ch" ] && ! ah_menu ch 1 "Choose:" "Generate key   (new Free key for this machine)" "Import key     (enter an existing key)"; then
+    echo "  1) Generate key   (new Free key for this machine)"; echo "  2) Import key     (enter an existing key)"
+    read -r -p "Choose 1 or 2: " ch < /dev/tty; fi
   case "$ch" in
     1|g|generate) b="$(osascript -l JavaScript -e 'function run(a){return JSON.stringify({device:a[0],device_name:a[1],lang:a[2]})}' "$(kc "$DSVC")" "$( (scutil --get LocalHostName 2>/dev/null || hostname -s) | LC_ALL=C tr -cd 'A-Za-z0-9 ._-' | cut -c1-60)" "$LANGH")"
       r="$(curl -sS --max-time 45 -X POST "$MCP_URL/free-signup" -H "Content-Type: application/json" -H "X-AH-Lang: $LANGH" --data-binary "$b")" || die "MCP server unreachable, try again"

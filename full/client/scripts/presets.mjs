@@ -38,4 +38,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   console.log(vi ? NOTE_VI : NOTE_EN); console.log("");
   rows.forEach((p, i) => console.log(`${i + 1}. ${p.installed ? "✅" : "▫️"} ${p.id.padEnd(18)} ${p.name} — ${p.how}\n     ${p.kind === "command" ? "$ " + p.command : "POST " + p.baseURL + "/chat/completions"}`));
   console.log(vi ? "\nGắn cho nhân sự: holding staff add <role> --preset <id> [--model M]" : "\nAttach to a staff: holding staff add <role> --preset <id> [--model M]");
+  const { select } = await import("./menu.mjs");
+  const i = await select(vi ? "\nChọn preset:" : "\nPick a preset:", rows.map((p) => `${p.installed ? "✅" : "▫️"} ${p.id.padEnd(18)} ${p.name}`));
+  if (i !== null) console.log(`\n${vi ? "Lệnh gắn" : "Attach with"}: holding staff add <role> --preset ${rows[i].id}${rows[i].installed ? "" : `\n⚠️  ${rows[i].how}`}`);
 }

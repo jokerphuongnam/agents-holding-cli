@@ -1,0 +1,4 @@
+#!/bin/bash
+# test shim: never touches the real Keychain. Pretends a device id exists; a license only when SHIM_LICENSE=1.
+[ "$1" = find-generic-password ] || exit 0
+case " $* " in *" agents-holding-device "*) echo mac-test-device; exit 0;; *" agents-holding-license "*) [ "${SHIM_LICENSE:-}" = 1 ] && { echo shim-not-a-key; exit 0; };; esac; exit 44
