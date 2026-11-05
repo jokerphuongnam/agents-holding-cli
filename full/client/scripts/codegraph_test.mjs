@@ -1,0 +1,12 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { mkdtempSync, mkdirSync, writeFileSync, chmodSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { chdir } from "node:process";
+const home=mkdtempSync(join(tmpdir(),"ah-codegraph-test-"));chdir(home);process.env.HOME=home;process.env.AH_COMPANY="unit-co";
+const bin=mkdtempSync(join(tmpdir(),"ah-codegraph-bin-"));process.env.PATH=bin;
+const C=await import("./codegraph.mjs");
+test("no detected backend deterministically falls back to prism",()=>{const r=C.resolve({company:"unit-co"});assert.equal(r.backend.id,"prism");assert.equal(r.reason,"none-fallback-prism");assert.equal(r.backend.fallback,true);assert.equal(r.need_choice,false);});
+test("saved prism choice survives an empty machine and reports not installed",()=>{mkdirSync(join(home,".config/agents-holding/state/unit-co"),{recursive:true});writeFileSync(join(home,".config/agents-holding/state/unit-co/codegraph.json"),JSON.stringify({backend:"prism"}));const r=C.resolve({company:"unit-co"});assert.equal(r.backend.id,"prism");assert.equal(r.reason,"saved-choice-prism");assert.equal(r.backend.installed,false);});
+test("external CLI plus index is detected and selected without model work",()=>{mkdirSync(join(home,".claude"));writeFileSync(join(home,".claude.json"),"{}");writeFileSync(join(bin,"codegraph"),'#!/bin/sh\necho "codegraph explore"\n');chmodSync(join(bin,"codegraph"),0o755);mkdirSync(".codegraph",{recursive:true});const found=C.detectAll();assert.ok(found.some((x)=>x.id==="codegraph"));const r=C.resolve({company:"fresh-co"});assert.equal(r.backend.id,"codegraph");assert.equal(r.reason,"only-one");});

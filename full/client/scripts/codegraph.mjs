@@ -9,6 +9,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, accessSync, constants as fsConstants } from "node:fs";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
+import { pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 import { resolveCompany as _resolveCompany } from "./company.mjs";
 const resolveCompany = (o) => {
@@ -439,6 +440,7 @@ const jsonIdx = argv.indexOf("--json");
 const asJson = jsonIdx >= 0;
 if (asJson) argv.splice(jsonIdx, 1);
 // strip --company X (resolveCompany also reads argv)
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
 const verb = (argv[0] || "status").toLowerCase();
 const rest = argv.slice(1);
 
@@ -487,4 +489,6 @@ try {
 } catch (e) {
   console.error(String(e?.message || e));
   process.exit(1);
+}
+
 }
