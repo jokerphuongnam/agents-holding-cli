@@ -14,7 +14,9 @@ const sameSite = (a, b) => !a || !b || a.replace(/\/$/, "").toLowerCase() === b.
 
 export function load(home) {
   const p = registryPath(home); if (!existsSync(p)) return null;
-  const j = JSON.parse(readFileSync(p, "utf8")); return { version: 1, projects: [], ...j };
+  let j; try { j = JSON.parse(readFileSync(p, "utf8")); } catch (e) {
+    console.error(`agents-holding: ${p} is corrupted (${e.message.split("\n")[0]}). Fix it or move it away (mv "${p}" "${p}.bad") and re-run holding project add.`); process.exit(3); }
+  return { version: 1, projects: [], ...(j && typeof j === "object" ? j : {}) };
 }
 export function save(home, reg) {
   const p = registryPath(home); mkdirSync(dirname(p), { recursive: true, mode: 0o700 });

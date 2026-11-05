@@ -119,6 +119,6 @@ case "${1:-status}" in
   start) shift; cmd_on "$@" ;;
   stop) cmd_off ;;
   autostart) shift; cmd_autostart "${1:-}" ;;
-  logs) shift; if [ "${1:-}" = "-f" ]; then tail -f "$LOG"; else tail -n 30 "$LOG"; echo "--- jira-listener.err.log"; tail -n 10 "$ERR" 2>/dev/null || true; fi ;;
+  logs) shift; mkdir -p "$(dirname "$LOG")"; [ -f "$LOG" ] || { echo "no listener logs yet ($LOG); start it with: holding listener start"; exit 0; }; if [ "${1:-}" = "-f" ]; then tail -f "$LOG"; else tail -n 30 "$LOG"; echo "--- jira-listener.err.log"; tail -n 10 "$ERR" 2>/dev/null || true; fi ;;
   *) echo "usage: holding listener start [--repo DIR] | stop | autostart on|off | status | logs [-f]"; exit 2 ;;
 esac

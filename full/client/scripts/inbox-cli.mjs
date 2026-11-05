@@ -20,10 +20,13 @@ const company = co ?? (all ? null : resolveCompany().company);
 const kc = (s) => { try { return execFileSync("security", ["find-generic-password", "-s", s, "-a", process.env.USER, "-w"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { return null; } };
 async function mcp(name, args) {
   const key = process.env.AGENTS_HOLDING_KEY || kc("agents-holding-license"), dev = process.env.AGENTS_HOLDING_DEVICE || kc("agents-holding-device");
-  const r = await fetch(process.env.AH_MCP_URL ?? "https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp", { method: "POST",
+  if (!key) { console.error("No license key on this Mac: run holding key import (or holding key generate), then retry."); process.exit(1); }
+  let r; try { r = await fetch(process.env.AH_MCP_URL ?? "https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp", { method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream", "X-AH-Client": "ah-cli", ...(dev ? { "X-AH-Device": dev } : {}) },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }) });
-  const j = await r.json(), t = j.result?.content?.[0]?.text ?? j.error?.message ?? "";
+  } catch (e) { console.error(`agents-holding server unreachable (${e.cause?.code ?? e.message}); check your network and retry.`); process.exit(1); }
+  let j; try { j = await r.json(); } catch { console.error(`agents-holding server returned HTTP ${r.status}; retry later.`); process.exit(1); }
+  const t = j.result?.content?.[0]?.text ?? j.error?.message ?? "";
   if (j.error || j.result?.isError) { console.error(t); process.exit(1); } return JSON.parse(t);
 }
 const red = (s) => (process.stdout.isTTY ? `\x1b[1;31m${s}\x1b[0m` : s);
