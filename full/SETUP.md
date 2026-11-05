@@ -54,7 +54,7 @@ If your AI agent CLI version does not open the sign-in page, use the key header 
 ```bash
 security add-generic-password -U -s agents-holding-license -a "$USER" -w     # paste the key at the hidden prompt
 echo 'export AGENTS_HOLDING_KEY="$(security find-generic-password -s agents-holding-license -a "$USER" -w 2>/dev/null)"' >> ~/.zshrc
-security add-generic-password -U -s agents-holding-device -a "$USER" -w "mac-$(uuidgen | tr -d -)"   # this machine's id, once
+security add-generic-password -U -s agents-holding-device -a "$USER" -w "mac-$(printf 'agents-holding:%s' "$(ioreg -rd1 -c IOPlatformExpertDevice | awk -F'"' '/IOPlatformUUID/{print $4}')" | shasum -a 256 | cut -c1-32)"   # stable id: sha256 of the hardware UUID (same as connect.sh)
 echo 'export AGENTS_HOLDING_DEVICE="$(security find-generic-password -s agents-holding-device -a "$USER" -w 2>/dev/null)"' >> ~/.zshrc
 ```
 then add `headers = { "Authorization" = "Bearer ${AGENTS_HOLDING_KEY}", "X-AH-Device" = "${AGENTS_HOLDING_DEVICE}" }` under `[mcp_servers.agents-holding]` in `~/.grok/config.toml` (`connect.sh` above does all of this for you).
