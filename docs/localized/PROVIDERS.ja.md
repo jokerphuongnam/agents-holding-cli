@@ -1,23 +1,23 @@
-# エージェント・プロバイダ: どの AI が各スタッフを動かすか
+# エージェント provider: どの AI が各 staff を動かすか
 
 [English](../PROVIDERS.md)
 
-The lean runner and `/ceo` talk to **providers** through one small interface (the `AgentProvider` protocol). They are not tied to a particular CLI.
+Lean runner と `/ceo` は小さなインターフェース（`AgentProvider` protocol）経由で **provider** と話します。特定の CLI には縛られません。
 
-| 種類 | 内容 | 出所 |
+| Kind | 何か | 出所 |
 | --- | --- | --- |
-| Built-in | `grok`, `claude`, `codex`: the native coding CLIs | `scripts/providers/*.mjs` |
-| `openai-compatible` | Any `/v1/chat/completions` endpoint, such as DeepSeek, Kimi/Moonshot, OpenRouter, Ollama, LM Studio or vLLM | config only |
-| Custom | Your own module | `~/.config/agents-holding/providers/<name>.mjs` |
+| Built-in | `grok`, `claude`, `codex`: ネイティブの coding CLI | `scripts/providers/*.mjs` |
+| `openai-compatible` | DeepSeek、Kimi/Moonshot、OpenRouter、Ollama、LM Studio、vLLM などの任意の `/v1/chat/completions` endpoint | config only |
+| Custom | 自分の module | `~/.config/agents-holding/providers/<name>.mjs` |
 
-`holding provider list` lists every provider with a health check: binary version, reachable endpoint, and whether the Keychain key is present.
+`holding provider list` は health check 付きで全 provider を一覧します: binary の version、到達可能な endpoint、Keychain に key があるか。
 
-## 会社ごとのスタッフ対応
+## 会社ごとの staff mapping
 
-The user's example sends each staff to a different provider:
-- BA → a local LLM
-- the developer's coding → a cheap Claude model
-- PO (plan) → an expensive Codex model
+ユーザーの例では staff ごとに別の provider へ送ります:
+- BA → local LLM
+- developer の coding → 安い Claude model
+- PO (plan) → 高い Codex model
 
 ```bash
 holding staff set ba-lead            ollama  qwen2.5-coder:7b  low
@@ -27,7 +27,7 @@ holding staff unset po-lead          # back to the defaults
 holding staff list
 ```
 
-`holding staff list` puts the runtime right after each staff's name. The description is on the next line.
+`holding staff list` は各 staff の名前の直後に runtime を置きます。説明は次の行です。
 
 ```
 CEO — Acme
@@ -39,9 +39,9 @@ ceo - current session
 └─ qa-lead - grok-4.7-build-fast - default ⚠ unbound (company default)
 ```
 
-**The CEO is always your current chat session** (whatever agent and model you are chatting in). It has no binding and `holding staff set ceo …` is refused. When `/ceo` delegates, it runs `holding staff run <staff> "<task>"` (default AI agent CLI: `/staff run <staff> <task>`), which starts that staff as a **separate process on its own binding**. The Jira listener does the same for every stage.
+**CEO は常にいまの chat session です**（今チャットしている agent / model が何であれ）。binding はなく、`holding staff set ceo …` は拒否されます。`/ceo` が委譲するときは `holding staff run <staff> "<task>"`（default AI agent CLI: `/staff run <staff> <task>`）を実行し、その staff を **独自 binding の別 process** として起動します。Jira Listener も各 stage で同じです。
 
-**Binding step.** `holding project add` (new company) and `holding staff add <role>` ask, per staff (never the CEO):
+**Binding の手順。** `holding project add`（新しい company）と `holding staff add <role>` は staff ごと（CEO 以外）に尋ねます:
 
 ```
 ba-lead:
@@ -50,46 +50,46 @@ ba-lead:
   choice [1]:
 ```
 
-Enter accepts Default (your remembered binding for that role). Custom asks provider (the list from `holding provider list`, with health) → model → effort, and becomes the new remembered default. In agent chat: `/staff add <role> --agent claude --model haiku --effort low` (no flags = remembered default). `holding provider set [staff …]` reruns the step. Remembered bindings live in `~/.config/agents-holding/agent-defaults.json`; `holding provider list` shows them, `holding provider set --default <role> <provider> [model] [effort]` / `unset <role>` edits them. Every `set-staff` is remembered too. A staff without a binding uses the company default and is flagged `⚠ unbound` in `/staff list`.
+Enter で Default（その role の記憶済み binding）を受け付けます。Custom は provider（`holding provider list` の一覧と health）→ model → effort を尋ね、新しい記憶済み default になります。agent chat では: `/staff add <role> --agent claude --model haiku --effort low`（flag なし = 記憶済み default）。`holding provider set [staff …]` で手順を再実行します。記憶済み binding は `~/.config/agents-holding/agent-defaults.json` にあり、`holding provider list` で表示、`holding provider set --default <role> <provider> [model] [effort]` / `unset <role>` で編集します。`set-staff` もすべて記憶されます。binding のない staff は company default を使い、`/staff list` で `⚠ unbound` と出ます。
 
-The mapping is stored **per company** in `~/.config/agents-holding/state/<company>/agent.json`:
+mapping は **company ごと** に `~/.config/agents-holding/state/<company>/agent.json` へ保存されます:
 
 ```json
 { "staff": { "ba-lead": { "provider": "ollama", "model": "qwen2.5-coder:7b", "effort": "low" } }, "lang": "auto" }
 ```
 
-Global defaults and provider definitions live in `~/.config/agents-holding/agents.json`. A company file can also define its own `providers`.
+グローバル default と provider 定義は `~/.config/agents-holding/agents.json` にあります。company の file で独自の `providers` も定義できます。
 
-**Resolution order** (the same order is used everywhere: lean runs, `holding staff run`, `/staff run`, `/staff list`):
+**Resolution order**（どこでも同じ順: lean run、`holding staff run`、`/staff run`、`/staff list`）:
 
 - **Provider:**
   1. `AH_AGENT`
-  2. the company's `staff.<role>.provider`
-  3. the global `staff.<role>.provider`
-  4. the company `agent`
-  5. the global `default.provider`
+  2. company の `staff.<role>.provider`
+  3. グローバル `staff.<role>.provider`
+  4. company の `agent`
+  5. グローバル `default.provider`
   6. `grok`
 - **Model:**
-  1. `AH_MODEL` (code) or `AH_TEXT_MODEL` (text)
-  2. the staff mapping's model
-  3. the flow's per-stage model (`/flow edit`: stage `model`, or the flow `model`)
-  4. the company `model` / `text_model`
-  5. the provider default
+  1. `AH_MODEL`（code）または `AH_TEXT_MODEL`（text）
+  2. staff mapping の model
+  3. flow の stage ごとの model（`/flow edit`: stage `model`、または flow `model`）
+  4. company の `model` / `text_model`
+  5. provider default
 - **Effort** (`low|medium|high`):
   1. `AH_EFFORT`
-  2. the staff mapping's effort
-  3. the company `effort` / `text_effort`
-  4. the global `default.effort`
+  2. staff mapping の effort
+  3. company の `effort` / `text_effort`
+  4. グローバル `default.effort`
 
-  How effort reaches each provider:
+  effort が各 provider に届く方法:
   - grok: `--reasoning-effort`
   - claude: `--effort`
   - codex: `model_reasoning_effort`
-  - openai-compatible: `reasoning_effort`, only when `supportsEffort: true`
+  - openai-compatible: `reasoning_effort`（`supportsEffort: true` のときのみ）
 
-`holding company set agent <provider> [--model M] [--effort E] [--staff ROLE]` still works (legacy).
+`holding company set agent <provider> [--model M] [--effort E] [--staff ROLE]` もまだ動きます（legacy）。
 
-## Ollama（ローカル、無料）の例
+## Ollama（local、無料）の例
 
 ```bash
 ollama pull qwen2.5-coder:7b && ollama serve   # http://localhost:11434
@@ -108,27 +108,27 @@ ollama pull qwen2.5-coder:7b && ollama serve   # http://localhost:11434
 }
 ```
 
-Then run `holding staff set ba-lead ollama qwen2.5-coder:7b low` and check with `holding provider list`. LM Studio (`http://localhost:1234/v1`) and vLLM (`http://host:8000/v1`) work the same way.
+その後 `holding staff set ba-lead ollama qwen2.5-coder:7b low` を実行し、`holding provider list` で確認します。LM Studio（`http://localhost:1234/v1`）と vLLM（`http://host:8000/v1`）も同じです。
 
-**Secrets: Keychain only.** A provider's `keychain` field names a macOS Keychain service. The key is read when the call is made (`security find-generic-password -s <service> -a $USER -w`), and it is never written to a config file or a log. To store it:
+**Secrets: Keychain のみ。** provider の `keychain` フィールドは macOS Keychain の service 名です。key は呼び出し時に読まれ（`security find-generic-password -s <service> -a $USER -w`）、config file や log には決して書きません。保存するには:
 
 ```bash
 security add-generic-password -U -s agents-holding-deepseek -a "$USER" -w   # hidden prompt
 ```
 
-Local servers such as Ollama need no key; omit `keychain`.
+Ollama のような local server に key は不要です。`keychain` を省略してください。
 
-**No native coding CLI?** The `openai-compatible` adapter runs its own minimal tool loop:
+**ネイティブ coding CLI がない場合?** `openai-compatible` adapter が独自の最小 tool loop を回します:
 
-| ステージ | ツール | ターン |
+| Stage | Tools | Turns |
 | --- | --- | --- |
-| Text stages (plan, question) | none | 1 call |
-| Tech plan | `read_file` and `list_dir` | up to 4 turns |
-| Coding | `read_file`, `list_dir`, `write_file` and `run_tests` | up to `maxTurns` turns (default 15) |
+| Text stage（plan、question） | なし | 1 call |
+| Tech plan | `read_file` と `list_dir` | 最大 4 turns |
+| Coding | `read_file`、`list_dir`、`write_file`、`run_tests` | 最大 `maxTurns` turns（default 15） |
 
-`run_tests` runs `testCommand`, or `npm test` when there is a `package.json`. Every path must stay inside the repo: paths that leave the repo (`..`) and `.git` are refused. On the last turn tools are disabled, so the model has to give its final JSON answer.
+`run_tests` は `testCommand` を実行し、なければ `package.json` があるとき `npm test` です。パスはすべて repo 内必須: repo を出るパス（`..`）と `.git` は拒否されます。最後の turn では tools が無効なので、model は最終 JSON answer を出す必要があります。
 
-## `AgentProvider` インターフェース
+## `AgentProvider` interface
 
 ```js
 export default {
@@ -142,29 +142,29 @@ export default {
 };
 ```
 
-- **Custom adapter.** Save the file as `~/.config/agents-holding/providers/my-llm.mjs`. It can export the object above, or a factory `(name, def) => provider`, where `def` is that provider's `agents.json` entry. Then run `holding staff set <staff> my-llm <model>`.
-- **Built-in reference.** `scripts/providers/{grok,claude,codex}.mjs` show how CLI adapters use `ctx.spawn`.
-- **Rules for every adapter:**
-  - no MCP or server access (the runner talks to the server itself)
-  - one fresh session per call
-  - return JSON that matches `o.schema`
-  - report token usage when you can
+- **Custom adapter.** ファイルを `~/.config/agents-holding/providers/my-llm.mjs` として保存します。上の object、または factory `(name, def) => provider` を export できます（`def` はその provider の `agents.json` エントリ）。その後 `holding staff set <staff> my-llm <model>`。
+- **Built-in の参考。** `scripts/providers/{grok,claude,codex}.mjs` は CLI adapter が `ctx.spawn` をどう使うかを示します。
+- **すべての adapter のルール:**
+  - MCP や server へのアクセスなし（runner が自分で server と話す）
+  - 呼び出しごとに新しい session 1 つ
+  - `o.schema` に合う JSON を返す
+  - 可能なら token usage を報告する
 
 ## 言語
 
-Output follows the input language. `holding company set lang <code|auto>` overrides it per company. See WHO-DECIDES.
+Output は入力言語に従います。`holding company set lang <code|auto>` で company ごとに上書き。WHO-DECIDES を参照。
 
-## どの会社か
+## どの company か
 
-Bindings are per company. Company = `--company X` > nearest `.agents/company.json` from the current folder > active company (`holding company use <company>`). `holding company list` lists them; `holding company show` prints what this shell resolves to.
+Binding は company ごとです。Company = `--company X` > 現在フォルダから最も近い `.agents/company.json` > active company（`holding company use <company>`）。`holding company list` が一覧、`holding company show` がこの shell の解決結果を表示します。
 
 ## ひとつの /ceo、ふたつのモード
 
-`/ceo` routes on its own. If one company resolves (`--company`, `@slug`, the company named in the prompt, the repo `.agents/company.json`, or the active company), it runs in company mode and the reply starts with `[ceo @ <slug>]`. Otherwise, or when the request spans companies, it runs in holding mode and the reply starts with `[holding]`. `/ceo` is an alias.
+`/ceo` は自ら route します。1 つの company に解決できれば（`--company`、`@slug`、prompt 内の company 名、repo の `.agents/company.json`、または active company）、company モードで返信は `[ceo @ <slug>]` で始まります。そうでない、または複数 company にまたがる場合は holding モードで `[holding]` から始まります。`/ceo` は alias です。
 
-## スタッフロール起動コマンド（簡単な方法）
+## Staff 起動 command（簡単な方法）
 
-Give a staff one fixed command. When that staff gets work, agents-holding runs exactly that command in the company repo (the path in projects.json).
+staff に固定の command を 1 つ与えます。その staff が仕事を受け取ると、agents-holding は company repo（projects.json の path）でその command をそのまま実行します。
 
 ```sh
 holding staff set developer 'claude -p --model {model} --effort {effort} --output-format json "{prompt}"' --model sonnet --effort low --timeout 900
@@ -176,83 +176,83 @@ holding staff test developer     # dry run: argv, cwd, how prompt and context ar
 holding staff unset developer
 ```
 
-Fields (all optional except `command`). The binding step in `holding staff add` / `holding project add` asks for the same fields under **Custom**. **Default** is the remembered one in `agent-defaults.json`. A commented example of every field is written to `~/.config/agents-holding/staff.example.jsonc` the first time.
+フィールド（`command` 以外はすべて optional）。`holding staff add` / `holding project add` の binding 手順は **Custom** で同じフィールドを尋ねます。**Default** は `agent-defaults.json` の記憶済みです。初回、全フィールドのコメント付き例が `~/.config/agents-holding/staff.example.jsonc` に書かれます。
 
-| フィールド | 例 | 用途 |
+| field | example | 用途 |
 |---|---|---|
-| command | `claude -p --model {model} "{prompt}"` | the exact command run |
+| command | `claude -p --model {model} "{prompt}"` | 実行される正確な command |
 | model | `sonnet` | `{model}` |
 | effort | `low` | `{effort}` |
 | max_turns | `25` | `{max_turns}` |
-| cwd | empty = company repo | `{cwd}` and the process cwd |
-| context | `auto` \| `none` \| `/path/ctx.md` | staff context (see below) |
-| timeout | `900` (seconds) | kill after |
-| env | `{"K":"V"}` / `--env K=V` | extra env (the server key is never passed) |
+| cwd | 空 = company repo | `{cwd}` と process の cwd |
+| context | `auto` \| `none` \| `/path/ctx.md` | staff context（下記） |
+| timeout | `900`（秒） | この後 kill |
+| env | `{"K":"V"}` / `--env K=V` | 追加 env（server key は渡されない） |
 
-Placeholders:
-- `{prompt}`: the task text, as one argv entry. No shell runs, so quotes, `$` and backticks stay literal. Over 200 KB it is refused; use `{prompt_file}` instead.
-- `{prompt_file}`: a 0600 temp file with the task.
-- `{model}`, `{effort}`, `{max_turns}`: taken from the fields above. If a field is empty, it is dropped together with the flag in front of it (for example, `--model {model}` disappears).
-- `{cwd}`: the working directory.
-- `{context}`, `{context_file}`: the staff context, as text or as a temp file.
+Placeholder:
+- `{prompt}`: task 本文を argv 1 つとして。shell は走らないので引用符、`$`、backtick はそのまま。200 KB 超は拒否。代わりに `{prompt_file}`。
+- `{prompt_file}`: task 入りの 0600 一時ファイル。
+- `{model}`、`{effort}`、`{max_turns}`: 上のフィールドから。フィールドが空なら直前の flag ごと落ちます（例: `--model {model}` が消える）。
+- `{cwd}`: 作業ディレクトリ。
+- `{context}`、`{context_file}`: staff context（テキストまたは一時ファイル）。
 
-### タスクとスタッフ文脈
+### Task と staff context
 
-`{prompt}` carries **only the task**. The staff context is built per run as a separate file and never stuffed into the prompt. It holds the persona, the 2-3 relevant skill summaries, learned habits, company conventions and the output language, plus the stage instructions. It is delivered through each CLI's own channel (checked against `--help` of grok 1.0.70, claude 2.1.177 and codex 0.133):
+`{prompt}` が運ぶのは **task だけ** です。staff context は実行ごとに別ファイルとして組み立てられ、prompt に詰め込みません。persona、関連 skill 要約 2–3、learned habits、company conventions、output 言語、stage 指示を含みます。各 CLI 独自の経路で渡します（grok 1.0.70、claude 2.1.177、codex 0.133 の `--help` で確認済み）:
 
-- claude: `--append-system-prompt-file <ctx>` (built-in adapter: `--append-system-prompt`)
+- claude: `--append-system-prompt-file <ctx>`（built-in adapter: `--append-system-prompt`）
 - codex: `-c developer_instructions="<ctx>"`
 - grok: `--rules <ctx>`
 - openai-compatible / Ollama HTTP: system message
-- any other command: `{context}` / `{context_file}` if present, else env `AH_CONTEXT_FILE`
+- その他の command: `{context}` / `{context_file}` があればそれ、なければ env `AH_CONTEXT_FILE`
 
-Repo files (AGENTS.md etc.) are never written.
+Repo のファイル（AGENTS.md など）は決して書きません。
 
-Output parsing is picked from the first word:
-- `claude`: JSON result and usage
-- `codex`: JSONL events and usage
+Output の parse は先頭の語で選びます:
+- `claude`: JSON result と usage
+- `codex`: JSONL events と usage
 - `grok`: JSON
-- anything else: plain text (a trailing `{...}` JSON is used if present)
+- それ以外: plain text（末尾の `{...}` JSON があれば使う）
 
-`holding provider list` prints each built-in's full effective template, then the company's default command and per-staff commands. `/staff list` shows `<staff> - $ <command…>`.
+`holding provider list` は各 built-in の有効な template 全文、次いで company default command と staff ごとの command を表示します。`/staff list` は `<staff> - $ <command…>` です。
 
-## サブエージェント・プリセット（ヘッドレス）
+## Sub-agent presets（headless）
 
-プリセットは、スタッフが各タスクでヘッドレスに裏で動かすサブエージェントを作ります — チャットは**開きません**。ローカル LLM を入れてチャットするのは誤りです。サブエージェント・ランナーとして追加してください。
+Preset は、staff が各 task で background の headless で動かす sub agent を作ります — chat は **開きません**。local LLM を入れて chat するのは誤りです。sub-agent runner として追加してください。
 
-`holding staff presets` lists every preset with a detect-installed check (binary on PATH, or the local server answering `/models`):
+`holding staff presets` はインストール検出付きで全 preset を一覧します（PATH 上の binary、または local server が `/models` に応答）:
 
-| id | ランナー | ヘッドレス呼び出し |
+| id | runner | headless call |
 |---|---|---|
 | claude | Claude Code | `claude -p --output-format json … "{prompt}"` |
 | codex | Codex | `codex exec --json --ephemeral … "{prompt}"` |
-| ollama | Ollama CLI | `ollama run {model}` (prompt on stdin) |
+| ollama | Ollama CLI | `ollama run {model}`（prompt は stdin） |
 | ollama-api | Ollama server | OpenAI-compatible `http://localhost:11434/v1` |
 | lmstudio | LM Studio server | `http://localhost:1234/v1` |
 | llamacpp | llama.cpp `llama-server` | `http://localhost:8080/v1` |
 | vllm | vLLM server | `http://localhost:8000/v1` |
-| openai-compatible | any compatible endpoint | set `baseURL` in `~/.config/agents-holding/agents.json` |
+| openai-compatible | 互換 endpoint | `~/.config/agents-holding/agents.json` で `baseURL` を設定 |
 
 ### 誤りと正しいやり方
 
 **誤り**
 1. `ollama pull qwen2.5-coder`
-2. `ollama run qwen2.5-coder` → チャットが開く。
-3. タスクを貼り付けて答えをコピーする。スタッフは使えない。
+2. `ollama run qwen2.5-coder` → chat が開く。
+3. task を貼って答えをコピー。staff は使えない。
 
 **正しい**
-1. `ollama pull qwen2.5-coder`（または LM Studio / llama.cpp / vLLM サーバーを起動）。
+1. `ollama pull qwen2.5-coder`（または LM Studio / llama.cpp / vLLM server を起動）。
 2. `holding staff presets` → `✅ ollama` を確認。
 3. `holding staff add backend-engineer --preset ollama --model qwen2.5-coder`
-4. `holding staff test backend-engineer` → ヘッドレス実行、チャットなし。
-5. `/ceo KAN-12` → backend-engineer の番でスタッフがそのランナーを自分で呼ぶ。
+4. `holding staff test backend-engineer` → headless 実行、chat なし。
+5. `/ceo KAN-12` → backend-engineer の番で staff がその runner を自分で呼ぶ。
 
-## スタッフラン向けの組み込みトークン節約
+## Staff run 向けの built-in token 節約
 
-On by default for every staff (sub-agent) call; `AH_SUBAGENT_OPT=0` turns it off.
-- **Slim brief:** pasted file contents are replaced by the file path (the staff opens what it needs); chat history is never sent.
-- **Same session for follow-ups:** a follow-up ("continue…", "also…", or `--continue`) to the same staff, company and repo within 30 minutes resumes that staff's session instead of starting a new one (the grok CLI; other CLIs start fresh). `--new` forces a new session.
-- **Short answers:** every staff replies in one fixed template: status, summary (≤ 3 sentences), changes (≤ 8 items), next. No logs.
-- **Cache-friendly prefix:** system prompt and staff context (persona + skills, in a fixed order, no dates or ids) always come first and stay identical between runs; the task comes last, so the CLI's prompt caching applies.
-- **Batching:** `holding staff run <staff> "task 1 ;; task 2 ;; task 3" --batch` sends small tasks of the same staff in one call (up to 6) and prints one short result per task.
-Model choice and token budgets per task stay yours (`holding staff set`).
+すべての staff（sub-agent）呼び出しで default on。`AH_SUBAGENT_OPT=0` で off。
+- **Slim brief:** 貼り付けた file 内容は file path に置換（staff が必要なものを開く）。chat history は送らない。
+- **Follow-up は同一 session:** 同じ staff・company・repo への follow-up（"continue…"、"also…"、または `--continue`）を 30 分以内なら新 session ではなくその staff の session を再開（grok CLI。他 CLI は新規）。`--new` で強制的に新 session。
+- **短い回答:** 全 staff が固定 template で返す: status、summary（≤ 3 文）、changes（≤ 8 項目）、next。log なし。
+- **Cache 向け prefix:** system prompt と staff context（persona + skills、固定順、日付や id なし）が常に先頭で run 間も同一。task は最後なので CLI の prompt caching が効く。
+- **Batching:** `holding staff run <staff> "task 1 ;; task 2 ;; task 3" --batch` は同じ staff の小さな task を 1 回の call にまとめ（最大 6）、task ごとに短い結果を出します。
+model 選択と task ごとの token budget はあなた次第です（`holding staff set`）。

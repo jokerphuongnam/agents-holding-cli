@@ -64,28 +64,28 @@ Mặc định toàn cục và định nghĩa provider nằm trong `~/.config/age
 
 - **Provider:**
   1. `AH_AGENT`
-  2. the company's `staff.<role>.provider`
-  3. the global `staff.<role>.provider`
-  4. the company `agent`
-  5. the global `default.provider`
+  2. `staff.<role>.provider` của company
+  3. `staff.<role>.provider` toàn cục
+  4. `agent` của company
+  5. `default.provider` toàn cục
   6. `grok`
 - **Model:**
-  1. `AH_MODEL` (code) or `AH_TEXT_MODEL` (text)
-  2. the staff mapping's model
-  3. the flow's per-stage model (`/flow edit`: stage `model`, or the flow `model`)
-  4. the company `model` / `text_model`
-  5. the provider default
+  1. `AH_MODEL` (code) hoặc `AH_TEXT_MODEL` (text)
+  2. model trong staff mapping
+  3. model theo stage của flow (`/flow edit`: stage `model`, hoặc flow `model`)
+  4. `model` / `text_model` của company
+  5. default của provider
 - **Effort** (`low|medium|high`):
   1. `AH_EFFORT`
-  2. the staff mapping's effort
-  3. the company `effort` / `text_effort`
-  4. the global `default.effort`
+  2. effort trong staff mapping
+  3. `effort` / `text_effort` của company
+  4. `default.effort` toàn cục
 
   Cách effort tới từng provider:
   - grok: `--reasoning-effort`
   - claude: `--effort`
   - codex: `model_reasoning_effort`
-  - openai-compatible: `reasoning_effort`, only when `supportsEffort: true`
+  - openai-compatible: `reasoning_effort`, chỉ khi `supportsEffort: true`
 
 `holding company set agent <provider> [--model M] [--effort E] [--staff ROLE]` vẫn chạy (legacy).
 
@@ -108,7 +108,7 @@ ollama pull qwen2.5-coder:7b && ollama serve   # http://localhost:11434
 }
 ```
 
-Then run `holding staff set ba-lead ollama qwen2.5-coder:7b low` and check with `holding provider list`. LM Studio (`http://localhost:1234/v1`) and vLLM (`http://host:8000/v1`) work the same way.
+Sau đó chạy `holding staff set ba-lead ollama qwen2.5-coder:7b low` và kiểm tra bằng `holding provider list`. LM Studio (`http://localhost:1234/v1`) và vLLM (`http://host:8000/v1`) cũng dùng tương tự.
 
 **Bí mật: chỉ Keychain.** Trường `keychain` của provider đặt tên dịch vụ macOS Keychain. Key được đọc lúc gọi (`security find-generic-password -s <service> -a $USER -w`), và không bao giờ ghi vào file cấu hình hay log. Để lưu:
 

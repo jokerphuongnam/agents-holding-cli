@@ -1,23 +1,23 @@
-# Agent-Provider: welche KI welchen Staff ausführt
+# Agent-Provider: welche KI führt welches staff aus
 
 [English](../PROVIDERS.md)
 
-The lean runner and `/ceo` talk to **providers** through one small interface (the `AgentProvider` protocol). They are not tied to a particular CLI.
+Der lean runner und `/ceo` sprechen mit **providers** über eine kleine interface (das `AgentProvider` protocol). Sie sind an keine bestimmte CLI gebunden.
 
-| Kind | What it is | Where it comes from |
+| Kind | Was das ist | Herkunft |
 | --- | --- | --- |
-| Built-in | `grok`, `claude`, `codex`: the native coding CLIs | `scripts/providers/*.mjs` |
-| `openai-compatible` | Any `/v1/chat/completions` endpoint, such as DeepSeek, Kimi/Moonshot, OpenRouter, Ollama, LM Studio or vLLM | config only |
-| Custom | Your own module | `~/.config/agents-holding/providers/<name>.mjs` |
+| Built-in | `grok`, `claude`, `codex`: die nativen coding CLI | `scripts/providers/*.mjs` |
+| `openai-compatible` | Beliebiger `/v1/chat/completions` endpoint, z. B. DeepSeek, Kimi/Moonshot, OpenRouter, Ollama, LM Studio oder vLLM | config only |
+| Custom | Ihr eigenes module | `~/.config/agents-holding/providers/<name>.mjs` |
 
-`holding provider list` lists every provider with a health check: binary version, reachable endpoint, and whether the Keychain key is present.
+`holding provider list` listet jeden provider mit einem health check: binary version, erreichbarer endpoint und ob der key im Keychain liegt.
 
-## Staff-Zuordnung pro Firma
+## Staff mapping pro company
 
-The user's example sends each staff to a different provider:
-- BA → a local LLM
-- the developer's coding → a cheap Claude model
-- PO (plan) → an expensive Codex model
+Das Nutzerbeispiel schickt jedes staff an einen anderen provider:
+- BA → ein lokales LLM
+- coding des developers → ein günstiges Claude model
+- PO (plan) → ein teures Codex model
 
 ```bash
 holding staff set ba-lead            ollama  qwen2.5-coder:7b  low
@@ -27,7 +27,7 @@ holding staff unset po-lead          # back to the defaults
 holding staff list
 ```
 
-`holding staff list` puts the runtime right after each staff's name. The description is on the next line.
+`holding staff list` setzt die runtime direkt hinter den Namen jedes staff. Die Beschreibung steht in der nächsten Zeile.
 
 ```
 CEO — Acme
@@ -39,9 +39,9 @@ ceo - current session
 └─ qa-lead - grok-4.7-build-fast - default ⚠ unbound (company default)
 ```
 
-**The CEO is always your current chat session** (whatever agent and model you are chatting in). It has no binding and `holding staff set ceo …` is refused. When `/ceo` delegates, it runs `holding staff run <staff> "<task>"` (default AI agent CLI: `/staff run <staff> <task>`), which starts that staff as a **separate process on its own binding**. The Jira listener does the same for every stage.
+**Der CEO ist immer Ihre aktuelle chat session** (egal, mit welchem agent / model Sie chatten). Er hat kein binding, und `holding staff set ceo …` wird abgelehnt. Wenn `/ceo` delegiert, führt es `holding staff run <staff> "<task>"` aus (default AI agent CLI: `/staff run <staff> <task>`) und startet dieses staff als **eigenen process mit eigenem binding**. Der Jira Listener macht das bei jedem stage genauso.
 
-**Binding step.** `holding project add` (new company) and `holding staff add <role>` ask, per staff (never the CEO):
+**Binding-Schritt.** `holding project add` (neue company) und `holding staff add <role>` fragen pro staff (nie den CEO):
 
 ```
 ba-lead:
@@ -50,46 +50,46 @@ ba-lead:
   choice [1]:
 ```
 
-Enter accepts Default (your remembered binding for that role). Custom asks provider (the list from `holding provider list`, with health) → model → effort, and becomes the new remembered default. In agent chat: `/staff add <role> --agent claude --model haiku --effort low` (no flags = remembered default). `holding provider set [staff …]` reruns the step. Remembered bindings live in `~/.config/agents-holding/agent-defaults.json`; `holding provider list` shows them, `holding provider set --default <role> <provider> [model] [effort]` / `unset <role>` edits them. Every `set-staff` is remembered too. A staff without a binding uses the company default and is flagged `⚠ unbound` in `/staff list`.
+Enter nimmt Default (das gemerkte binding dieser role). Custom fragt provider (die Liste von `holding provider list`, mit health) → model → effort und wird das neue gemerkte default. Im agent chat: `/staff add <role> --agent claude --model haiku --effort low` (keine flags = gemerktes default). `holding provider set [staff …]` führt den Schritt erneut aus. Gemerkte binding liegen in `~/.config/agents-holding/agent-defaults.json`; `holding provider list` zeigt sie, `holding provider set --default <role> <provider> [model] [effort]` / `unset <role>` bearbeitet sie. Jedes `set-staff` wird ebenfalls gemerkt. Ein staff ohne binding nutzt das company default und erscheint in `/staff list` als `⚠ unbound`.
 
-The mapping is stored **per company** in `~/.config/agents-holding/state/<company>/agent.json`:
+Das mapping wird **pro company** in `~/.config/agents-holding/state/<company>/agent.json` gespeichert:
 
 ```json
 { "staff": { "ba-lead": { "provider": "ollama", "model": "qwen2.5-coder:7b", "effort": "low" } }, "lang": "auto" }
 ```
 
-Global defaults and provider definitions live in `~/.config/agents-holding/agents.json`. A company file can also define its own `providers`.
+Globale default und provider-Definitionen liegen in `~/.config/agents-holding/agents.json`. Die company-Datei kann auch eigene `providers` definieren.
 
-**Resolution order** (the same order is used everywhere: lean runs, `holding staff run`, `/staff run`, `/staff list`):
+**Resolution order** (überall gleich: lean runs, `holding staff run`, `/staff run`, `/staff list`):
 
 - **Provider:**
   1. `AH_AGENT`
-  2. the company's `staff.<role>.provider`
-  3. the global `staff.<role>.provider`
-  4. the company `agent`
-  5. the global `default.provider`
+  2. `staff.<role>.provider` der company
+  3. globales `staff.<role>.provider`
+  4. `agent` der company
+  5. globales `default.provider`
   6. `grok`
 - **Model:**
-  1. `AH_MODEL` (code) or `AH_TEXT_MODEL` (text)
-  2. the staff mapping's model
-  3. the flow's per-stage model (`/flow edit`: stage `model`, or the flow `model`)
-  4. the company `model` / `text_model`
-  5. the provider default
+  1. `AH_MODEL` (code) oder `AH_TEXT_MODEL` (text)
+  2. model aus dem staff mapping
+  3. stage-model des flow (`/flow edit`: stage `model`, oder flow `model`)
+  4. `model` / `text_model` der company
+  5. provider default
 - **Effort** (`low|medium|high`):
   1. `AH_EFFORT`
-  2. the staff mapping's effort
-  3. the company `effort` / `text_effort`
-  4. the global `default.effort`
+  2. effort aus dem staff mapping
+  3. `effort` / `text_effort` der company
+  4. globales `default.effort`
 
-  How effort reaches each provider:
+  Wie effort bei jedem provider ankommt:
   - grok: `--reasoning-effort`
   - claude: `--effort`
   - codex: `model_reasoning_effort`
-  - openai-compatible: `reasoning_effort`, only when `supportsEffort: true`
+  - openai-compatible: `reasoning_effort`, nur wenn `supportsEffort: true`
 
-`holding company set agent <provider> [--model M] [--effort E] [--staff ROLE]` still works (legacy).
+`holding company set agent <provider> [--model M] [--effort E] [--staff ROLE]` funktioniert weiterhin (legacy).
 
-## Ollama-Beispiel (lokal, kostenlos)
+## Ollama-Beispiel (local, kostenlos)
 
 ```bash
 ollama pull qwen2.5-coder:7b && ollama serve   # http://localhost:11434
@@ -108,27 +108,27 @@ ollama pull qwen2.5-coder:7b && ollama serve   # http://localhost:11434
 }
 ```
 
-Then run `holding staff set ba-lead ollama qwen2.5-coder:7b low` and check with `holding provider list`. LM Studio (`http://localhost:1234/v1`) and vLLM (`http://host:8000/v1`) work the same way.
+Dann `holding staff set ba-lead ollama qwen2.5-coder:7b low` ausführen und mit `holding provider list` prüfen. LM Studio (`http://localhost:1234/v1`) und vLLM (`http://host:8000/v1`) funktionieren genauso.
 
-**Secrets: Keychain only.** A provider's `keychain` field names a macOS Keychain service. The key is read when the call is made (`security find-generic-password -s <service> -a $USER -w`), and it is never written to a config file or a log. To store it:
+**Secrets: nur Keychain.** Das Feld `keychain` eines providers benennt einen macOS-Keychain-Service. Der key wird beim Aufruf gelesen (`security find-generic-password -s <service> -a $USER -w`) und nie in eine config file oder ein log geschrieben. Zum Speichern:
 
 ```bash
 security add-generic-password -U -s agents-holding-deepseek -a "$USER" -w   # hidden prompt
 ```
 
-Local servers such as Ollama need no key; omit `keychain`.
+Lokale server wie Ollama brauchen keinen key; `keychain` weglassen.
 
-**No native coding CLI?** The `openai-compatible` adapter runs its own minimal tool loop:
+**Keine native coding CLI?** Der `openai-compatible` adapter führt eine eigene minimale tool loop aus:
 
 | Stage | Tools | Turns |
 | --- | --- | --- |
-| Text stages (plan, question) | none | 1 call |
-| Tech plan | `read_file` and `list_dir` | up to 4 turns |
-| Coding | `read_file`, `list_dir`, `write_file` and `run_tests` | up to `maxTurns` turns (default 15) |
+| Text stages (plan, question) | keine | 1 call |
+| Tech plan | `read_file` und `list_dir` | bis zu 4 turns |
+| Coding | `read_file`, `list_dir`, `write_file` und `run_tests` | bis zu `maxTurns` turns (default 15) |
 
-`run_tests` runs `testCommand`, or `npm test` when there is a `package.json`. Every path must stay inside the repo: paths that leave the repo (`..`) and `.git` are refused. On the last turn tools are disabled, so the model has to give its final JSON answer.
+`run_tests` führt `testCommand` aus, oder `npm test` wenn es ein `package.json` gibt. Jeder path muss im repo bleiben: paths die das repo verlassen (`..`) und `.git` werden abgelehnt. Im letzten turn werden tools abgeschaltet, daher muss das model seine finale JSON answer liefern.
 
-## Die `AgentProvider`-Schnittstelle
+## Die `AgentProvider` interface
 
 ```js
 export default {
@@ -142,29 +142,29 @@ export default {
 };
 ```
 
-- **Custom adapter.** Save the file as `~/.config/agents-holding/providers/my-llm.mjs`. It can export the object above, or a factory `(name, def) => provider`, where `def` is that provider's `agents.json` entry. Then run `holding staff set <staff> my-llm <model>`.
-- **Built-in reference.** `scripts/providers/{grok,claude,codex}.mjs` show how CLI adapters use `ctx.spawn`.
-- **Rules for every adapter:**
-  - no MCP or server access (the runner talks to the server itself)
-  - one fresh session per call
-  - return JSON that matches `o.schema`
-  - report token usage when you can
+- **Custom adapter.** Datei speichern als `~/.config/agents-holding/providers/my-llm.mjs`. Sie kann das object oben exportieren oder ein factory `(name, def) => provider`, wobei `def` der Eintrag dieses providers in `agents.json` ist. Dann `holding staff set <staff> my-llm <model>` ausführen.
+- **Built-in-Referenz.** `scripts/providers/{grok,claude,codex}.mjs` zeigen, wie CLI-adapter `ctx.spawn` nutzen.
+- **Regeln für jeden adapter:**
+  - kein MCP- oder server-Zugriff (der runner spricht selbst mit dem server)
+  - eine neue session pro call
+  - JSON zurückgeben, das `o.schema` erfüllt
+  - token usage melden, wenn möglich
 
 ## Sprache
 
-Output follows the input language. `holding company set lang <code|auto>` overrides it per company. See WHO-DECIDES.
+Output folgt der Eingabesprache. `holding company set lang <code|auto>` überschreibt das pro company. Siehe WHO-DECIDES.
 
-## Welche Firma
+## Welche company
 
-Bindings are per company. Company = `--company X` > nearest `.agents/company.json` from the current folder > active company (`holding company use <company>`). `holding company list` lists them; `holding company show` prints what this shell resolves to.
+Binding sind pro company. Company = `--company X` > nächstes `.agents/company.json` vom aktuellen Ordner aus > active company (`holding company use <company>`). `holding company list` listet sie; `holding company show` zeigt, was diese shell auflöst.
 
 ## Ein /ceo, zwei Modi
 
-`/ceo` routes on its own. If one company resolves (`--company`, `@slug`, the company named in the prompt, the repo `.agents/company.json`, or the active company), it runs in company mode and the reply starts with `[ceo @ <slug>]`. Otherwise, or when the request spans companies, it runs in holding mode and the reply starts with `[holding]`. `/ceo` is an alias.
+`/ceo` routet selbst. Wenn eine company aufgelöst wird (`--company`, `@slug`, company-Name im prompt, `.agents/company.json` des repo oder die active company), läuft es im company-Modus und die Antwort beginnt mit `[ceo @ <slug>]`. Sonst, oder wenn die Anfrage mehrere company betrifft, läuft es im holding-Modus und beginnt mit `[holding]`. `/ceo` ist ein alias.
 
-## Staff-Startbefehl (der einfache Weg)
+## Staff-Start-command (der einfache Weg)
 
-Give a staff one fixed command. When that staff gets work, agents-holding runs exactly that command in the company repo (the path in projects.json).
+Geben Sie einem staff einen festen command. Wenn dieses staff Arbeit bekommt, führt agents-holding genau diesen command im company-repo aus (der path in projects.json).
 
 ```sh
 holding staff set developer 'claude -p --model {model} --effort {effort} --output-format json "{prompt}"' --model sonnet --effort low --timeout 900
@@ -176,83 +176,83 @@ holding staff test developer     # dry run: argv, cwd, how prompt and context ar
 holding staff unset developer
 ```
 
-Fields (all optional except `command`). The binding step in `holding staff add` / `holding project add` asks for the same fields under **Custom**. **Default** is the remembered one in `agent-defaults.json`. A commented example of every field is written to `~/.config/agents-holding/staff.example.jsonc` the first time.
+Felder (alle optional außer `command`). Der Binding-Schritt in `holding staff add` / `holding project add` fragt unter **Custom** dieselben Felder. **Default** ist der in `agent-defaults.json` gemerkte Wert. Beim ersten Mal wird ein kommentiertes Beispiel jedes Feldes nach `~/.config/agents-holding/staff.example.jsonc` geschrieben.
 
-| field | example | used by |
+| field | example | verwendet für |
 |---|---|---|
-| command | `claude -p --model {model} "{prompt}"` | the exact command run |
+| command | `claude -p --model {model} "{prompt}"` | der exakte ausgeführte command |
 | model | `sonnet` | `{model}` |
 | effort | `low` | `{effort}` |
 | max_turns | `25` | `{max_turns}` |
-| cwd | empty = company repo | `{cwd}` and the process cwd |
-| context | `auto` \| `none` \| `/path/ctx.md` | staff context (see below) |
-| timeout | `900` (seconds) | kill after |
-| env | `{"K":"V"}` / `--env K=V` | extra env (the server key is never passed) |
+| cwd | leer = company repo | `{cwd}` und cwd des process |
+| context | `auto` \| `none` \| `/path/ctx.md` | staff context (siehe unten) |
+| timeout | `900` (Sekunden) | danach kill |
+| env | `{"K":"V"}` / `--env K=V` | zusätzliches env (server key wird nie übergeben) |
 
-Placeholders:
-- `{prompt}`: the task text, as one argv entry. No shell runs, so quotes, `$` and backticks stay literal. Over 200 KB it is refused; use `{prompt_file}` instead.
-- `{prompt_file}`: a 0600 temp file with the task.
-- `{model}`, `{effort}`, `{max_turns}`: taken from the fields above. If a field is empty, it is dropped together with the flag in front of it (for example, `--model {model}` disappears).
-- `{cwd}`: the working directory.
-- `{context}`, `{context_file}`: the staff context, as text or as a temp file.
+Placeholder:
+- `{prompt}`: der task-Text als einzelner argv. Kein shell, daher bleiben Anführungszeichen, `$` und backticks wörtlich. Über 200 KB wird abgelehnt; `{prompt_file}` nutzen.
+- `{prompt_file}`: eine 0600-Tempdatei mit dem task.
+- `{model}`, `{effort}`, `{max_turns}`: aus den Feldern oben. Ist ein Feld leer, entfällt es zusammen mit dem Flag davor (z. B. verschwindet `--model {model}`).
+- `{cwd}`: das Arbeitsverzeichnis.
+- `{context}`, `{context_file}`: der staff context als Text oder Tempdatei.
 
-### Aufgabe vs Staff-Kontext
+### Task vs staff context
 
-`{prompt}` carries **only the task**. The staff context is built per run as a separate file and never stuffed into the prompt. It holds the persona, the 2-3 relevant skill summaries, learned habits, company conventions and the output language, plus the stage instructions. It is delivered through each CLI's own channel (checked against `--help` of grok 1.0.70, claude 2.1.177 and codex 0.133):
+`{prompt}` trägt **nur den task**. Der staff context wird pro Lauf als eigene Datei gebaut und nie in den prompt gesteckt. Er enthält persona, 2–3 relevante skill-Zusammenfassungen, learned habits, company conventions und die output-Sprache sowie stage-Anweisungen. Er wird über den eigenen Kanal jeder CLI geliefert (geprüft gegen `--help` von grok 1.0.70, claude 2.1.177 und codex 0.133):
 
 - claude: `--append-system-prompt-file <ctx>` (built-in adapter: `--append-system-prompt`)
 - codex: `-c developer_instructions="<ctx>"`
 - grok: `--rules <ctx>`
 - openai-compatible / Ollama HTTP: system message
-- any other command: `{context}` / `{context_file}` if present, else env `AH_CONTEXT_FILE`
+- jeder andere command: `{context}` / `{context_file}`, falls vorhanden, sonst env `AH_CONTEXT_FILE`
 
-Repo files (AGENTS.md etc.) are never written.
+Repo-Dateien (AGENTS.md usw.) werden nie geschrieben.
 
-Output parsing is picked from the first word:
-- `claude`: JSON result and usage
-- `codex`: JSONL events and usage
+Output-Parse nach dem ersten Wort:
+- `claude`: JSON result und usage
+- `codex`: JSONL events und usage
 - `grok`: JSON
-- anything else: plain text (a trailing `{...}` JSON is used if present)
+- alles andere: plain text (ein abschließendes `{...}` JSON wird genutzt, falls vorhanden)
 
-`holding provider list` prints each built-in's full effective template, then the company's default command and per-staff commands. `/staff list` shows `<staff> - $ <command…>`.
+`holding provider list` druckt das vollständige effektive template jedes built-in, dann den company-default-command und die commands pro staff. `/staff list` zeigt `<staff> - $ <command…>`.
 
-## Sub-Agent-Presets (headless)
+## Sub-agent presets (headless)
 
-Ein Preset erzeugt einen Sub-Agenten, den der Staff für jede Aufgabe headless im Hintergrund ausführt — es öffnet **keinen** Chat. Bei einer lokalen LLM ist Installieren und Chatten der falsche Weg; füge sie als Sub-Agent-Runner hinzu.
+Ein preset erzeugt ein sub agent, das das staff für jedes task headless im Hintergrund ausführt — es öffnet **keinen** chat. Bei einem lokalen LLM ist Installieren und Chatten der falsche Weg; fügen Sie es als sub-agent runner hinzu.
 
-`holding staff presets` lists every preset with a detect-installed check (binary on PATH, or the local server answering `/models`):
+`holding staff presets` listet jedes preset mit Installationserkennung (binary auf dem PATH, oder lokaler server antwortet auf `/models`):
 
 | id | runner | headless call |
 |---|---|---|
 | claude | Claude Code | `claude -p --output-format json … "{prompt}"` |
 | codex | Codex | `codex exec --json --ephemeral … "{prompt}"` |
-| ollama | Ollama CLI | `ollama run {model}` (prompt on stdin) |
+| ollama | Ollama CLI | `ollama run {model}` (prompt über stdin) |
 | ollama-api | Ollama server | OpenAI-compatible `http://localhost:11434/v1` |
 | lmstudio | LM Studio server | `http://localhost:1234/v1` |
 | llamacpp | llama.cpp `llama-server` | `http://localhost:8080/v1` |
 | vllm | vLLM server | `http://localhost:8000/v1` |
-| openai-compatible | any compatible endpoint | set `baseURL` in `~/.config/agents-holding/agents.json` |
+| openai-compatible | beliebiger kompatibler endpoint | `baseURL` in `~/.config/agents-holding/agents.json` setzen |
 
 ### Falsch vs richtig
 
 **Falsch**
 1. `ollama pull qwen2.5-coder`
-2. `ollama run qwen2.5-coder` → ein Chat öffnet sich.
-3. Aufgabe einfügen, Antwort kopieren. Der Staff kann es nicht nutzen.
+2. `ollama run qwen2.5-coder` → ein chat öffnet sich.
+3. Task einfügen, Antwort kopieren. Das staff kann es nicht nutzen.
 
 **Richtig**
-1. `ollama pull qwen2.5-coder` (oder LM Studio- / llama.cpp- / vLLM-Server starten).
-2. `holding staff presets` → `✅ ollama` sehen.
+1. `ollama pull qwen2.5-coder` (oder LM Studio / llama.cpp / vLLM server starten).
+2. `holding staff presets` → Sie sehen `✅ ollama`.
 3. `holding staff add backend-engineer --preset ollama --model qwen2.5-coder`
-4. `holding staff test backend-engineer` → läuft headless, kein Chat.
-5. `/ceo KAN-12` → wenn backend-engineer dran ist, ruft der Staff diesen Runner selbst auf.
+4. `holding staff test backend-engineer` → läuft headless, kein chat.
+5. `/ceo KAN-12` → wenn backend-engineer an der Reihe ist, ruft das staff diesen runner selbst auf.
 
-## Eingebaute Token-Ersparnis bei Staff-Läufen
+## Built-in Token-Einsparung bei staff runs
 
-On by default for every staff (sub-agent) call; `AH_SUBAGENT_OPT=0` turns it off.
-- **Slim brief:** pasted file contents are replaced by the file path (the staff opens what it needs); chat history is never sent.
-- **Same session for follow-ups:** a follow-up ("continue…", "also…", or `--continue`) to the same staff, company and repo within 30 minutes resumes that staff's session instead of starting a new one (the grok CLI; other CLIs start fresh). `--new` forces a new session.
-- **Short answers:** every staff replies in one fixed template: status, summary (≤ 3 sentences), changes (≤ 8 items), next. No logs.
-- **Cache-friendly prefix:** system prompt and staff context (persona + skills, in a fixed order, no dates or ids) always come first and stay identical between runs; the task comes last, so the CLI's prompt caching applies.
-- **Batching:** `holding staff run <staff> "task 1 ;; task 2 ;; task 3" --batch` sends small tasks of the same staff in one call (up to 6) and prints one short result per task.
-Model choice and token budgets per task stay yours (`holding staff set`).
+Standardmäßig bei jedem staff-(sub-agent)-call aktiv; `AH_SUBAGENT_OPT=0` schaltet ab.
+- **Slim brief:** eingefügter Dateiinhalt wird durch die file path ersetzt (das staff öffnet selbst, was es braucht); chat history wird nie gesendet.
+- **Follow-ups dieselbe session:** ein Follow-up („continue…“, „also…“ oder `--continue`) an dasselbe staff, company und repo innerhalb von 30 Minuten setzt diese staff-session fort statt eine neue zu öffnen (grok CLI; andere CLI starten neu). `--new` erzwingt eine neue session.
+- **Kurze Antworten:** jedes staff antwortet mit festem template: status, summary (≤ 3 Sätze), changes (≤ 8 Punkte), next. Keine logs.
+- **Cache-freundliches prefix:** system prompt und staff context (persona + skills, feste Reihenfolge, keine Daten oder ids) stehen immer zuerst und sind zwischen runs identisch; der task kommt zuletzt, damit das prompt caching der CLI greift.
+- **Batching:** `holding staff run <staff> "task 1 ;; task 2 ;; task 3" --batch` sendet kleine tasks desselben staff in einem call (bis zu 6) und druckt ein kurzes Ergebnis pro task.
+Model-Wahl und token budget pro task bleiben Ihre Sache (`holding staff set`).
