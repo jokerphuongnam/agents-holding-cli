@@ -60,6 +60,8 @@ ah_menu() {
   printf -v "$__v" '%s' $((__c + 1)); return 0
 }
 # <<< ah_menu
+# Hardware device key (Secure Enclave / TPM / file): sign each request when Node is available; AH_DEVICE_SIGN=0 disables.
+signcfg() { [ "${AH_DEVICE_SIGN:-1}" = 1 ] && command -v node >/dev/null || return 0; node "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/device-key.mjs" curlcfg POST "$1" "$2" 2>/dev/null || true; }
 # ---- Generate key / Import key (the only two setup options). The key is never printed: it goes straight to the Keychain. ----
 if [ "$cmd" = key ] && { [ "$V" = generate ] || [ "$V" = import ]; }; then
   DEV="${AGENTS_HOLDING_DEVICE:-$(kc agents-holding-device || true)}"
@@ -70,7 +72,7 @@ if [ "$cmd" = key ] && { [ "$V" = generate ] || [ "$V" = import ]; }; then
   tmp="$(mktemp -d)"; chmod 700 "$tmp"; trap 'rm -rf "$tmp"' EXIT
   if [ "$V" = generate ]; then
     osascript -l JavaScript -e 'function run(a){return JSON.stringify({device:a[1],device_name:a[2],lang:a[3],jira_site:a[4]||undefined})}' "" "$DEV" "$(scutil --get ComputerName 2>/dev/null || hostname)" "$LANGH" "${AH_JIRA_SITE:-}" > "$tmp/b.json"
-    curl -sS --max-time 45 -X POST "$MCP_BASE/free-signup" -H "Content-Type: application/json" -H "X-AH-Lang: $LANGH" --data-binary "@$tmp/b.json" -o "$tmp/r.json" || { say "MCP server unreachable, try again." "Không kết nối được MCP server, thử lại."; exit 1; }
+    signcfg "$MCP_BASE/free-signup" "$tmp/b.json" | curl -K - -sS --max-time 45 -X POST "$MCP_BASE/free-signup" -H "Content-Type: application/json" -H "X-AH-Lang: $LANGH" --data-binary "@$tmp/b.json" -o "$tmp/r.json" || { say "MCP server unreachable, try again." "Không kết nối được MCP server, thử lại."; exit 1; }
     k="$(osascript -l JavaScript -e 'function run(a){ObjC.import("Foundation");const j=JSON.parse($.NSString.stringWithContentsOfFileEncodingError(a[0],4,null).js);return j.ok?"OK "+(j.recovered?"R ":"N ")+j.key:"ERR "+(j.message||"failed")}' "$tmp/r.json")"; rm -f "$tmp/r.json"
     case "$k" in "OK "*) k="${k#OK }"; case "$k" in "R "*) say "Recovered this device's key (old key no longer works)." "Đã khôi phục key của máy này (key cũ không còn dùng được).";; esac; k="${k#? }";; *) echo "${k#ERR }" >&2; exit 1;; esac
   else
@@ -95,7 +97,7 @@ tmp="$(mktemp -d)"; chmod 700 "$tmp"; trap 'rm -rf "$tmp"' EXIT
 call() { # call <cmd> <args> -> $tmp/txt
 osascript -l JavaScript -e 'function run(a){return JSON.stringify({jsonrpc:"2.0",id:1,method:"tools/call",params:{name:"cli",arguments:Object.assign({command:a[0],args:a[1]},a[2]?{company:a[2]}:{},a[3]?{owner_session:a[3]}:{},a[4]?{secret_key:a[4]}:{})}})}' \
   "$1" "$2" "$CO" "$SESS" "$SK" > "$tmp/body.json"
-code="$({ printf 'header = "Authorization: Bearer %s"\n' "$KEY"; [ -n "$DEV" ] && printf 'header = "X-AH-Device: %s"\n' "$DEV"; true; } |
+code="$({ printf 'header = "Authorization: Bearer %s"\n' "$KEY"; [ -n "$DEV" ] && printf 'header = "X-AH-Device: %s"\n' "$DEV"; signcfg "$MCP_URL" "$tmp/body.json"; true; } |
   curl -sS --retry 2 --retry-delay 1 -K - -X POST "$MCP_URL" -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" -H "X-AH-Client: ah-cli" -H "X-AH-Lang: ${LANGH:-en}" \
   --max-time "${AH_CLI_TIMEOUT:-45}" --data-binary "@$tmp/body.json" -o "$tmp/out.json" -w '%{http_code}')" || { stale "server unreachable"; exit 1; }
 osascript -l JavaScript -e 'function run(a){ObjC.import("Foundation");const s=$.NSString.stringWithContentsOfFileEncodingError(a[0],4,null).js;let j;
