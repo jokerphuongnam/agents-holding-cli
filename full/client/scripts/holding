@@ -28,7 +28,7 @@ usage: holding <noun> <verb> [args]   (chat: /<noun> <verb> ...; no verb = list/
   skill where|check|set <name> public|private|sync [--dry-run]|consent <name>|run <name> <script>
   project add --jira-project KEY [--company ID] [--name N] [--auto-pr on|off] [--agent A] | remove [--repo DIR|NAME] [--jira-project KEY] | list [--json]
   company list | count | overview | show [company] | use <company>   (only companies connected to holding)
-  company create <name> [--parent P] | rename <c> <name> | pause|resume|archive <c> | delete <c> --confirm <c> | move <c> --parent <P|none>
+  company create [name] [--parent P]   (name optional = this folder; also: holding create company [name]) | rename <c> <name> | pause|resume|archive <c> | delete <c> --confirm <c> | move <c> --parent <P|none>
   company staff move <role> <from> <to> | staff assign <role> <c> | link <c> <KEY> | unlink <c> | config [c] [set|unset <key> <value>] | config defaults
   company migrate <local company folder> [--parent P] [--dry-run]   (bring an older local company into holding; originals kept)
   company set lang <code|auto> | communication [jira+chat|chat] | auto-pr on|off | convention "<text>" | agent [grok|claude|codex] [--model M]
@@ -94,11 +94,12 @@ case "$noun" in
     remove) exec node "$here/projects.mjs" remove "$@" ;;
     ""|list) exec node "$here/projects.mjs" list "$@" ;;
     *) usage ;; esac ;;
+  create) case "$verb" in company) exec node "$here/company-create.mjs" "$@" ;; *) usage ;; esac ;;  # alias: holding create company [name]
   company) case "$verb" in
     ""|list|count|overview|health) case " $* " in *" --local "*|*" --json "*) exec node "$here/companies-cli.mjs" list "$@" ;; esac; srv "$@" ;;  # MCP companies only
     use) exec node "$here/companies-cli.mjs" use "$@" ;;
     show) case "${1:-}" in convention|auto-pr) srv "$@" ;; "") node "$here/companies-cli.mjs" show; srv "$@" ;; esac; srv "$@" ;;
-    create) bash "$here/ah-cli.sh" company create "$@" || exit $?; exec node "$here/policy.mjs" processes "${1:-}" --company "${1:-}" ;;  # then: process setup menu
+    create) exec node "$here/company-create.mjs" "$@" ;;
     deny) dv="${1:-list}"; [ $# -gt 0 ] && shift; denycmd "$dv" "*" "$@" ;;
     process) pv="${1:-list}"; [ $# -gt 0 ] && shift; [ "$pv" = setup ] && exec node "$here/policy.mjs" processes "$@"; exec bash "$here/ah-cli.sh" company process "$pv" "$@" ;;
     rename|pause|resume|archive|delete|move|staff|link|unlink|config) srv "$@" ;;
