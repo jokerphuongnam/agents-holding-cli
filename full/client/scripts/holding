@@ -145,5 +145,6 @@ case "$noun" in
   habit) case "$verb" in ""|list|edit|clear) exec node "$here/habits.mjs" "${verb:-list}" "$@" ;; *) usage ;; esac ;;
   flow) case "$verb" in ""|show|list) srv "$@" ;; *) echo "/flow $verb needs the agent: run it inside grok/claude/codex." >&2; exit 2 ;; esac ;;
   security) srv "$@" ;;  # server decides; non-admins get the same help as an unknown command
+  owner) srv "$@" ;;  # owner-only (owner contact show|set); others get the unknown-command help
   *) usage ;;
 esac

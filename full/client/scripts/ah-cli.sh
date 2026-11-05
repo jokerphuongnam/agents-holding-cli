@@ -66,7 +66,7 @@ signcfg() { [ "${AH_DEVICE_SIGN:-1}" = 1 ] && command -v node >/dev/null || retu
 if [ "$cmd" = key ] && { [ "$V" = generate ] || [ "$V" = import ]; }; then
   DEV="${AGENTS_HOLDING_DEVICE:-$(kc agents-holding-device || true)}"
   [ -n "$DEV" ] || { hw="$(ioreg -rd1 -c IOPlatformExpertDevice | awk -F'"' '/IOPlatformUUID/{print $4}')"; [ -n "$hw" ] || hw="$(uuidgen)"; DEV="mac-$(printf 'agents-holding:%s' "$hw" | shasum -a 256 | cut -c1-32)"; security add-generic-password -U -s agents-holding-device -a "$USER" -w "$DEV" >/dev/null 2>&1; }
-  if [ -n "$(kc agents-holding-license || true)" ] && [ "${AH_YES:-0}" != 1 ]; then
+  if [ -n "$(kc "${AH_KC_LICENSE:-agents-holding-license}" || true)" ] && [ "${AH_YES:-0}" != 1 ]; then
     if ah_menu yn 1 "$(say 'This Mac already has a key. Replace it?' 'Máy này đã có key. Thay key mới?')" "$(say 'No, keep the current key' 'Không, giữ key hiện tại')" "$(say 'Yes, replace it' 'Có, thay key mới')"; then [ "$yn" = 2 ] || exit 1
     else read -r -p "$(say 'This Mac already has a key. Replace it? [y/N] ' 'Máy này đã có key. Thay key mới? [y/N] ')" yn; case "$yn" in y|Y) ;; *) exit 1;; esac; fi; fi
   tmp="$(mktemp -d)"; chmod 700 "$tmp"; trap 'rm -rf "$tmp"' EXIT
@@ -84,8 +84,8 @@ if [ "$cmd" = key ] && { [ "$V" = generate ] || [ "$V" = import ]; }; then
   rm -rf "$tmp"; trap - EXIT; exec bash "$0" key show
 fi
 [ "$cmd" = credit ] && case "$V" in add|list) OWNCMD=1;; show) [ -n "$X" ] && OWNCMD=1;; esac
-case "$OWNCMD" in 1) if [ "${AH_OWNER_RECOVERY:-0}" = 1 ]; then KEY="${AGENTS_HOLDING_OWNER_KEY:-$(kc agents-holding-owner-admin-key || true)}"; OWN=1; else KEY="${AGENTS_HOLDING_KEY:-$(kc agents-holding-license || true)}"; OWN=""; fi;;
-  *) KEY="${AGENTS_HOLDING_KEY:-$(kc agents-holding-license || true)}"; OWN="";; esac
+case "$OWNCMD" in 1) if [ "${AH_OWNER_RECOVERY:-0}" = 1 ]; then KEY="${AGENTS_HOLDING_OWNER_KEY:-$(kc agents-holding-owner-admin-key || true)}"; OWN=1; else KEY="${AGENTS_HOLDING_KEY:-$(kc "${AH_KC_LICENSE:-agents-holding-license}" || true)}"; OWN=""; fi;;
+  *) KEY="${AGENTS_HOLDING_KEY:-$(kc "${AH_KC_LICENSE:-agents-holding-license}" || true)}"; OWN="";; esac
 [ -n "$KEY" ] || { echo "no $([ -n "$OWN" ] && echo owner || echo license) key in the Keychain: run connect.sh first" >&2; exit 1; }
 DEV="${AGENTS_HOLDING_DEVICE:-$(kc agents-holding-device || true)}"
 SK=""; case " ${A[*]:-} " in *" --custom "*) [ -n "$OWNCMD" ] && { SK="${AH_CUSTOM_KEY:-}"; [ -n "$SK" ] || { read -r -s -p "Custom key string (hidden): " SK; echo; }; } ;; esac

@@ -54,12 +54,24 @@ else
   progress 3/5 "skipped (non-macOS or AH_SKIP_KEYCHAIN)"
 fi
 
-progress 4/5 "slash commands + hooks"
+progress 4/5 "pair this Mac with your agent session (no key shown)"
+MCP_URL="${AH_MCP_URL:-https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp}"
+if [ -n "${AH_PAIR_CODE:-}" ] && [ "$(uname -s)" = Darwin ] && ! security find-generic-password -s "${AH_KC_LICENSE:-agents-holding-license}" -a "$USER" -w >/dev/null 2>&1; then
+  resp="$(curl -fsS --retry 2 -X POST "${MCP_URL%/}/pair" -H "Content-Type: application/json" --data "{\"code\":\"$AH_PAIR_CODE\"}" 2>/dev/null || true)"
+  tok="$(printf '%s' "$resp" | sed -n 's/.*"token" *: *"\(aho_at_[0-9a-f]*\)".*/\1/p')"
+  if [ -n "$tok" ] && security add-generic-password -U -T "" -s "${AH_KC_LICENSE:-agents-holding-license}" -a "$USER" -w "$tok" >/dev/null 2>&1; then progress 4/5 "paired (token in Keychain)"
+  else progress 4/5 "pairing failed (code expired or used): ask your agent to run install again"; fi
+else progress 4/5 "already paired or no pairing code (skipped)"; fi
+
+progress 4/5 "slash commands + instant hooks"
+SYNC=(); [ -d "$HOME/.claude" ] && SYNC+=(--claude)
 if [ -x "$DEST/scripts/sync-commands.sh" ]; then
-  bash "$DEST/scripts/sync-commands.sh" 2>&1 | tail -3 | sed 's/^/[bootstrap 4\/5] /' || true
+  bash "$DEST/scripts/sync-commands.sh" ${SYNC[@]+"${SYNC[@]}"} 2>&1 | tail -5 | sed 's/^/[bootstrap 4\/5] /' || true
 else
   progress 4/5 "sync-commands.sh missing (agent should call setup_commands)"
 fi
 
+# first CLI call reports this client's version to the server (turns off the install notice in chat)
+"$DEST/scripts/holding" key show >/dev/null 2>&1 && progress 5/5 "server sees this client" || true
 progress 5/5 "done (Jira Listener NOT installed — will set up on first Jira use)"
 printf 'OK bootstrap complete. VERSION=%s holding=%s\n' "$(cat "$DEST/scripts/VERSION" 2>/dev/null || echo '?')" "$(command -v holding 2>/dev/null || echo "$HOME/.local/bin/holding")"

@@ -24,10 +24,10 @@ esac
 if [ "$name" = ceo ] && { [ "$verb" = companies ] || [ "$verb" = company ]; } && [ -n "$H" ]; then
   rest="${args#"$verb"}"; rest="${rest# }"; [ "$verb" = companies ] && rest="list${rest:+ $rest}"; name=company; args="$rest"; verb="${args%% *}"; fi
 case "$name" in
-  staff|task|provider|skill|project|company|create|listener|jira|inbox|key|credit|billing|status|doctor|notify|setup|habit|flow|report|usage|team|enterprise|security|figma|confluence|atlassian|update|upgrade|client|whoami|plan|history|sources)
+  staff|task|provider|skill|project|company|create|listener|jira|inbox|key|credit|billing|status|doctor|notify|setup|habit|flow|report|usage|team|enterprise|security|figma|confluence|atlassian|update|upgrade|client|whoami|plan|history|sources|owner)
     if [ -n "$H" ]; then export AH_HOOK_RUN=1; run=(bash "$here/holding" "$name")
     else case "$name $verb" in
-        "staff list"|"staff "|"staff remove"|"task "*|"skill list"|"skill "|"skill private "*|"skill public "*|"jira sources"|"key "*|"credit "*|"billing "*|"status "*|"doctor "*|"flow "*|"report "*|"usage "*|"team "*|"enterprise "*|"security "*|"notify "*|"client "*|"whoami "*|"plan "*) run=(bash "$here/ah-cli.sh" "$name") ;;
+        "staff list"|"staff "|"staff remove"|"task "*|"skill list"|"skill "|"skill private "*|"skill public "*|"jira sources"|"key "*|"credit "*|"billing "*|"status "*|"doctor "*|"flow "*|"report "*|"usage "*|"team "*|"enterprise "*|"security "*|"notify "*|"client "*|"whoami "*|"plan "*|"owner "*) run=(bash "$here/ah-cli.sh" "$name") ;;
         *) echo "/$name $verb needs the full client (Node + install.sh): see SETUP.md" >&2; exit 2 ;;
       esac; fi ;;
   help) run=(bash "$here/ah-cli.sh" help) ;;
