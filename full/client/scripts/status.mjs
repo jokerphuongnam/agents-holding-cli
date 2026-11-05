@@ -3,6 +3,8 @@
 // holding notify on|off: macOS notifications for start/done/fail (default on; AH_NOTIFY=0 also turns them off).
 import { homedir } from "node:os";
 import * as L from "./lean.mjs";
+import { readFileSync as readFileSync_AH } from "node:fs";
+const AH_CLIENT_VERSION = (() => { try { return readFileSync_AH(new URL("./VERSION", import.meta.url), "utf8").trim(); } catch { return "0"; } })();
 const [cmd, arg] = process.argv.slice(2), home = process.env.AH_HOME ?? homedir();
 if (cmd === "notify") {
   if (arg === "on" || arg === "off") { L.setNotify(home, arg === "on"); console.log(`notifications ${arg} (the running listener picks it up on the next event)`); }
@@ -27,7 +29,7 @@ if (cmd === "notify") {
     if (key) {
       const r = await (async () => { const u = process.env.AH_MCP_URL ?? "https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp", bd = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "inbox_list", arguments: {} } }); const { signFetch } = await import("./device-key.mjs").catch(() => ({ signFetch: () => ({}) }));
         return fetch(u, { method: "POST", signal: AbortSignal.timeout(8000),
-        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream", "X-AH-Client": "ah-cli", ...(dev ? { "X-AH-Device": dev } : {}), ...signFetch(u, bd) },
+        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream", "X-AH-Version": AH_CLIENT_VERSION, "X-AH-Client": "ah-cli", ...(dev ? { "X-AH-Device": dev } : {}), ...signFetch(u, bd) },
         body: bd }); })();
       const j = await r.json(), d = JSON.parse(j.result?.content?.[0]?.text ?? "null");
       if (d && typeof d.count === "number") console.log(d.count ? `\x1b[1;31mCEO inbox: ${d.count} pending\x1b[0m (holding inbox list · reply <id> <answer> · dismiss <id>)` : "CEO inbox: nothing pending ✔");

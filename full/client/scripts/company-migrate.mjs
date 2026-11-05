@@ -49,3 +49,6 @@ const reg = R.load(homedir()); if (!reg.projects.some((p) => p.path === repo)) {
 say(`Migrated -> ${d.company}${d.parent ? ` (under ${d.parent})` : ""}: ${d.roster.length} staff connected, ${d.local_only_roles} custom roles kept locally, ${d.skipped_over_limit} over plan limit.`,
     `Đã chuyển -> ${d.company}${d.parent ? ` (thuộc ${d.parent})` : ""}: ${d.roster.length} nhân sự đã kết nối, ${d.local_only_roles} vai trò riêng giữ ở máy, ${d.skipped_over_limit} vượt giới hạn gói.`);
 say("Originals kept on disk. Check: holding company show " + d.company, "Bản gốc vẫn giữ nguyên trên máy. Kiểm tra: holding company show " + d.company);
+// Company processes (Jira Listener): arrow-key setup now (AH_NONINTERACTIVE=1 / no TTY: skipped, add later with holding company process setup)
+if (process.env.AH_NONINTERACTIVE !== "1" && process.stdin.isTTY) { try { const P = await import("./policy.mjs"); await P.setupProcesses(d.company, P.mcpCall); } catch (e) { console.error(`process setup skipped: ${e.message}`); } }
+else say("Processes: holding company process setup " + d.company, "Quy trình: holding company process setup " + d.company);

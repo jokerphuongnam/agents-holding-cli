@@ -14,6 +14,11 @@ import * as L from "./lean.mjs";
 import * as P from "./providers/index.mjs";
 import * as R from "./registry.mjs";
 import * as X from "./resilience.mjs";
+import * as POL from "./policy.mjs";
+import * as XT from "./crossteam.mjs";
+import { client as jiraRaw } from "./jira.mjs";
+import { readFileSync as readFileSync_AH } from "node:fs";
+const AH_CLIENT_VERSION = (() => { try { return readFileSync_AH(new URL("./VERSION", import.meta.url), "utf8").trim(); } catch { return "0"; } })();
 
 const args = process.argv.slice(2);
 const opt = (n, d) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : d; };
@@ -93,7 +98,7 @@ function creditOk() {
 async function mcp(name, a) {
   if (O.governed(name)) a = O.outbound(name, a); // single outbound allowlist (telemetry / crawl / billing)
   let r, body;
-  try { r = await fetch(`${base}/functions/v1/mcp`, { method: "POST", signal: AbortSignal.timeout(Number(process.env.AH_MCP_TIMEOUT_MS ?? 60000)), headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", Authorization: `Bearer ${key}`, ...deviceHeaders },
+  try { r = await fetch(`${base}/functions/v1/mcp`, { method: "POST", signal: AbortSignal.timeout(Number(process.env.AH_MCP_TIMEOUT_MS ?? 60000)), headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", "X-AH-Version": AH_CLIENT_VERSION, Authorization: `Bearer ${key}`, ...deviceHeaders },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: a } }) }); body = await r.text(); }
   catch (e) { const c = X.classifyServer({ err: e }); serverDown(c); throw new X.ServerError(c); }
   const c = X.classifyServer({ status: r.status, body });
@@ -113,15 +118,18 @@ const autostartPlist = join(homedir(), "Library/LaunchAgents/com.agentsholding.j
 // Every 60s (server marks the Jira Listener offline after ~2.5 min without one). Back after an outage: post the offline
 // comment once on every card that changed meanwhile (text from the server, task language), then reconcile replays the change.
 const myJira = {}; // enterprise: this key's Jira account; work starts only on cards assigned to it
-const heartbeat = (state = "online") => Promise.all(companyList.map((company) => mcp("listener_heartbeat", { company, host: hostname(), pid: process.pid, autostart: existsSync(autostartPlist), version: "4", state, meta: localMeta() })
+let lastBeat = 0;
+const heartbeatIfStale = () => { if (Date.now() - lastBeat > 300000) heartbeat(); };
+const heartbeat = (state = "online") => (lastBeat = Date.now(), Promise.all(companyList.map((company) => mcp("listener_heartbeat", { company, host: hostname(), pid: process.pid, autostart: existsSync(autostartPlist), version: "4", state, meta: localMeta() })
   .then(async (r) => { if (r?.communication) commMode[company] = r.communication; if (r?.enterprise) myJira[company] = r.jira_account ?? null; L.writeStatus(homedir(), { companies: { [company]: { heartbeat_at: new Date().toISOString(), heartbeat_ok: true } } });
     if (state !== "online" || !(r?.was_offline || r?.missed?.length)) return;
     log(`Jira Listener back online for ${company} (server saw it offline since ${r.offline_since ?? "?"}); ${r.missed?.length ?? 0} card(s) changed meanwhile`);
     for (const m of r.missed ?? []) if (m.issue && m.comment) await comms(m.issue, m.comment);
     reconcile(company, r.offline_since ?? undefined).catch((e) => log("reconcile failed:", e.message)); })
-  .catch((e) => { log("heartbeat failed:", e.message); L.writeStatus(homedir(), { companies: { [company]: { heartbeat_at: new Date().toISOString(), heartbeat_ok: false } } }); })));
+  .catch((e) => { log("heartbeat failed:", e.message); L.writeStatus(homedir(), { companies: { [company]: { heartbeat_at: new Date().toISOString(), heartbeat_ok: false } } }); }))));
 L.writeStatus(homedir(), { pid: process.pid, started_at: new Date().toISOString(), notify: L.notifyOn(homedir()), running: null, companies: {} });
-setInterval(heartbeat, Number(process.env.AH_HEARTBEAT_SEC ?? 60) * 1000);
+// keep-alive every 10 min (was 60s); joins re-announce only if the last beat is > 5 min old
+setInterval(heartbeat, Number(process.env.AH_HEARTBEAT_SEC ?? 600) * 1000);
 
 // Auto-Done / Verified on Develop: poll gh for real merged PRs linked to issue keys (never forge Jira events).
 const mergedPrSeen = new Set();
@@ -331,7 +339,8 @@ function spawnGrok(gargs, out, issue, sid, o = {}) {
   return new Promise((res) => {
     const env = o.env ?? (o.home ? { ...process.env, GROK_HOME: o.home } : { ...process.env, AGENTS_HOLDING_KEY: key });
     if (o.home) delete env.AGENTS_HOLDING_KEY; // lean runs need no server access
-    const ch = spawn("nice", ["-n", "10", o.bin ?? grokBin, ...gargs], { cwd: repo, env, stdio: ["ignore", "pipe", "pipe"] });
+    const w = POL.wrapLaunch({ co: company, role: o.role ?? "staff", bin: o.bin ?? grokBin, args: gargs, env, cwd: repo }); // unified staff policy + OS sandbox
+    const ch = spawn("nice", ["-n", "10", w.bin, ...w.args], { cwd: repo, env: w.env, stdio: ["ignore", "pipe", "pipe"] });
     let lastOut = Date.now(); // claude/codex have no grok events file: stdout activity counts as progress
     ch.stdout.on("data", (d) => { lastOut = Date.now(); appendFileSync(out, d); if (o.collect) o.collect.push(d); }); ch.stderr.on("data", (d) => { lastOut = Date.now(); appendFileSync(out, d); });
     const t0 = Date.now(); let warned = "";
@@ -384,10 +393,12 @@ async function leanModelOnce(kind, issue, stage, prompt, role, context, rsv, { s
   const prov = command ? (await import("./providers/command.mjs")).commandProvider(binding) : await P.getProvider(agent, homedir());
   log(`lean ${kind} call for ${issue} ${stage}${role ? ` staff ${role}` : ""} agent ${agent} session ${sid} ${model ?? "default model"}${effort ? ` effort ${effort}` : ""} prompt ${prompt.length} chars -> ${out}`);
   // AgentProvider protocol (providers/): built-in CLIs spawn via ctx.spawn; HTTP providers (openai-compatible, custom) run their own loop
-  const ctx = { spawn: (args, so = {}) => { if (so.env) delete so.env.AGENTS_HOLDING_KEY; return spawnGrok(args, out, issue, sid, { collect: buf, ...so }); },
+  const ctx = { spawn: (args, so = {}) => { if (so.env) delete so.env.AGENTS_HOLDING_KEY; return spawnGrok(args, out, issue, sid, { collect: buf, role, ...so }); },
     stdout: () => Buffer.concat(buf).toString("utf8"), grokUsage: (s) => usageOf(s, leanHome), leanHome, logDir, log: (m) => log(`lean ${kind} ${issue}: ${m}`) };
   const t0 = Date.now();
-  const res = await prov.run({ prompt, system, context, schema, kind, text, cwd: repo, model, effort, sid, bin }, ctx).catch((e) => ({ result: {}, usage: null, exitCode: 1, error: e.message }));
+  if (role) context = [context, POL.rulesText(POL.loadPolicy(homedir(), company, role))].filter(Boolean).join("\n\n");
+  prompt = POL.redactText(prompt); if (context) context = POL.redactText(context);
+  const res = await prov.run({ prompt, system, context, schema, kind, text, cwd: repo, model, effort, sid, bin, company, role }, ctx).catch((e) => ({ result: {}, usage: null, exitCode: 1, error: e.message }));
   const wall = Date.now() - t0, code = res.exitCode ?? 0;
   if (res.text) appendFileSync(out, res.text); // HTTP providers: keep the answer in the run log too
   const r = res.result, u = res.usage;
@@ -697,7 +708,7 @@ function grokArgs(prompt, sid, o = {}) {
 let ref = 0;
 // Watchdog (every 30s): a socket with nothing received for > AH_STALE_SEC (default 120s; Phoenix heartbeats are answered every 25s)
 // is closed -> the normal reconnect path; the user gets one notification per outage.
-const sockets = {}, lastRx = {}, downNotified = {}, staleMs = Number(process.env.AH_STALE_SEC ?? 120) * 1000;
+const sockets = {}, lastRx = {}, downNotified = {}, staleMs = Number(process.env.AH_STALE_SEC ?? 300) * 1000;
 setInterval(() => {
   for (const c of companyList) {
     if (!L.socketStale(lastRx[c], Date.now(), staleMs)) continue;
@@ -746,7 +757,7 @@ async function connect(company) {
   };
   ws.onmessage = (m) => {
     const msg = JSON.parse(m.data); lastRx[company] = Date.now();
-    if (msg.event === "phx_reply" && msg.topic === topic) { log("join", msg.payload.status, "company", company); if (msg.payload.status === "ok") { backoffs[company] = 1000; heartbeat(); rt("joined"); if (!joinedOnce[company]) { joinedOnce[company] = true; reconcile(company).catch((e) => log("reconcile failed:", e.message)); } if (downNotified[company]) { downNotified[company] = false; L.desktopNotify(homedir(), "agents-holding", `Listener reconnected (${company})`); reconcile(company).catch((e) => log("reconcile failed:", e.message)); } } else rt(`join ${msg.payload.status}`); }
+    if (msg.event === "phx_reply" && msg.topic === topic) { log("join", msg.payload.status, "company", company); if (msg.payload.status === "ok") { backoffs[company] = 1000; heartbeatIfStale(); rt("joined"); if (!joinedOnce[company]) { joinedOnce[company] = true; reconcile(company).catch((e) => log("reconcile failed:", e.message)); } if (downNotified[company]) { downNotified[company] = false; L.desktopNotify(homedir(), "agents-holding", `Listener reconnected (${company})`); reconcile(company).catch((e) => log("reconcile failed:", e.message)); } } else rt(`join ${msg.payload.status}`); }
     if (msg.event === "broadcast" && msg.payload?.event === "next_action") {
       const p = { ...(msg.payload.payload ?? {}), company };
       if (p.enterprise && company in myJira && p.assignee_account !== myJira[company]) { log("skip", p.issue ?? "", "(assigned to someone else)"); return; }
@@ -790,3 +801,17 @@ else {
 log("holding listener run:", registry.projects.length, "project(s),", companyList.length, "company subscription(s)", lean ? "LEAN" : "legacy", dryJira ? "DRY-JIRA" : listenerJira ? "jira-by-listener" : "jira-by-agent", "mcp", mcpServers().join(","), "timeout", runTimeoutMs / 60000, "min");
 for (const c of companyList) connect(c).catch(fail(c));
 }
+
+// Cross-team linked propagation (generic; rules: holding company link add <SRC> --to P1,P2). Real Jira links only; per-target isolation.
+async function crossTeamSweep() {
+  if (!listenerJira || !jiraCfg || dryJira) return;
+  let layer = null; try { const d = await mcp("staff_policy_get", { company, staff: "*" }); layer = (d?.data ?? d)?.company; } catch (e) { return log("cross-team: policy read failed:", e.message); }
+  if (!layer?.cross_team?.length && !layer?.processes?.length) return;
+  const boardCo = (pk) => registry.projects.flatMap((p) => p.boards ?? []).find((b) => b.project_key === pk)?.company;
+  const allowed = (pk) => { const co = boardCo(pk); if (!co) return process.env.AH_CROSS_STRICT === "0";
+    try { const p = POL.loadPolicy(homedir(), co, "jira-listener"); return p?.permissions?.jira_transition !== false; } catch { return process.env.AH_CROSS_STRICT === "0"; } };
+  const res = await XT.sweep(jiraRaw(jiraCfg), layer, { stateDir: join(homedir(), ".config/agents-holding/state", company), allowed, log,
+    notify: async (a) => { appendFileSync(join(homedir(), ".config/agents-holding/state", company, "ceo-notices.log"), `${new Date().toISOString()} [${a.process}] ${a.text}\n`); log(`CEO notice: ${a.text}`); } });
+  const bad = res.filter((r) => !r.ok); if (bad.length) log(`cross-team: ${bad.length} target(s) failed; will retry next sweep`);
+}
+setInterval(() => { crossTeamSweep().catch((e) => log("cross-team sweep failed:", e.message)); }, Number(process.env.AH_CROSS_SEC ?? 120) * 1000);

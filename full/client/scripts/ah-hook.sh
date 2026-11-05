@@ -6,10 +6,13 @@
 # which spawns that staff on its bound provider. Commands that need the agent (/ceo, /task add, /flow edit ...) pass through. Disable: export AH_HOOK=0.
 in="$(cat)"
 [ "${AH_HOOK:-1}" = 0 ] && exit 0
-case "$in" in *'"prompt":"/'*) ;; *) exit 0;; esac
+case "$in" in *'"prompt"'*) ;; *) exit 0;; esac  # Grok and Claude Code send {"prompt": ...}; non-slash prompts exit below
 here="$(cd "$(dirname "$0")" && pwd)"
 IFS=$'\t' read -r prompt cwd < <(osascript -l JavaScript -e 'function run(a){const j=JSON.parse(a[0]);return String(j.prompt||"").replace(/[\t\n]+/g," ").trim()+"\t"+(j.cwd||"")}' "$in" 2>/dev/null) || exit 0
+case "$prompt" in /*) ;; *) exit 0;; esac
 name="${prompt%% *}"; name="${name#/}"; args=""; [ "$prompt" != "/$name" ] && args="${prompt#/"$name" }"
+# /holding <noun> <verb> ... == /<noun> <verb> ... ; /holding update == holding update
+if [ "$name" = holding ] && [ -n "$args" ]; then name="${args%% *}"; [ "$args" = "$name" ] && args="" || args="${args#"$name" }"; fi
 verb="${args%% *}"
 # full client (holding + Node) answers every local noun; the lite install (ah-hook.sh + ah-cli.sh only) answers the server ones
 H=""; [ -f "$here/holding" ] && command -v node >/dev/null && H=1
@@ -21,10 +24,10 @@ esac
 if [ "$name" = ceo ] && { [ "$verb" = companies ] || [ "$verb" = company ]; } && [ -n "$H" ]; then
   rest="${args#"$verb"}"; rest="${rest# }"; [ "$verb" = companies ] && rest="list${rest:+ $rest}"; name=company; args="$rest"; verb="${args%% *}"; fi
 case "$name" in
-  staff|task|provider|skill|project|company|listener|jira|inbox|key|credit|billing|status|doctor|notify|setup|habit|flow)
+  staff|task|provider|skill|project|company|listener|jira|inbox|key|credit|billing|status|doctor|notify|setup|habit|flow|report|usage|team|enterprise|security|figma|confluence|atlassian|update|upgrade|client|whoami|plan|history|sources)
     if [ -n "$H" ]; then export AH_HOOK_RUN=1; run=(bash "$here/holding" "$name")
     else case "$name $verb" in
-        "staff list"|"staff "|"staff remove"|"task "*|"skill list"|"skill "|"jira sources"|"key "*|"credit "*|"billing "*|"status "*|"doctor "*|"flow "*) run=(bash "$here/ah-cli.sh" "$name") ;;
+        "staff list"|"staff "|"staff remove"|"task "*|"skill list"|"skill "|"jira sources"|"key "*|"credit "*|"billing "*|"status "*|"doctor "*|"flow "*|"report "*|"usage "*|"team "*|"enterprise "*|"security "*|"notify "*|"client "*|"whoami "*|"plan "*) run=(bash "$here/ah-cli.sh" "$name") ;;
         *) echo "/$name $verb needs the full client (Node + install.sh): see SETUP.md" >&2; exit 2 ;;
       esac; fi ;;
   help) run=(bash "$here/ah-cli.sh" help) ;;

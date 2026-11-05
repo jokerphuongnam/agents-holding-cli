@@ -11,6 +11,8 @@ import { fileURLToPath } from "node:url";
 import { resolveCompany, localCompanies } from "./company.mjs";
 import * as R from "./registry.mjs";
 import { homedir } from "node:os";
+import { readFileSync as readFileSync_AH } from "node:fs";
+const AH_CLIENT_VERSION = (() => { try { return readFileSync_AH(new URL("./VERSION", import.meta.url), "utf8").trim(); } catch { return "0"; } })();
 const here = dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2), cmd = argv.shift();
 const all = argv.includes("--all"), co = (() => { const i = argv.indexOf("--company"); return i >= 0 ? argv[i + 1] : null; })();
@@ -23,7 +25,7 @@ async function mcp(name, args) {
   if (!key) { console.error("No license key on this Mac: run holding key import (or holding key generate), then retry."); process.exit(1); }
   let r; try { r = await (async () => { const u = process.env.AH_MCP_URL ?? "https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp", bd = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }); const { signFetch } = await import("./device-key.mjs").catch(() => ({ signFetch: () => ({}) }));
     return fetch(u, { method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream", "X-AH-Client": "ah-cli", ...(dev ? { "X-AH-Device": dev } : {}), ...signFetch(u, bd) },
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream", "X-AH-Version": AH_CLIENT_VERSION, "X-AH-Client": "ah-cli", ...(dev ? { "X-AH-Device": dev } : {}), ...signFetch(u, bd) },
     body: bd }); })();
   } catch (e) { console.error(`agents-holding server unreachable (${e.cause?.code ?? e.message}); check your network and retry.`); process.exit(1); }
   let j; try { j = await r.json(); } catch { console.error(`agents-holding server returned HTTP ${r.status}; retry later.`); process.exit(1); }

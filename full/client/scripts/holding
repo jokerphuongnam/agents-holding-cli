@@ -9,8 +9,15 @@ isco() { [ -d "$HOME/.config/agents-holding/state/$1" ] || grep -q "\"company\":
 n=$#; i=0; while [ $i -lt $n ]; do x="$1"; shift; i=$((i+1)); case "$x" in @?*) if isco "${x#@}"; then set -- "$@" --company "${x#@}"; else set -- "$@" "$x"; fi ;; *) set -- "$@" "$x" ;; esac; done
 usage() { cat <<'USAGE'
 usage: holding <noun> <verb> [args]   (chat: /<noun> <verb> ...; no verb = list/show)
+  jira attach <KEY> <file...> | figma connect | figma export <url> [--out f.png] [--attach KEY] | confluence page create|update <SPACE> "<title>" --file md [--attach png]
+  update            update the client: scripts, agent configs + sandbox profiles, slash commands, restart the Jira Listener (safe to rerun; chat: /holding update)
   help [group|command]                the commands YOUR key can run (aliases: document, docs)
-  staff list | add <role> [--agent P --model M --effort E] | remove <role>
+  staff list | add <role> [--agent P --model M --effort E] | remove <role>   (add: review the staff policy, arrow-key menu)
+  staff policy show <staff|*> | set <staff|*> <permission> on|off | rule add|remove <staff|*> "<text>" | git set|unset <staff|*> <field> <value>
+  staff policy shell allow|deny|remove <staff|*> "<cmd>" | check <staff> branch|commit|pr|push <value> | sync [staff] | native <staff>
+  staff deny add|remove <staff> <path> [--replace <file>] | staff deny list <staff>      (per staff; cannot remove a company deny)
+  company deny add|remove <path> [--replace <file>] | company deny list                  (all staff of the company)
+  company process templates | list | setup | add --template <T> --from <SRC> [--to P1,P2] [--status S] [--link-type T] | add-json '<json>' | remove <id>
   staff set <staff> <provider> <model> [low|medium|high] | set <staff> "<command with {prompt}>" | unset <staff>   [--company X]
   staff run <staff> "<task>" [--proceed] | staff test <staff> | staff presets   (headless sub-agent runners, local LLMs too)
   staff add <role> --preset <id> [--model M]   attach a headless runner (no chat window)
@@ -40,15 +47,30 @@ usage: holding <noun> <verb> [args]   (chat: /<noun> <verb> ...; no verb = list/
 USAGE
 exit 2; }
 noun="${1:-}"; verb="${2:-}"; [ $# -gt 0 ] && shift; [ $# -gt 0 ] && shift
+# deny add|remove|list <scope> [path] [--replace FILE]: scope * = company-wide, else one staff. Replacement files are scanned for real secrets first.
+denycmd() { local v="$1" sc="$2"; shift 2; local a=() rep="" force=""; while [ $# -gt 0 ]; do case "$1" in --replace) rep="$2"; a+=("--replace" "$2"); shift 2 ;; --force) force=1; shift ;; *) a+=("$1"); shift ;; esac; done
+  [ "$v" = list ] && exec bash "$here/ah-cli.sh" staff policy deny list "$sc" "${a[@]+"${a[@]}"}"
+  if [ -n "$rep" ]; then [ -f "$rep" ] || { echo "replacement file not found: $rep" >&2; exit 2; }
+    node "$here/policy.mjs" scan "$rep" || { [ -n "$force" ] || { echo "refusing: put fake placeholder values in $rep (or add --force)" >&2; exit 1; }; }; fi
+  bash "$here/ah-cli.sh" staff policy deny "$v" "$sc" "${a[@]+"${a[@]}"}" || exit $?; node "$here/policy.mjs" sync "$sc" >/dev/null 2>&1 || true; exit 0; }
 srv() { exec bash "$here/ah-cli.sh" "$noun" "$verb" "$@"; }  # server-rendered text (ah-cli.sh): command=<noun>, args=<verb ...>
 case " $* " in *" --all "*) case "$noun $verb" in "status "|"status --all"|"task list"|"task history"|"jira list"|"jira board"|"billing usage"|"staff list") exec node "$here/all-cli.mjs" "$noun" "$verb" "$@" ;; esac ;; esac
+case "$noun" in update|upgrade|help|document|docs|-h|--help) ;; *) [ "${AH_NO_UPDATE_CHECK:-}" = 1 ] || bash "$here/update.sh" --check 2>/dev/null </dev/tty || true ;; esac
 case "$noun" in
+  update|upgrade) exec bash "$here/update.sh" ${verb:+"$verb"} "$@" ;;
+  figma) case "$verb" in connect) exec node "$here/attach.mjs" figma-connect ;; export) exec node "$here/attach.mjs" figma-export "$@" ;; *) usage ;; esac ;;
+  atlassian) case "$verb" in connect) exec node "$here/attach.mjs" atlassian-connect ;; *) usage ;; esac ;;
+  confluence) case "$verb" in page) exec node "$here/attach.mjs" confluence-page "$@" ;; *) usage ;; esac ;;
   help|document|docs) exec node "$here/help.mjs" ${verb:+"$verb"} "$@" ;;
   -h|--help) echo "Run: holding help   (commands available for your key; holding help <group|command> for details)"; exec node "$here/help.mjs" ;;
   staff) case "$verb" in
     ""|list) set +e; out="$(bash "$here/ah-cli.sh" staff list "$@")"; rc=$?; printf '%s\n' "$out" | node "$here/staffs-local.mjs" "${AH_COMPANY:-}" "$@"; exit $rc ;;
     add) role="${1:-}"; bind=(); rest=(); while [ $# -gt 0 ]; do case "$1" in --agent|--provider|--model|--effort|--command|--preset) bind+=("$1" "$2"); shift 2 ;; *) rest+=("$1"); shift ;; esac; done
-      bash "$here/ah-cli.sh" staff add ${rest[@]+"${rest[@]}"} || exit $?; exec node "$here/bind-cli.mjs" "$role" ${bind[@]+"${bind[@]}"} ;;
+      bash "$here/ah-cli.sh" staff add ${rest[@]+"${rest[@]}"} || exit $?; node "$here/bind-cli.mjs" "$role" ${bind[@]+"${bind[@]}"} || exit $?
+      exec node "$here/policy.mjs" init "$role" ${AH_COMPANY:+--company "$AH_COMPANY"} ;;  # role defaults + review menu (AH_NONINTERACTIVE=1: defaults)
+    policy) case "${1:-}" in sync|native|exec|init) exec node "$here/policy.mjs" "$@" ;; esac
+      bash "$here/ah-cli.sh" staff policy "$@" || exit $?; case "${1:-}" in set|rule|git|deny|shell) node "$here/policy.mjs" sync "${2:-*}" >/dev/null 2>&1 || true ;; esac; exit 0 ;;
+    deny) dv="${1:-list}"; [ $# -gt 0 ] && shift; denycmd "$dv" "${1:-}" "${@:2}" ;;
     presets) exec node "$here/presets.mjs" "$@" ;;
     remove) srv "$@" ;;
     set|unset) exec node "$here/agent-cli.mjs" "$verb" "$@" ;;
@@ -75,7 +97,10 @@ case "$noun" in
     ""|list|count|overview|health) case " $* " in *" --local "*|*" --json "*) exec node "$here/companies-cli.mjs" list "$@" ;; esac; srv "$@" ;;  # MCP companies only
     use) exec node "$here/companies-cli.mjs" use "$@" ;;
     show) case "${1:-}" in convention|auto-pr) srv "$@" ;; "") node "$here/companies-cli.mjs" show; srv "$@" ;; esac; srv "$@" ;;
-    create|rename|pause|resume|archive|delete|move|staff|link|unlink|config) srv "$@" ;;
+    create) bash "$here/ah-cli.sh" company create "$@" || exit $?; exec node "$here/policy.mjs" processes "${1:-}" --company "${1:-}" ;;  # then: process setup menu
+    deny) dv="${1:-list}"; [ $# -gt 0 ] && shift; denycmd "$dv" "*" "$@" ;;
+    process) pv="${1:-list}"; [ $# -gt 0 ] && shift; [ "$pv" = setup ] && exec node "$here/policy.mjs" processes "$@"; exec bash "$here/ah-cli.sh" staff policy process "$pv" "$@" ;;
+    rename|pause|resume|archive|delete|move|staff|link|unlink|config) srv "$@" ;;
     migrate) exec node "$here/company-migrate.mjs" "$@" ;;
     set) what="${1:-}"; [ $# -gt 0 ] && shift; case "$what" in
         lang) exec node "$here/agent-cli.mjs" lang "$@" ;;
@@ -90,6 +115,7 @@ case "$noun" in
     ""|start|stop|logs|autostart) exec bash "$here/launchd/listener.sh" ${verb:-status} "$@" ;;
     *) usage ;; esac ;;
   jira) case "$verb" in
+    attach) exec node "$here/attach.mjs" jira-attach "$@" ;;
     connect) exec bash "$here/jira-keychain-setup.sh" "$@" ;;
     setup-workflow) exec bash "$here/jira-setup-workflow.sh" "$@" ;;
     connect-events) exec bash "$here/jira-register-webhook.sh" "$@" ;;
@@ -105,7 +131,8 @@ case "$noun" in
   billing) case "$verb" in ""|usage|vi|en) srv "$@" ;; *) bash "$here/ah-cli.sh" billing "$verb" "$@"; exit $? ;; esac ;;
   status) case " $verb $* " in *" --server "*) exec bash "$here/ah-cli.sh" status ;; esac; exec node "$here/status.mjs" status ${verb:+"$verb"} "$@" ;;
   doctor) case " $verb $* " in *" --server "*) exec bash "$here/ah-cli.sh" doctor ;; esac; exec bash "$here/doctor.sh" ${verb:+"$verb"} "$@" ;;
-  notify) exec node "$here/status.mjs" notify ${verb:+"$verb"} "$@" ;;
+  notify) case "$verb" in send|list|group) srv "$@" ;; *) exec node "$here/status.mjs" notify ${verb:+"$verb"} "$@" ;; esac ;;
+  report) srv "$@" ;;  # report hub: server decides which types/keys the caller may see
   setup) case "$verb" in sync) exec bash "$here/sync-commands.sh" "$@" ;; open) exec bash "$here/open-setup.sh" "$@" ;; *) usage ;; esac ;;
   habit) case "$verb" in ""|list|edit|clear) exec node "$here/habits.mjs" "${verb:-list}" "$@" ;; *) usage ;; esac ;;
   flow) case "$verb" in ""|show|list) srv "$@" ;; *) echo "/flow $verb needs the agent: run it inside grok/claude/codex." >&2; exit 2 ;; esac ;;

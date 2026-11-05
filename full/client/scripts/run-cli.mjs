@@ -8,6 +8,8 @@ import * as L from "./lean.mjs";
 import { runStaff, runBatch } from "./provider-run.mjs";
 import * as S from "./subagent.mjs";
 import { resolveCompany, localCompanies } from "./company.mjs";
+import { readFileSync as readFileSync_AH } from "node:fs";
+const AH_CLIENT_VERSION = (() => { try { return readFileSync_AH(new URL("./VERSION", import.meta.url), "utf8").trim(); } catch { return "0"; } })();
 const a = process.argv.slice(2), flag = (n) => a.includes(n), opt = (n) => { const i = a.indexOf(n); return i >= 0 ? a[i + 1] : undefined; };
 const pos = a.filter((x, i) => !x.startsWith("--") && !(i > 0 && a[i - 1] === "--company"));
 const [staff, ...rest] = pos, task = rest.join(" "); // --continue / --new force or skip reusing the last session; --batch: tasks split on ";;"
@@ -19,7 +21,7 @@ async function mcp(name, args) {
   const key = process.env.AGENTS_HOLDING_KEY || kc("agents-holding-license"); if (!key) throw new Error("no license key in the Keychain: run connect.sh");
   const dev = process.env.AGENTS_HOLDING_DEVICE || kc("agents-holding-device");
   const r = await fetch(process.env.AH_MCP_URL ?? "https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp", { method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream", ...(dev ? { "X-AH-Device": dev } : {}) },
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream", "X-AH-Version": AH_CLIENT_VERSION, ...(dev ? { "X-AH-Device": dev } : {}) },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }) });
   const j = await r.json(); if (j.error) throw new Error(j.error.message); const t = j.result?.content?.[0]?.text ?? "";
   if (j.result?.isError) throw new Error(t); try { return JSON.parse(t); } catch { return t; }

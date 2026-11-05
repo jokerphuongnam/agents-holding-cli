@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { parseClaude, parseCodex } from "../agents.mjs";
 import { parseResult } from "../lean.mjs";
+import * as POL from "../policy.mjs";
 
 /** Split a command line into argv (quotes and backslashes like sh, no expansion). */
 export function words(s) {
@@ -70,7 +71,8 @@ export function parseOut(kind, stdout, model = null) {
 }
 
 /** Run a fixed command as one staff call. system (stage instructions) + staff context go to the context channel, never into {prompt}. */
-export async function runCommand(b, { prompt, system, context, cwd, env = process.env, log = () => {} }) {
+export async function runCommand(b, { prompt, system, context, cwd, env = process.env, log = () => {}, company = env.AH_COMPANY, role = null }) {
+  prompt = POL.redactText(prompt ?? ""); if (context) context = POL.redactText(context); if (system) system = POL.redactText(system);
   if (typeof b === "string") b = { command: b };
   const r = render(b.command, { prompt, context: [system, context].filter(Boolean).join("\n\n"), cwd, b });
   const timeoutMs = (Number(b.timeout) || 0) * 1000 || Number(process.env.AH_RUN_TIMEOUT_MS) || 15 * 60000;
@@ -78,7 +80,8 @@ export async function runCommand(b, { prompt, system, context, cwd, env = proces
   log(`command ${r.bin} (${r.kind}) in ${r.cwd}, prompt via ${r.stdin === null ? "placeholder" : "stdin"}, context via ${r.contextVia}`);
   const buf = [], errb = [];
   const exitCode = await new Promise((res) => {
-    const ch = spawn(r.bin, r.args, { cwd: r.cwd, env: e, stdio: [r.stdin === null ? "ignore" : "pipe", "pipe", "pipe"] });
+    const w = POL.wrapLaunch({ co: company, role: role ?? "staff", bin: r.bin, args: r.args, env: e, cwd: r.cwd });
+    const ch = spawn(w.bin, w.args, { cwd: r.cwd, env: w.env, stdio: [r.stdin === null ? "ignore" : "pipe", "pipe", "pipe"] });
     ch.stdout.on("data", (d) => buf.push(d)); ch.stderr.on("data", (d) => errb.push(d));
     if (r.stdin !== null) { ch.stdin.on("error", () => {}); ch.stdin.end(r.stdin); }
     const t = setTimeout(() => ch.kill("SIGTERM"), timeoutMs);
@@ -87,7 +90,7 @@ export async function runCommand(b, { prompt, system, context, cwd, env = proces
   const out = Buffer.concat(buf).toString("utf8"), p = parseOut(r.kind, out, b.model);
   return { result: p.result ?? {}, usage: p.usage ?? null, error: p.error ?? (exitCode ? Buffer.concat(errb).toString("utf8").slice(-300) : null), exitCode, text: p.text ?? null };
 }
-export const commandProvider = (b) => ({ id: "command", displayName: `command: ${shortCmd(b.command ?? b)}`, run: (o, ctx) => runCommand(b, { prompt: o.prompt, system: o.system, context: o.context, cwd: o.cwd, log: ctx?.log }) });
+export const commandProvider = (b) => ({ id: "command", displayName: `command: ${shortCmd(b.command ?? b)}`, run: (o, ctx) => runCommand(b, { prompt: o.prompt, system: o.system, context: o.context, cwd: o.cwd, log: ctx?.log, company: o.company, role: o.role }) });
 
 /** Commented example of every staff binding field, written once to ~/.config/agents-holding/staff.example.jsonc on setup. */
 export const EXAMPLE = `// agents-holding: staff launch command bindings (example; the live file is state/<company>/agent.json "staff").
