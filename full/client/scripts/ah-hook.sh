@@ -23,6 +23,26 @@ export AH_NO_UPDATE_CHECK=1 AH_HOOK_RUN=1 AH_CLI_TIMEOUT="${AH_CLI_TIMEOUT:-8}"
 case "$in" in *'"prompt"'*) ;; *) exit 0;; esac  # Grok and Claude Code send {"prompt": ...}; non-slash prompts exit below
 here="$(cd "$(dirname "$0")" && pwd)"
 IFS=$'\t' read -r prompt cwd < <(osascript -l JavaScript -e 'function run(a){const j=JSON.parse(a[0]);return String(j.prompt||"").replace(/[\t\n]+/g," ").trim()+"\t"+(j.cwd||"")}' "$in" 2>/dev/null) || exit 0
+# Update notice: once per session, one line, never blocks (cache read only; refresh runs detached, capped).
+ah_update_notice() {
+  [ "${AH_UPDATE_NOTICE:-1}" = 0 ] && return 0
+  local c="$HOME/.config/agents-holding/cache" sid cur req age
+  mkdir -p "$c/sessions" 2>/dev/null || return 0
+  age=$(( $(date +%s) - $(stat -f %m "$c/latest-version" 2>/dev/null || stat -c %Y "$c/latest-version" 2>/dev/null || echo 0) ))
+  if [ "$age" -gt 3600 ]; then touch "$c/latest-version"
+    ( AH_CLI_TIMEOUT=8 bash "$here/ah-cli.sh" client version 2>/dev/null | sed -nE 's/.*required[^0-9]*([0-9]{8,10}).*/\1/p' | head -1 > "$c/latest-version.tmp" \
+      && [ -s "$c/latest-version.tmp" ] && mv "$c/latest-version.tmp" "$c/latest-version" ) </dev/null >/dev/null 2>&1 &
+    disown 2>/dev/null || true; fi
+  req="$(tr -dc 0-9 < "$c/latest-version" 2>/dev/null)"; cur="$(tr -dc 0-9 < "$here/VERSION" 2>/dev/null)"
+  [ ${#req} -eq 8 ] && req="${req}00"; [ ${#cur} -eq 8 ] && cur="${cur}00"
+  [ -n "$req" ] && [ -n "$cur" ] && [ "$cur" -lt "$req" ] 2>/dev/null || return 0
+  sid="$(printf '%s' "$in" | sed -nE 's/.*"session_id" *: *"([^"]+)".*/\1/p' | tr -dc 'A-Za-z0-9_-' | head -c 80)"; [ -n "$sid" ] || sid="ppid-$PPID"
+  [ -f "$c/sessions/$sid-$req" ] && return 0
+  touch "$c/sessions/$sid-$req"; find "$c/sessions" -type f -mtime +7 -delete 2>/dev/null
+  local n=$(( 10#$req - 10#$cur )); [ "${req:0:8}" != "${cur:0:8}" ] && n=$(( 10#${req:8:2} + 1 ))
+  echo "agents-holding update available: $cur -> $req ($n behind), run holding update"
+}
+case "$prompt" in /holding\ update*|/update*) ;; *) ah_update_notice ;; esac
 case "$prompt" in /*) ;; *) exit 0;; esac
 name="${prompt%% *}"; name="${name#/}"; args=""; [ "$prompt" != "/$name" ] && args="${prompt#/"$name" }"
 # /holding <noun> <verb> ... == /<noun> <verb> ... ; /holding update == holding update
@@ -67,4 +87,13 @@ ah_run_cap() {
   printf "%s\n%s\n" "$(cat "$outf")" "$([ $rc = 0 ] && echo "(agents-holding: instant, no model)" || echo "(agents-holding: failed, exit $rc)")" >&2
   rm -f "$outf"; exit 2
 }
+# holding update can take longer than the host hook limit: run it detached, show what finished within ~20s.
+if [ "$name" = update ] || [ "$name" = upgrade ]; then
+  log="$HOME/Library/Logs/agents-holding/update.log"; mkdir -p "$(dirname "$log")" 2>/dev/null || log="${TMPDIR:-/tmp}/ah-update.log"
+  nohup bash "$here/update.sh" --yes ${A[@]+"${A[@]}"} </dev/null >"$log" 2>&1 & disown 2>/dev/null || true
+  for _ in $(seq 1 40); do grep -q '^Done:' "$log" 2>/dev/null && break; sleep 0.5; done
+  cat "$log" >&2
+  grep -q '^Done:' "$log" 2>/dev/null || echo "(agents-holding: update still running in the background; log: $log)" >&2
+  rm -f "$HOME/.config/agents-holding/cache/latest-version"; exit 2
+fi
 ah_run_cap

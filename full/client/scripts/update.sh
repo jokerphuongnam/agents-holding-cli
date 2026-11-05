@@ -104,7 +104,7 @@ else echo "   not installed as a service (start: holding jira listen)"; fi
 ah_ensure_holding_path "$here/holding"
 after_raw="$(ver_raw)"; after="$(ver)"; n="$(behind "$before" "$after")"
 if [ "$before" -eq "$after" ] 2>/dev/null; then
-  echo "Done: client $before_raw -> $after_raw  (holding on PATH: $(command -v holding 2>/dev/null || echo ~/.local/bin/holding))"
+  echo "Done: client $after_raw already up to date  (holding on PATH: $(command -v holding 2>/dev/null || echo ~/.local/bin/holding))"
 else
   echo "Done: client $before_raw -> $after_raw$(behind_label "$before" "$after")  (holding on PATH: $(command -v holding 2>/dev/null || echo ~/.local/bin/holding))"
 fi
