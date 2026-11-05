@@ -47,6 +47,11 @@ export function headers(method, path, body = Buffer.alloc(0), now = Date.now()) 
   const msg = Buffer.from(canonical(ts, nonce, method, path, createHash("sha256").update(body).digest("hex")));
   return { "X-AH-Ts": ts, "X-AH-Nonce": nonce, "X-AH-Sig": be.sign(msg), "X-AH-Pubkey": be.pub(), "X-AH-Key-Trust": b };
 }
+/** Signing headers for a fetch() body to url; {} when disabled (AH_DEVICE_SIGN=0) or no key backend works (server then treats it as unsigned). */
+export function signFetch(url, body = "", method = "POST") {
+  if ((process.env.AH_DEVICE_SIGN ?? "1") !== "1") return {};
+  try { return headers(method, new URL(url).pathname, Buffer.from(body)); } catch { return {}; }
+}
 const isMain = (() => { try { return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } })();
 if (isMain) {
   const [cmd, m, p, f] = process.argv.slice(2);

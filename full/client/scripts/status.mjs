@@ -25,9 +25,10 @@ if (cmd === "notify") {
     const kc = (s) => { try { return execFileSync("security", ["find-generic-password", "-s", s, "-a", process.env.USER, "-w"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { return null; } };
     const key = process.env.AGENTS_HOLDING_KEY || kc("agents-holding-license"), dev = process.env.AGENTS_HOLDING_DEVICE || kc("agents-holding-device");
     if (key) {
-      const r = await fetch(process.env.AH_MCP_URL ?? "https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp", { method: "POST", signal: AbortSignal.timeout(8000),
-        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream", "X-AH-Client": "ah-cli", ...(dev ? { "X-AH-Device": dev } : {}) },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "inbox_list", arguments: {} } }) });
+      const r = await (async () => { const u = process.env.AH_MCP_URL ?? "https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp", bd = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "inbox_list", arguments: {} } }); const { signFetch } = await import("./device-key.mjs").catch(() => ({ signFetch: () => ({}) }));
+        return fetch(u, { method: "POST", signal: AbortSignal.timeout(8000),
+        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream", "X-AH-Client": "ah-cli", ...(dev ? { "X-AH-Device": dev } : {}), ...signFetch(u, bd) },
+        body: bd }); })();
       const j = await r.json(), d = JSON.parse(j.result?.content?.[0]?.text ?? "null");
       if (d && typeof d.count === "number") console.log(d.count ? `\x1b[1;31mCEO inbox: ${d.count} pending\x1b[0m (holding inbox list · reply <id> <answer> · dismiss <id>)` : "CEO inbox: nothing pending ✔");
     }

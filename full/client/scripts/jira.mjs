@@ -121,7 +121,8 @@ async function serverUsage(company, issue) { // tokens per task from the server 
 export async function main(argv, { home = homedir(), cwd = process.cwd(), fetchFn = fetch, token, out = console.log } = {}) {
   const a = [...argv]; let project = null; const i = a.indexOf("--project"); if (i >= 0) { project = a[i + 1]; a.splice(i, 2); }
   const cmd = a.shift();
-  const cfg = JSON.parse(readFileSync(join(home, ".config/agents-holding/jira.json"), "utf8"));
+  let cfg; try { cfg = JSON.parse(readFileSync(join(home, ".config/agents-holding/jira.json"), "utf8")); }
+  catch { const vi = /^vi/i.test(process.env.AH_LANG ?? process.env.LANG ?? ""); console.error(vi ? "Chưa cấu hình Jira trên máy này (thiếu ~/.config/agents-holding/jira.json). Chạy: holding jira connect" : "Jira is not set up on this machine (~/.config/agents-holding/jira.json missing). Run: holding jira connect"); process.exitCode = 1; return; }
   const req = client(cfg, fetchFn, token);
   const keyOf = (k) => String(k ?? "").toUpperCase();
   const b = () => pickBoard(loadReg(home), cwd, project, (() => { const i = process.argv.indexOf("--company"); return i >= 0 ? process.argv[i + 1] : null; })());

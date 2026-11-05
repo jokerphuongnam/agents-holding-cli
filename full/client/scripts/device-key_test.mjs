@@ -13,4 +13,8 @@ t(!verify("sha256", msg(Buffer.from("x")), pub, Buffer.from(h["X-AH-Sig"], "base
 t(/^[A-Za-z0-9_-]{16,64}$/.test(h["X-AH-Nonce"]), "nonce shape matches server");
 t(headers("POST", "/x")["X-AH-Pubkey"] === h["X-AH-Pubkey"], "same key reused");
 delete process.env.AH_DEVICE_KEY; t(backend() === "file", "backend memo sticky (no silent switch)");
+const { signFetch } = await import("./device-key.mjs");
+const sf = signFetch("https://x.example/functions/v1/mcp", '{"a":1}');
+t(verify("sha256", Buffer.from(canonical(sf["X-AH-Ts"], sf["X-AH-Nonce"], "POST", "/functions/v1/mcp", createHash("sha256").update('{"a":1}').digest("hex"))), pub, Buffer.from(sf["X-AH-Sig"], "base64")), "signFetch signs url path + body");
+process.env.AH_DEVICE_SIGN = "0"; t(Object.keys(signFetch("https://x.example/a", "")).length === 0, "AH_DEVICE_SIGN=0 -> no headers"); delete process.env.AH_DEVICE_SIGN;
 console.log(fail ? `FAILS ${fail}` : "FAILS 0"); process.exit(fail ? 1 : 0);
