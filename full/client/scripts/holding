@@ -99,7 +99,7 @@ case "$noun" in
     show) case "${1:-}" in convention|auto-pr) srv "$@" ;; "") node "$here/companies-cli.mjs" show; srv "$@" ;; esac; srv "$@" ;;
     create) bash "$here/ah-cli.sh" company create "$@" || exit $?; exec node "$here/policy.mjs" processes "${1:-}" --company "${1:-}" ;;  # then: process setup menu
     deny) dv="${1:-list}"; [ $# -gt 0 ] && shift; denycmd "$dv" "*" "$@" ;;
-    process) pv="${1:-list}"; [ $# -gt 0 ] && shift; [ "$pv" = setup ] && exec node "$here/policy.mjs" processes "$@"; exec bash "$here/ah-cli.sh" staff policy process "$pv" "$@" ;;
+    process) pv="${1:-list}"; [ $# -gt 0 ] && shift; [ "$pv" = setup ] && exec node "$here/policy.mjs" processes "$@"; exec bash "$here/ah-cli.sh" company process "$pv" "$@" ;;
     rename|pause|resume|archive|delete|move|staff|link|unlink|config) srv "$@" ;;
     migrate) exec node "$here/company-migrate.mjs" "$@" ;;
     set) what="${1:-}"; [ $# -gt 0 ] && shift; case "$what" in
