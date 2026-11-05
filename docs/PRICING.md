@@ -1,36 +1,38 @@
-# Bảng giá agents-holding (credit)
+# agents-holding pricing (credits)
 
-Tài liệu khách hàng: gói credit, giới hạn, chi phí thao tác, cách nâng gói. Số liệu lấy từ cấu hình đang khóa trên server (`CREDIT_PLANS`, `STAFF_LIMITS`, `CREDIT_COST`, `UPLOAD_SIZE_COST`). Không thanh toán trong app — nâng gói bằng cách liên hệ owner với **key id**.
+Languages: **English** · [Tiếng Việt](localized/PRICING.vi.md) · [日本語](localized/PRICING.ja.md) · [한국어](localized/PRICING.ko.md) · [简体中文](localized/PRICING.zh-CN.md) · [Español](localized/PRICING.es.md) · [Français](localized/PRICING.fr.md) · [Deutsch](localized/PRICING.de.md)
 
-Xem gói hiện tại trên máy: `holding billing` · `holding usage` · `holding key show` (chỉ hiện key id, không in secret).
+Credit plans, limits, what each action costs and how to upgrade. There is no in-app payment: to upgrade, contact the owner with your **key id**.
+
+Check your plan on your machine: `holding billing` · `holding usage` · `holding key show` (shows the key id only, never the secret).
 
 ---
 
-## Gói credit (theo tháng)
+## Credit plans (monthly)
 
-| Gói | Credit / tháng | Giá | Kênh |
+| Plan | Credits / month | Price | Channel |
 |---|---:|---:|---|
-| free | 1.500 | $0 | trực tiếp |
-| starter | 4.000 | $2 | trực tiếp |
-| lite | 6.000 | $2.5 | trực tiếp |
-| pro | 20.000 | $7.5 | trực tiếp |
-| power | 80.000 | $25 | trực tiếp |
-| max | 180.000 | $50 | trực tiếp |
-| ultra | 300.000 | $75 | trực tiếp |
-| marketplace | 20.000 | $10 | marketplace |
-| enterprise | tùy chỉnh | liên hệ | liên hệ owner |
+| free | 1,500 | $0 | direct |
+| starter | 4,000 | $2 | direct |
+| lite | 6,000 | $2.5 | direct |
+| pro | 20,000 | $7.5 | direct |
+| power | 80,000 | $25 | direct |
+| max | 180,000 | $50 | direct |
+| ultra | 300,000 | $75 | direct |
+| marketplace | 20,000 | $10 | marketplace |
+| enterprise | custom | contact us | contact the owner |
 
-- Chỉ key có **metered** (gắn credit plan) mới trừ credit. Key cũ chưa bật metering giữ hành vi cũ.
-- **enterprise**: số credit / ghế / thiết bị theo thỏa thuận — **liên hệ** owner.
-- Gói marketplace: mua qua kênh marketplace; chi tiết đơn hàng — **liên hệ** owner.
+- Only **metered** keys (keys with a credit plan) use credits. Older keys without metering keep working as before.
+- **enterprise**: credits, seats and devices by agreement. **Contact** the owner.
+- marketplace plan: bought through the marketplace. For order details, **contact** the owner.
 
 ---
 
-## Giới hạn staff (mỗi công ty)
+## Staff limit (per company)
 
-Số staff tối đa trong roster một công ty (tính cả CEO). Áp dụng khi thêm staff, chuyển/gán staff, migrate, tạo công ty mới. Owner (key chủ) không bị giới hạn này.
+The maximum number of staff in one company's roster, CEO included. It applies when you add, move or assign staff, migrate, or create a new company. The owner key has no limit.
 
-| Gói | Max staff / công ty |
+| Plan | Max staff / company |
 |---|---:|
 | free | 5 |
 | starter | 10 |
@@ -39,72 +41,72 @@ Số staff tối đa trong roster một công ty (tính cả CEO). Áp dụng kh
 | marketplace | 25 |
 | power | 40 |
 | max | 60 |
-| ultra | không giới hạn |
-| enterprise | không giới hạn |
+| ultra | unlimited |
+| enterprise | unlimited |
 
-Key cũ **chưa** có credit plan (legacy): trial 20 · monthly 30 · yearly 50 · mặc định nếu không khớp: 30.
+Older keys **without** a credit plan: trial 20 · monthly 30 · yearly 50 · otherwise 30.
 
-Khi chạm trần: *"Đã đạt giới hạn N staff của gói X. Hãy cho nghỉ (fire) một staff trước hoặc nâng cấp gói."*
+At the limit you see: *"You have reached the N-staff limit of plan X. Fire a staff member first or upgrade your plan."*
 
 ---
 
-## Giới hạn thiết bị (máy)
+## Device limit (machines)
 
-| Mục | Giá trị (theo code) |
+| Item | Value |
 |---|---|
-| Mặc định mỗi key | **1** thiết bị (`max_devices` mặc định) |
-| Trần owner có thể gán | **1…50** thiết bị / key |
-| Free tự tạo trên máy | **một** key Free / máy (không tạo Free mới trên cùng máy) |
-| enterprise | số thiết bị / key theo thỏa thuận — **liên hệ** |
+| Default per key | **1** device |
+| Most the owner can assign | **1 to 50** devices per key |
+| Free key created on a machine | **one** Free key per machine |
+| enterprise | devices per key by agreement: **contact** us |
 
-Hết slot máy: liên hệ owner để tăng `max_devices`, rồi thử lại trên máy mới. Xem `holding key show` (dòng devices used/max).
+Out of device slots? Ask the owner to raise your device limit, then try again on the new machine. `holding key show` shows devices used/max.
 
 ---
 
-## Chi phí credit theo thao tác
+## Credit cost per action
 
-Chỉ các lệnh **sinh việc** dưới đây tốn credit. Mọi thứ khác (heartbeat, realtime, reconcile, status, billing, inbox list, key, admin, hầu hết `cli`…) **miễn phí**.
+Only the actions below, which create work, cost credits. Everything else (heartbeat, realtime sync, status, billing, inbox list, key, admin, most CLI commands) is **free**.
 
-| Thao tác | Credit |
+| Action | Credits |
 |---|---:|
 | Agent run (`next_action`) | **2** |
 | `advance` | 1 |
 | `jira_ops` | 1 |
 | `staff_brief` | 1 |
 | `record_artifact` | 1 |
-| `assign` (gồm `holding task set …`) | 1 |
+| `assign` (including `holding task set …`) | 1 |
 | `ceo` | 1 |
 | `inbox_post` / `inbox_reply` | 1 |
 
-**Token model không bao giờ bị tính credit.**
+**Model tokens are never charged in credits.**
 
-### Upload (Jira attach / Figma export / Confluence)
+### Uploads (Jira attach / Figma export / Confluence)
 
-Công thức (đã bật): **1 credit / file + 1 credit mỗi 10 MB vượt 5 MB đầu**, **tối đa 5 credit / file**.
+**1 credit per file, plus 1 credit for every 10 MB beyond the first 5 MB**, **capped at 5 credits per file**.
 
-Ví dụ (theo server): 0,4 MB → 1 · 25 MB → 3 · 300 MB → 5.
+Examples: 0.4 MB → 1 · 25 MB → 3 · 300 MB → 5.
 
-File đi máy bạn → Atlassian/Figma; server chỉ đo dung lượng để trừ credit (`upload_meter`).
-
----
-
-## Nâng gói / thêm credit
-
-1. Lấy **key id** (không gửi secret key): `holding key show` hoặc dòng “To upgrade” trong `holding billing` / `holding usage`.
-2. Gửi key id cho **owner** và nêu gói muốn (hoặc cần thêm credit trong kỳ).
-3. **Chưa có thanh toán trong app.** Khi có cổng thanh toán sau này, luồng nâng gói sẽ gắn vào điểm mở rộng hiện có — không đổi cách tra cứu bảng giá này.
-
-Hết credit / key hết hạn: Listener dừng với thông báo liên hệ owner để gia hạn hoặc thêm credit.
+Files go straight from your machine to Jira, Confluence or Figma; the server only measures the size to count credits.
 
 ---
 
-## Tra cứu nhanh trên máy
+## Upgrade or add credits
+
+1. Get your **key id** (never send the secret key): `holding key show`, or the "To upgrade" line in `holding billing` / `holding usage`.
+2. Send the key id to the **owner** (**phuongnamp99@gmail.com**) with the plan you want, or how many extra credits you need this period.
+3. **There is no in-app payment yet.** When payments arrive, upgrading will plug into the same flow; this price sheet stays the place to look.
+
+Out of credits or key expired: the Jira Listener stops and tells you to contact the owner to renew or add credits.
+
+---
+
+## Quick lookup on your machine
 
 ```bash
-holding billing          # gói hiện tại + bảng giá + dòng nâng gói
-holding usage            # thanh % credit kỳ này (key đã metered)
-holding credit show      # số dư credit
+holding billing          # current plan + price sheet + upgrade line
+holding usage            # credit bar for this period (metered keys)
+holding credit show      # credit balance
 holding key show         # key id, plan, devices
 ```
 
-Cài đặt / MCP: [full/SETUP.md](../full/SETUP.md).
+Install / MCP: [full/SETUP.md](../full/SETUP.md).
