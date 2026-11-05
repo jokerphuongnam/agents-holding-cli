@@ -2,6 +2,7 @@
 // Hardware-bound device key: Secure Enclave (macOS) > TPM (Windows / Linux) > file key (lower trust, flagged "file").
 // Prints request signing headers for agents-holding.
 //   node device-key.mjs info                         -> {"trust":"secure_enclave","pubkey":"<b64 SPKI>"}
+//   node device-key.mjs curlcfg <METHOD> <url|path> [bodyFile] -> curl -K header lines
 //   node device-key.mjs headers <METHOD> <path> [bodyFile|-]  -> JSON of X-AH-* headers (signs ts/nonce/method/path/sha256(body))
 import { createHash, generateKeyPairSync, createPrivateKey, createPublicKey, randomBytes, sign as nsign } from "node:crypto";
 import { execFileSync } from "node:child_process";
@@ -51,6 +52,8 @@ if (isMain) {
   const [cmd, m, p, f] = process.argv.slice(2);
   try {
     if (cmd === "info") { const b = backend(); console.log(JSON.stringify({ trust: b, pubkey: backends[b].pub() })); }
+    else if (cmd === "curlcfg" && m && p) { const path = /^https?:/.test(p) ? new URL(p).pathname : p; // curl -K config lines (stdin), never argv
+      for (const [k, v] of Object.entries(headers(m, path, !f ? Buffer.alloc(0) : readFileSync(f)))) console.log(`header = "${k}: ${v}"`); }
     else if (cmd === "headers" && m && p) console.log(JSON.stringify(headers(m, p, !f ? Buffer.alloc(0) : f === "-" ? readFileSync(0) : readFileSync(f))));
     else { console.error("usage: device-key.mjs info | headers <METHOD> <path> [bodyFile|-]"); process.exit(64); }
   } catch (e) { console.error("device key error: " + (e?.message ?? e)); process.exit(1); }

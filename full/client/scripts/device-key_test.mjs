@@ -1,0 +1,16 @@
+// node device-key_test.mjs : file backend signs verifiable P-256 signatures; tamper fails; backend choice is sticky.
+import { createHash, createPublicKey, verify } from "node:crypto";
+import { mkdtempSync } from "node:fs"; import { tmpdir } from "node:os"; import { join } from "node:path";
+process.env.AH_DEVICE_KEY_DIR = mkdtempSync(join(tmpdir(), "dk-")); process.env.AH_DEVICE_KEY = "file";
+const { headers, canonical, backend } = await import("./device-key.mjs");
+let fail = 0; const t = (c, m) => { console.log((c ? "ok   " : "FAIL ") + m); if (!c) fail++; };
+const body = Buffer.from('{"a":1}'), h = headers("POST", "/functions/v1/mcp", body);
+const pub = createPublicKey({ key: Buffer.from(h["X-AH-Pubkey"], "base64"), format: "der", type: "spki" });
+const msg = (b) => Buffer.from(canonical(h["X-AH-Ts"], h["X-AH-Nonce"], "POST", "/functions/v1/mcp", createHash("sha256").update(b).digest("hex")));
+t(h["X-AH-Key-Trust"] === "file", "file trust flagged");
+t(verify("sha256", msg(body), pub, Buffer.from(h["X-AH-Sig"], "base64")), "signature verifies");
+t(!verify("sha256", msg(Buffer.from("x")), pub, Buffer.from(h["X-AH-Sig"], "base64")), "tampered body fails");
+t(/^[A-Za-z0-9_-]{16,64}$/.test(h["X-AH-Nonce"]), "nonce shape matches server");
+t(headers("POST", "/x")["X-AH-Pubkey"] === h["X-AH-Pubkey"], "same key reused");
+delete process.env.AH_DEVICE_KEY; t(backend() === "file", "backend memo sticky (no silent switch)");
+console.log(fail ? `FAILS ${fail}` : "FAILS 0"); process.exit(fail ? 1 : 0);
