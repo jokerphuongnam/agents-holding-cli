@@ -4,7 +4,7 @@
 // Usage: holding listener run [--repo DIR] [--once] [--dry-jira] | [--run ISSUE --event E --stage S [--dry-jira]]   (license: $AGENTS_HOLDING_KEY or Keychain agents-holding-license|agents-holding-test-license)
 // One agent run at a time; events arriving during a run are coalesced into one follow-up run. Logs: ~/Library/Logs/agents-holding/.
 import * as O from "./outbound.mjs";
-import { localMeta } from "./skills.mjs";
+import { localMeta, crawlPublic } from "./skills.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
@@ -122,6 +122,66 @@ const heartbeat = (state = "online") => Promise.all(companyList.map((company) =>
   .catch((e) => { log("heartbeat failed:", e.message); L.writeStatus(homedir(), { companies: { [company]: { heartbeat_at: new Date().toISOString(), heartbeat_ok: false } } }); })));
 L.writeStatus(homedir(), { pid: process.pid, started_at: new Date().toISOString(), notify: L.notifyOn(homedir()), running: null, companies: {} });
 setInterval(heartbeat, Number(process.env.AH_HEARTBEAT_SEC ?? 60) * 1000);
+
+// Auto-Done / Verified on Develop: poll gh for real merged PRs linked to issue keys (never forge Jira events).
+const mergedPrSeen = new Set();
+async function pollMergedForProjects() {
+  for (const prj of registry.projects) {
+    let list = [];
+    try { list = L.pollMergedPrs(prj.path, { sinceHours: Number(process.env.AH_PR_POLL_HOURS ?? 72) }); }
+    catch (e) { log(`pr-poll ${prj.name}: ${e.message}`); continue; }
+    for (const pr of list) {
+      const id = `${prj.path}:${pr.number || pr.url}`;
+      if (mergedPrSeen.has(id)) continue;
+      const company = (prj.boards.find((b) => pr.key.startsWith(b.project_key + "-")) ?? prj.boards[0])?.company;
+      if (!company) continue;
+      try {
+        const r = await mcp("pr_merged", { company, task: pr.key, base: pr.base, branch: pr.branch, pr_url: pr.url, title: pr.title });
+        mergedPrSeen.add(id);
+        log(`pr-merged ${pr.key}: ${pr.branch} -> ${pr.base} => stage ${r?.stage ?? "?"} (${pr.url ?? ""})`);
+        if (r?.move_to && listenerJira) {
+          try {
+            const cfgPath = join(homedir(), ".config/agents-holding/jira.json");
+            if (!existsSync(cfgPath)) { log(`pr-merged: no jira.json; server stage ${r.stage}, card not moved`); continue; }
+            const cfg = JSON.parse(readFileSync(cfgPath, "utf8"));
+            const site = String(cfg.site || "").replace(/\/$/, "");
+            const tok = L.jiraToken(cfg); const a = tok ? "Basic " + Buffer.from(`${cfg.email}:${tok}`).toString("base64") : null;
+            if (!a) { log("pr-merged: no Jira token in Keychain"); continue; }
+            if (dryJira) { log(`JIRA (dry): transition ${pr.key} -> ${r.move_to}`); continue; }
+            const tr = await fetch(`${site}/rest/api/3/issue/${encodeURIComponent(pr.key)}/transitions`, { headers: { Authorization: a, Accept: "application/json" } }).then((x) => x.json());
+            const hit = (tr.transitions ?? []).find((x) => String(x.to?.name || "").toLowerCase() === String(r.move_to).toLowerCase());
+            if (hit) {
+              await fetch(`${site}/rest/api/3/issue/${encodeURIComponent(pr.key)}/transitions`, { method: "POST", headers: { Authorization: a, "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ transition: { id: hit.id } }) });
+              log(`JIRA: moved ${pr.key} -> ${hit.to.name} (PR merged)`);
+            } else log(`pr-merged: no Jira transition to "${r.move_to}" for ${pr.key}`);
+          } catch (e) { log(`pr-merged jira move failed: ${e.message}`); }
+        }
+      } catch (e) {
+        if (/no such task|not found|unknown|REJECTED/i.test(String(e.message))) mergedPrSeen.add(id);
+        log(`pr-merged ${pr.key}: ${e.message}`);
+      }
+    }
+  }
+}
+setInterval(() => { pollMergedForProjects().catch((e) => log("pr-poll failed:", e.message)); }, Number(process.env.AH_PR_POLL_SEC ?? 120) * 1000);
+setTimeout(() => { pollMergedForProjects().catch((e) => log("pr-poll failed:", e.message)); }, 15_000);
+// Periodic public-skill crawl (same privacy rules as `holding skill sync`; never runs scripts).
+async function crawlSkillsForCompanies() {
+  for (const company of companyList) {
+    try {
+      const results = await crawlPublic(homedir(), { company });
+      for (const r of results) {
+        if (r.status === "uploaded") log(`skill-crawl ${company}/${r.name}: uploaded ${r.files} file(s)`);
+        else if (r.status === "error") log(`skill-crawl ${company}/${r.name}: ${r.error}`);
+        else if (r.status === "held_back" || r.status === "blocked") log(`skill-crawl ${company}/${r.name}: ${r.status}`);
+      }
+    } catch (e) { log(`skill-crawl ${company}: ${e.message}`); }
+  }
+}
+setInterval(() => { crawlSkillsForCompanies().catch((e) => log("skill-crawl failed:", e.message)); }, Number(process.env.AH_SKILL_CRAWL_SEC ?? 3600) * 1000);
+setTimeout(() => { crawlSkillsForCompanies().catch((e) => log("skill-crawl failed:", e.message)); }, 45_000);
+
+
 // Clean shutdown (launchctl bootout/unload, holding listener stop, Ctrl-C, logout): tell the server right away.
 let stopping = false;
 for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(sig, () => { if (stopping) return; stopping = true;
@@ -400,7 +460,7 @@ async function leanRunInner(p, na, depth, vis) {
     for (let i = 0; i < 2; i++) {
       try { const r = await mcp("advance", { company, task: issue, to_stage: to, listener_jira: true }); log(`lean: ${issue} ${from} -> ${r.stage}`);
         await jiraOps(issue); // move the card NOW, before the next stage's work starts (the board shows what is actually happening)
-        if (jira && r.stage !== "done") { const role = L.stageRole(na, r.stage, { developer: L.loadPlan(st, issue).developer }); if (role && vis.staffRole !== role) { vis.staffRole = role; await jira.staffLabel(issue, role, L.loadAgentCfg(homedir(), company).staff?.[role]?.jira_user || null).catch((e) => log("Jira staff label failed:", e.message)); } } // staff:<id> = owner of the stage just entered
+        if (jira && r.stage !== "done") { const role = L.stageRole(na, r.stage, { developer: L.loadPlan(st, issue).developer }); if (role && vis.staffRole !== role) { vis.staffRole = role; await jira.staffLabel(issue, role, L.loadAgentCfg(homedir(), company).staff?.[role]?.jira_user || null).then((acct) => acct ? mcp("set_task_assignee", { company, task: issue, account: acct }).catch((e) => log("persist assignee failed:", e.message)) : null).catch((e) => log("Jira staff label failed:", e.message)); } } // staff:<id> = owner of the stage just entered
         X.ckptSave(st, issue, { stage: r.stage, done: [] });
         vis.gates ??= new Set();
         if (r.stage === to && L.GATE_HINTS[to] && !vis.gates.has(to)) { vis.gates.add(to); await say(false, L.gateComment(L.stageStaff(na, to), to), "gate"); } // explicit gate: how to approve / revise
@@ -420,7 +480,7 @@ async function leanRunInner(p, na, depth, vis) {
     { const ck = X.ckptLoad(st, issue); if (ck?.stage !== s0) X.ckptSave(st, issue, { stage: s0, done: [], code_done: [], running: true }); else X.ckptSave(st, issue, { running: true }); }
     if (vis.started.has(s0)) return; vis.started.add(s0);
     if (jira && !vis.labeled) { vis.labeled = true; await jira.label(issue, "add").catch((e) => log("Jira label add failed:", e.message)); }
-    if (jira && kind !== "script" && vis.staffRole !== role) { vis.staffRole = role; await jira.staffLabel(issue, role, L.loadAgentCfg(homedir(), company).staff?.[role]?.jira_user || null).catch((e) => log("Jira staff label failed:", e.message)); }
+    if (jira && kind !== "script" && vis.staffRole !== role) { vis.staffRole = role; await jira.staffLabel(issue, role, L.loadAgentCfg(homedir(), company).staff?.[role]?.jira_user || null).then((acct) => acct ? mcp("set_task_assignee", { company, task: issue, account: acct }).catch((e) => log("persist assignee failed:", e.message)) : null).catch((e) => log("Jira staff label failed:", e.message)); }
     if (kind !== "script" && !(kind === "code" && na.review_feedback)) await say(false, L.startedComment(vis.staff, s0, L.staffWhy(na, s0, { kind, developer: dev0 }))); // review: the "back to Coding" comment says it
     L.desktopNotify(homedir(), `agents-holding: ${issue}`, `Started ${L.stageTitle(s0)}`);
   };

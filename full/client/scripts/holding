@@ -16,6 +16,7 @@ usage: holding <noun> <verb> [args]   (chat: /<noun> <verb> ...; no verb = list/
   task list [all] | history [n] | plan <KEY> | set <KEY> --staff <role> | add "<description>" | split <KEY>   (add/split: in your agent)
   provider list | set [staff ...] [--agent P --model M --effort E] | set --default <role> <provider> [model] [effort] | unset <role>
   skill add <staff> <skill> | skill list --custom
+  skill where|check|set <name> public|private|sync [--dry-run]|consent <name>|run <name> <script>
   project add --jira-project KEY [--company ID] [--name N] [--auto-pr on|off] [--agent A] | remove [--repo DIR|NAME] [--jira-project KEY] | list [--json]
   company list | count | overview | show [company] | use <company>   (only companies connected to holding)
   company create <name> [--parent P] | rename <c> <name> | pause|resume|archive <c> | delete <c> --confirm <c> | move <c> --parent <P|none>
@@ -59,7 +60,7 @@ case "$noun" in
     set) if [ "${1:-}" = --default ]; then shift; exec node "$here/bind-cli.mjs" remembered set "$@"; fi; exec node "$here/bind-cli.mjs" "$@" ;;
     unset) exec node "$here/bind-cli.mjs" remembered unset "$@" ;;
     *) usage ;; esac ;;
-  skill) case "$verb" in add) exec node "$here/add-skill.mjs" "$@" ;; ""|list|browse|review|variants|library) srv "$@" ;; where|check|set|sync) exec node "$here/skills.mjs" "$verb" "$@" ;; *) usage ;; esac ;;
+  skill) case "$verb" in add) exec node "$here/add-skill.mjs" "$@" ;; ""|list|browse|review|variants|library) srv "$@" ;; where|check|set|sync|consent|run) exec node "$here/skills.mjs" "$verb" "$@" ;; *) usage ;; esac ;;
   team|enterprise|usage) srv "$@" ;;  # server decides who may run these; everyone else gets the unknown-command help
   project) case "$verb" in
     add) set +e; node "$here/projects.mjs" add "$@" || exit $?
