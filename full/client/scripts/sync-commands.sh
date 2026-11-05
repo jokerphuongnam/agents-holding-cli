@@ -61,19 +61,21 @@ if [ -n "$HOOK" ]; then # zero-model path: Grok UserPromptSubmit hook (global; G
   if [ ! -f "$SD/ah-hook.sh" ] || [ ! -f "$SD/ah-cli.sh" ]; then SD="$HOME/.agents-holding/lite"; mkdir -p "$SD"
     for f in ah-hook.sh ah-cli.sh; do curl -fsSL --retry 3 "https://raw.githubusercontent.com/jokerphuongnam/agents-holding-free/${AH_BRANCH:-main}/full/client/scripts/$f" -o "$SD/$f"; chmod +x "$SD/$f"; done; fi
   mkdir -p "$HOME/.grok/hooks"
-  printf '{"hooks":{"UserPromptSubmit":[{"hooks":[{"type":"command","command":"bash %s/ah-hook.sh","timeout":30}]}]}}\n' "$SD" > "$HOME/.grok/hooks/agents-holding.json"
+  # Guard: missing script after uninstall must be silent (exit 0), never bash: No such file / 127
+  HOOKCMD="[ -x $SD/ah-hook.sh ] && bash $SD/ah-hook.sh || exit 0"
+  printf '{"hooks":{"UserPromptSubmit":[{"hooks":[{"type":"command","command":"%s","timeout":30}]}]}}\n' "$HOOKCMD" > "$HOME/.grok/hooks/agents-holding.json"
   echo "hook: ~/.grok/hooks/agents-holding.json -> $SD/ah-hook.sh (pure-data commands answer instantly, no model)"
   # Claude Code: same UserPromptSubmit contract (exit 2 = prompt blocked, stderr shown, no model turn); merged into ~/.claude/settings.json
   if [ -d "$HOME/.claude" ] && command -v node >/dev/null; then
     node -e 'const fs=require("fs"),p=process.argv[1],cmd=process.argv[2];let j={};try{j=JSON.parse(fs.readFileSync(p,"utf8"))}catch{}
       j.hooks??={};const L=(j.hooks.UserPromptSubmit??=[]).filter(h=>!JSON.stringify(h).includes("ah-hook.sh"));L.push({hooks:[{type:"command",command:cmd,timeout:30}]});j.hooks.UserPromptSubmit=L;
-      fs.writeFileSync(p,JSON.stringify(j,null,2)+"\n")' "$HOME/.claude/settings.json" "bash $SD/ah-hook.sh" && echo "hook: ~/.claude/settings.json UserPromptSubmit -> $SD/ah-hook.sh (Claude Code: instant, no model)"; fi
+      fs.writeFileSync(p,JSON.stringify(j,null,2)+"\n")' "$HOME/.claude/settings.json" "$HOOKCMD" && echo "hook: ~/.claude/settings.json UserPromptSubmit -> $SD/ah-hook.sh (Claude Code: instant, no model)"; fi
   # Codex CLI: same UserPromptSubmit contract (exit 2 = blocked, stderr shown); merged into ~/.codex/hooks.json + hooks feature on.
   # Codex asks once to trust a new hook (/hooks review); after that /holding ... is answered with no model turn.
   if [ -d "$HOME/.codex" ] && command -v node >/dev/null; then
     node -e 'const fs=require("fs"),p=process.argv[1],cmd=process.argv[2];let j={};try{j=JSON.parse(fs.readFileSync(p,"utf8"))}catch{}
       j.hooks??={};const L=(j.hooks.UserPromptSubmit??=[]).filter(h=>!JSON.stringify(h).includes("ah-hook.sh"));L.push({hooks:[{type:"command",command:cmd,timeout:30,statusMessage:"agents-holding"}]});j.hooks.UserPromptSubmit=L;
-      fs.writeFileSync(p,JSON.stringify(j,null,2)+"\n")' "$HOME/.codex/hooks.json" "bash $SD/ah-hook.sh"
+      fs.writeFileSync(p,JSON.stringify(j,null,2)+"\n")' "$HOME/.codex/hooks.json" "$HOOKCMD"
     CC="$HOME/.codex/config.toml"; touch "$CC"
     if ! grep -qs '^codex_hooks *= *true' "$CC"; then
       if grep -qs '^\[features\]' "$CC"; then sed -i.ahbak '/^\[features\]/a\

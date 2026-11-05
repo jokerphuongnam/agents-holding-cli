@@ -68,6 +68,13 @@ Bước này **không** cài Jira Listener.
 
 **Mở phiên agent mới** sau khi cài để agent nạp các lệnh mới.
 
+
+## Client local (tuỳ chọn — zero-token)
+
+Không có CLI thì mọi lệnh vẫn chạy qua MCP (tốn AI token). CLI chỉ để trả lời tức thì, không tốn token.
+
+Lần đầu mỗi key+thiết bị: agent hỏi một lần. Có → cài và chạy lại lệnh. Không → đánh dấu no-cli, không hỏi lại trên máy này; lệnh vẫn qua MCP. Sau vẫn có thể `/holding install`.
+
 ## 4. Dùng trong chat: tức thì, không tốn token AI
 
 Sau khi cài, các lệnh thuần dữ liệu được hook hoặc shell trả lời ngay trên máy. Prompt không bao giờ tới model:

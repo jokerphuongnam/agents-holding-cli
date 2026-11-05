@@ -1,3 +1,5 @@
+MCP alone is enough without the local CLI (AI tokens). CLI = optional zero-token. First ask per key+device; No = no-cli, never ask again on that device.
+
 # agents-holding
 
 [English](../README.md)

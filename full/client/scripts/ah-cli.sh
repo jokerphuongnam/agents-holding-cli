@@ -3,7 +3,7 @@
 # this prints it. No model, no Node (curl + macOS osascript). Owner commands (key list|add|remove|renew <ref>|set label|reset-device|show <id>) use THIS Mac's license key: the
 # server accepts them only from the owner's home-Mac key on its bound device. Recovery (home key lost): AH_OWNER_RECOVERY=1 uses
 # the owner admin key + 2FA session (docs/OWNER.md). New keys never print: they go to the Keychain + clipboard (key show <id>).
-# Company = .agents/company.json in this dir or a parent, or --company <slug> / $AH_COMPANY.
+# Company = .agents/<folder>/(COMPANY.md|COMPANY_BOOT.md) any name, or legacy company.json, or --company / $AH_COMPANY / active.
 set -euo pipefail
 # >>> ah_kc_guard (canonical: full/lib/kc-guard.sh): macOS `security` resolves the default keychain from $HOME; under a
 # temporary/fake HOME it finds none and pops "keychain not found / restore keychain" dialogs. Pin every *-generic-password
@@ -24,7 +24,7 @@ CO="${AH_COMPANY:-}"; A=()
 while [ $# -gt 0 ]; do case "$1" in --company) CO="$2"; shift;; *) A+=("$1");; esac; shift; done
 kc() { security find-generic-password -s "$1" -a "$USER" -w 2>/dev/null; }
 V="${A[0]:-}"; X="${A[1]:-}"; OWNCMD=""
-[ "$cmd" = key ] && case "$V" in list|add|remove|set|reset-device|rotate) OWNCMD=1;; renew|show) [ -n "$X" ] && OWNCMD=1;; esac
+[ "$cmd" = key ] && case "$V" in list|add|remove|set|label|reset-device|rotate|merge|unmerge) OWNCMD=1;; renew|show) [ -n "$X" ] && OWNCMD=1;; esac
 LANGH="en"; case "${AH_LANG:-${LANG:-}}" in vi*) LANGH="vi";; esac
 say() { [ "$LANGH" = vi ] && echo "$2" || echo "$1"; }
 MCP_BASE="${MCP_URL%/}"
@@ -102,8 +102,31 @@ case "$OWNCMD" in 1) if [ "${AH_OWNER_RECOVERY:-0}" = 1 ]; then KEY="${AGENTS_HO
 [ -n "$KEY" ] || { echo "no $([ -n "$OWN" ] && echo owner || echo license) key in the Keychain: run connect.sh first" >&2; exit 1; }
 DEV="${AGENTS_HOLDING_DEVICE:-$(kc agents-holding-device || true)}"
 SK=""; case " ${A[*]:-} " in *" --custom "*) [ -n "$OWNCMD" ] && { SK="${AH_CUSTOM_KEY:-}"; [ -n "$SK" ] || { read -r -s -p "Custom key string (hidden): " SK; echo; }; } ;; esac
-if [ -z "$CO" ]; then d="$PWD"; while [ "$d" != "/" ]; do [ -f "$d/.agents/company.json" ] && { CO="$(sed -nE 's/.*"company" *: *"([^"]+)".*/\1/p' "$d/.agents/company.json" | head -1)"; break; }; d="$(dirname "$d")"; done; fi
-[ -z "$CO" ] && [ -f "$HOME/.config/agents-holding/active" ] && CO="$(tr -d '\n' < "$HOME/.config/agents-holding/active")"  # holding company use <company>
+if [ -z "$CO" ]; then
+  ACT=""; [ -f "$HOME/.config/agents-holding/active" ] && ACT="$(tr -d '\n' < "$HOME/.config/agents-holding/active")"
+  d="$PWD"; while [ "$d" != "/" ]; do
+    # Prefer .agents/<folder>/ with COMPANY.md|COMPANY_BOOT.md (any name). company.json is legacy fallback only.
+    if [ -d "$d/.agents" ]; then
+      _ah_cos=()
+      for _ah_d in "$d/.agents"/*; do
+        [ -d "$_ah_d" ] || continue
+        _ah_b="$(basename "$_ah_d")"
+        case "$_ah_b" in .* ) continue;; esac
+        if [ -f "$_ah_d/COMPANY.md" ] || [ -f "$_ah_d/COMPANY_BOOT.md" ]; then _ah_cos+=("$_ah_b"); fi
+      done
+      if [ "${#_ah_cos[@]}" -eq 1 ]; then CO="${_ah_cos[0]}"; break; fi
+      if [ "${#_ah_cos[@]}" -gt 1 ]; then
+        for _ah_b in "${_ah_cos[@]}"; do [ "$_ah_b" = "$ACT" ] && { CO="$ACT"; break; }; done
+        [ -n "$CO" ] && break
+        break  # ambiguous at this repo; do not invent
+      fi
+      if [ -f "$d/.agents/company.json" ]; then CO="$(sed -nE 's/.*"company" *: *"([^"]+)".*/\1/p' "$d/.agents/company.json" | head -1)"; [ -n "$CO" ] && break; fi
+    fi
+    d="$(dirname "$d")"
+  done
+  [ -z "$CO" ] && [ -n "$ACT" ] && CO="$ACT"  # holding company use <company>
+fi
+# key/credit/whoami are license-scoped: empty CO is fine (do not invent a company)
 SESS=""; [ -n "$OWN" ] && [ -f "$HOME/.config/agents-holding/owner-session.txt" ] && SESS="$(tr -d '\n' < "$HOME/.config/agents-holding/owner-session.txt")"
 tmp="$(mktemp -d)"; chmod 700 "$tmp"; trap 'rm -rf "$tmp"' EXIT
 # JSON body built by osascript (safe quoting of free text); secrets go to curl via its config on stdin, never argv
@@ -133,12 +156,14 @@ args="${A[*]:-}"
 # billing: language follows the input; no words typed -> the terminal language (vi_* -> Vietnamese)
 [ "$cmd" = billing ] && [ -z "${args// /}" ] && case "${AH_LANG:-${LANG:-}}" in vi*) args="vi";; esac
 # read-only commands keep the last good answer; on server down / 5xx / timeout they print it marked STALE (never for writes)
-RO=0; case "$cmd $V" in "status "*|"doctor "*|"task list"|"task history"|"task plan"|"staff list"|"staff "|"task "|"billing "|"billing usage"|"flow "*|"listener status"|"help "*|"skill list"|"jira sources"|"company show") RO=1;; esac
+RO=0; case "$cmd $V" in "status "*|"doctor "*|"task list"|"task history"|"task plan"|"staff list"|"staff "|"task "|"billing "|"billing usage"|"flow "*|"listener status"|"help "*|"skill list"|"jira sources"|"company show"|"key show"|"key "|"credit show"|"credit "|"whoami "*) RO=1;; esac
 CACHE="$HOME/.config/agents-holding/cache/cli-${CO:-none}-$cmd-$(printf '%s' "$args" | shasum | cut -c1-10).txt"
 QUOTA="MCP server quota exceeded (plan limit / too many requests). Work pauses; nothing is lost. Check: holding status, or wait for the reset."
 stale() { # stale <why>: print the cached answer marked STALE (read-only cmds) or the error
   [ "$1" = quota ] && echo "$QUOTA" >&2 || echo "$1" >&2
   if [ "$RO" = 1 ] && [ -f "$CACHE" ]; then echo "⚠️  STALE (cached $(date -r "$CACHE" '+%Y-%m-%d %H:%M'); server unavailable: $1)"; cat "$CACHE"; exit 0; fi
+  # MCP down and no cache: still a clear local error (ah-hook already preferred local CLI over chat MCP)
+  if [ "$RO" = 1 ]; then echo "MCP unavailable ($1). Retry shortly, or check: holding doctor --server" >&2; fi
 }
 if [ -n "$OWNCMD" ] && [ "$cmd" = key ] && [ "$V" = show ]; then pickup "$X"; exit $?; fi
 if [ "$cmd" = team ] && [ "$V" = key ]; then pickup "$X" team; exit $?; fi

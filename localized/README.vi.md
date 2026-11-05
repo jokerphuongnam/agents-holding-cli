@@ -1,3 +1,5 @@
+Chỉ cần MCP là đủ (không bắt buộc CLI; tốn AI token). CLI = tuỳ chọn zero-token. Hỏi một lần mỗi key+thiết bị; Không = no-cli, không hỏi lại trên máy đó.
+
 # agents-holding
 
 [English](../README.md)

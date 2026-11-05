@@ -68,6 +68,13 @@ https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp
 
 安装后请**开启新的 agent 会话**，让 agent 加载新命令。
 
+
+## Optional local client (zero-token)
+
+Without the CLI, every command still works via MCP (AI tokens). The CLI only makes replies instant with zero tokens.
+
+First time per key+device the agent asks once to install. Yes → install and re-run the command. No → mark no-cli on the server and never ask again on this device; commands keep working via MCP. You can still run `/holding install` later.
+
 ## 4. 在聊天中使用：即时响应，零 AI token
 
 安装后，纯数据命令由 hook 或 shell 在本地直接回答，提示词不会发送给模型：
