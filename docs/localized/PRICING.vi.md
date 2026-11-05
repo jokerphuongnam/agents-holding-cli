@@ -90,6 +90,20 @@ File đi thẳng từ máy bạn lên Jira, Confluence hoặc Figma; server ch�
 
 ---
 
+## Mua thêm credit (không đổi gói)
+
+Nạp thêm credit mà không cần đổi gói. Có ba loại:
+
+| Loại | Cách hoạt động |
+|---|---|
+| `expire` | hết hạn cùng kỳ của gói hiện tại |
+| `next` | dùng được ngay; phần còn dư cuối kỳ bị khóa, rồi được mở khóa và cộng vào khi kỳ mới bắt đầu |
+| `keep` | giữ nguyên cho tới khi dùng hết |
+
+Giá: liên hệ owner (phuongnamp99@gmail.com) kèm key id.
+
+---
+
 ## Nâng gói / thêm credit
 
 1. Lấy **key id** (không gửi secret key): `holding key show` hoặc dòng “To upgrade” trong `holding billing` / `holding usage`.

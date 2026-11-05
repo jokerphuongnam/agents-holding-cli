@@ -90,6 +90,20 @@ Los archivos van directamente de tu equipo a Jira, Confluence o Figma; el servid
 
 ---
 
+## Comprar créditos extra (sin cambiar de plan)
+
+Recarga créditos sin cambiar de plan. Hay tres tipos:
+
+| Tipo | Cómo funciona |
+|---|---|
+| `expire` | caducan al terminar el periodo actual de tu plan |
+| `next` | se pueden usar al momento; lo que sobre al final del periodo se bloquea y se desbloquea y suma cuando empieza el siguiente |
+| `keep` | se mantienen hasta que los gastes |
+
+Precio: contacta al propietario (phuongnamp99@gmail.com) con tu key id.
+
+---
+
 ## Mejorar el plan o añadir créditos
 
 1. Consigue tu **key id** (nunca envíes la key secreta): `holding key show`, o la línea "To upgrade" de `holding billing` / `holding usage`.

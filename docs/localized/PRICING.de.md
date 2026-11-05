@@ -90,6 +90,20 @@ Dateien gehen direkt von deinem Rechner zu Jira, Confluence oder Figma; der Serv
 
 ---
 
+## Zusätzliche Credits kaufen (ohne Planwechsel)
+
+Lade Credits auf, ohne deinen Plan zu ändern. Es gibt drei Arten:
+
+| Art | So funktioniert es |
+|---|---|
+| `expire` | verfallen mit dem Ende des aktuellen Planzeitraums |
+| `next` | sofort nutzbar; was am Ende des Zeitraums übrig ist, wird gesperrt und beim Start des nächsten Zeitraums entsperrt und gutgeschrieben |
+| `keep` | bleiben, bis sie aufgebraucht sind |
+
+Preis: Kontaktiere den Owner (phuongnamp99@gmail.com) mit deiner Key-ID.
+
+---
+
 ## Upgrade oder Credits hinzufügen
 
 1. Hol dir deine **Key-ID** (schick nie den geheimen Key): `holding key show` oder die Zeile „To upgrade“ in `holding billing` / `holding usage`.

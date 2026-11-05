@@ -90,6 +90,20 @@ Les fichiers vont directement de votre machine vers Jira, Confluence ou Figma ; 
 
 ---
 
+## Acheter des crédits supplémentaires (sans changer de formule)
+
+Rechargez des crédits sans changer de formule. Il existe trois types :
+
+| Type | Fonctionnement |
+|---|---|
+| `expire` | expirent à la fin de la période en cours de votre formule |
+| `next` | utilisables tout de suite ; le reste en fin de période est verrouillé, puis déverrouillé et ajouté à l'ouverture de la période suivante |
+| `keep` | restent disponibles jusqu'à épuisement |
+
+Prix : contactez le propriétaire (phuongnamp99@gmail.com) avec votre key id.
+
+---
+
 ## Changer de formule ou ajouter des crédits
 
 1. Récupérez votre **key id** (n'envoyez jamais la key secrète) : `holding key show`, ou la ligne « To upgrade » de `holding billing` / `holding usage`.

@@ -90,6 +90,20 @@ Files go straight from your machine to Jira, Confluence or Figma; the server onl
 
 ---
 
+## Buy extra credits (no plan change)
+
+Top up credits without changing your plan. There are three types:
+
+| Type | How it works |
+|---|---|
+| `expire` | ends with your current plan period |
+| `next` | usable right away; whatever is left at the end of the period is locked, then unlocked and added when the next period opens |
+| `keep` | stays until it is used up |
+
+Price: contact the owner (phuongnamp99@gmail.com) with your key id.
+
+---
+
 ## Upgrade or add credits
 
 1. Get your **key id** (never send the secret key): `holding key show`, or the "To upgrade" line in `holding billing` / `holding usage`.
