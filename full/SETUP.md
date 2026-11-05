@@ -78,7 +78,7 @@ After install, pure commands are answered locally by the hook or your shell. The
 |---|---|
 | `grok` CLI | `/holding key show`: the UserPromptSubmit hook (`~/.grok/hooks/agents-holding.json`) answers it instantly |
 | Claude Code | `/holding key show`: the UserPromptSubmit hook in `~/.claude/settings.json` answers it instantly |
-| Codex CLI | `!holding key show` (Codex's local shell escape) |
+| Codex CLI | `!holding key show` (Codex's local shell escape); slash commands: `/prompts:holding`, `/prompts:ceo` |
 | Any terminal | `holding key show` |
 
 Each instant answer ends with `(agents-holding: instant, no model)`.
