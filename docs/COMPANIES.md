@@ -27,9 +27,29 @@ Chỉ công ty đã kết nối holding mới hiện trong danh sách. Công ty 
 `holding company migrate <repo or .agents/x-company folder>`
 1. Backs up the folder to `~/.config/agents-holding/backups/<name>-<time>.tgz` (originals stay on disk).
 2. Sends only names and counts: staff role ids, number of plans, parent, creation time. No file contents.
-3. Staff whose role exists in the holding catalog become real staff (up to the plan limit). Custom roles are recorded by name in the company's history and keep their persona files locally.
+3. Staff whose role exists in the holding catalog become real staff (up to the plan limit, see below). Custom roles are recorded by name in the company's history and keep their persona files locally.
 4. Writes `.agents/company.json` in the repo and registers the repo. Re-running is safe (updates the same company).
 Migrate the parent first, then children with `--parent <parent>`.
+
+## Staff limits per plan / Giới hạn staff theo gói
+
+Each company's roster can hold at most this many staff (CEO included). Applies to `/staff add`, `holding company staff move|assign`, `holding company migrate` and new companies. Pricing is unchanged.
+Mỗi công ty có tối đa số staff dưới đây (tính cả CEO). Áp dụng cho thêm staff, chuyển staff, migrate và tạo công ty mới. Giá không đổi.
+
+| Plan / Gói | Max staff per company |
+|---|---|
+| Free | 5 |
+| Starter | 10 |
+| Lite | 15 |
+| Pro | 25 |
+| Marketplace | 25 |
+| Power | 40 |
+| Max | 60 |
+| Ultra | Unlimited / Không giới hạn |
+| Enterprise | Unlimited / Không giới hạn |
+| Older keys without a credit plan: trial / monthly / yearly | 20 / 30 / 50 |
+
+At the limit you get: "Đã đạt giới hạn N staff của gói X. Hãy cho nghỉ (fire) một staff trước hoặc nâng cấp gói." Migrate keeps the first N staff and reports how many were skipped.
 
 ## Board columns / Các cột trên bảng
 
