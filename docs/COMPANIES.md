@@ -27,9 +27,13 @@ Chỉ công ty đã kết nối holding mới hiện trong danh sách. Công ty 
 `holding company migrate <repo or .agents/x-company folder>`
 1. Backs up the folder to `~/.config/agents-holding/backups/<name>-<time>.tgz` (originals stay on disk).
 2. Sends only names and counts: staff role ids, number of plans, parent, creation time. No file contents.
-3. Staff whose role exists in the holding catalog become real staff (up to the plan limit, see below). Custom roles are recorded by name in the company's history and keep their persona files locally.
+3. Staff whose role exists in the holding catalog become real staff (up to the plan limit, see below). Custom roles (not in the catalog) are recorded by name only in the company's history; holding does not read their persona files. To keep reusing one, turn it into a private repo skill at `.agents/custom-skills/<id>/SKILL.md`.
 4. Writes `.agents/company.json` in the repo and registers the repo. Re-running is safe (updates the same company).
 Migrate the parent first, then children with `--parent <parent>`.
+
+After migrating, only `.agents/company.json` is read. The old `.agents/<x>-company` folder can be removed once you have a full backup (the migrate backup skips `cache/`): `tar czf ~/.config/agents-holding/backups/<name>-legacy-full-<date>.tgz -C .agents <x>-company`.
+Suggested layout for what you keep: `.agents/cache/` and `.agents/plans/` (personal, keep untracked) and `.agents/custom-skills/<id>/` (private repo skills, never published). Holding does not require a specific location for cache or plans.
+Migrate child companies (`children/<child>` pointing to another repo) separately before removing the parent's old folder.
 
 ## Staff limits per plan / Giới hạn staff theo gói
 
