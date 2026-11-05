@@ -5,6 +5,22 @@
 #  3) re-sync slash commands   4) restart the Jira Listener if it is installed
 # --check: only compare the local build with the server's required build; outdated -> arrow menu (AH_AUTO_UPDATE=1 = update without asking).
 set -uo pipefail
+
+# Ensure `holding` is on PATH: symlink into ~/.local/bin + idempotent PATH line in the shell profile.
+ah_ensure_holding_path() {
+  local bin="$HOME/.local/bin" dest="${AH_INSTALL_DIR:-$HOME/.agents-holding}" src profile line
+  mkdir -p "$bin"
+  if [ -x "$dest/scripts/holding" ]; then src="$dest/scripts/holding"
+  elif [ -n "${1:-}" ] && [ -x "$1" ]; then src="$1"
+  else src=""; fi
+  if [ -n "$src" ]; then ln -sfn "$src" "$bin/holding"; fi
+  profile="$HOME/.zshrc"; [ "${SHELL##*/}" = bash ] && profile="$HOME/.bashrc"; touch "$profile"
+  line='export PATH="$HOME/.local/bin:$PATH"'
+  if ! grep -qsF '.local/bin' "$profile"; then
+    printf '\n# agents-holding: put `holding` on PATH\n%s\n' "$line" >> "$profile"
+  fi
+  case ":$PATH:" in *":$bin:"*) ;; *) export PATH="$bin:$PATH";; esac
+}
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; ver() { cat "$here/VERSION" 2>/dev/null || echo 0; }
 if [ "${1:-}" = "--check" ]; then
   stamp="$HOME/.config/agents-holding/cache/update-check"; mkdir -p "$(dirname "$stamp")"
@@ -38,4 +54,5 @@ lbl=com.agentsholding.jira-listener
 if launchctl print "gui/$(id -u)/$lbl" >/dev/null 2>&1; then launchctl kickstart -k "gui/$(id -u)/$lbl" && echo "   restarted"; 
 elif command -v systemctl >/dev/null && systemctl --user is-active -q agents-holding-listener 2>/dev/null; then systemctl --user restart agents-holding-listener && echo "   restarted";
 else echo "   not installed as a service (start: holding jira listen)"; fi
-echo "Done: client $before -> $(ver)"
+ah_ensure_holding_path "$here/holding"
+echo "Done: client $before -> $(ver)  (holding on PATH: $(command -v holding 2>/dev/null || echo ~/.local/bin/holding))"

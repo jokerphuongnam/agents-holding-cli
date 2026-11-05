@@ -11,6 +11,23 @@ REPO="jokerphuongnam/agents-holding-free"; BRANCH="${AH_BRANCH:-main}"
 MCP_URL="${AH_MCP_URL:-https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp}"
 DEST="${AH_INSTALL_DIR:-$HOME/.agents-holding}"; BIN="$HOME/.local/bin"; SVC="agents-holding-license"
 say() { printf '\033[1;32m==>\033[0m %s\n' "$*"; }; warn() { printf '\033[1;33m!!\033[0m %s\n' "$*" >&2; }
+
+# Ensure `holding` is on PATH: symlink into ~/.local/bin + idempotent PATH line in the shell profile.
+ah_ensure_holding_path() {
+  local bin="$HOME/.local/bin" dest="${AH_INSTALL_DIR:-$HOME/.agents-holding}" src profile line
+  mkdir -p "$bin"
+  if [ -x "$dest/scripts/holding" ]; then src="$dest/scripts/holding"
+  elif [ -n "${1:-}" ] && [ -x "$1" ]; then src="$1"
+  else src=""; fi
+  if [ -n "$src" ]; then ln -sfn "$src" "$bin/holding"; fi
+  profile="$HOME/.zshrc"; [ "${SHELL##*/}" = bash ] && profile="$HOME/.bashrc"; touch "$profile"
+  line='export PATH="$HOME/.local/bin:$PATH"'
+  if ! grep -qsF '.local/bin' "$profile"; then
+    printf '\n# agents-holding: put `holding` on PATH\n%s\n' "$line" >> "$profile"
+  fi
+  case ":$PATH:" in *":$bin:"*) ;; *) export PATH="$bin:$PATH";; esac
+}
+
 AGENTS=""; NOKEY=""
 while [ $# -gt 0 ]; do case "$1" in --agent) AGENTS="$2"; shift 2;; --agent=*) AGENTS="${1#*=}"; shift;; --no-key) NOKEY=1; shift;; *) warn "unknown option $1"; exit 2;; esac; done
 # >>> ah_menu (canonical: full/lib/menu.sh; embedded copies are checked by tests/menu_test.sh)
@@ -74,8 +91,9 @@ if [ -n "${AH_SRC:-}" ]; then cp -R "$AH_SRC/full/client" "$tmp/client"
 else curl -fsSL "https://codeload.github.com/$REPO/tar.gz/refs/heads/$BRANCH" | tar xz -C "$tmp" && mv "$tmp"/agents-holding-free-*/full/client "$tmp/client"; fi
 mkdir -p "$DEST" && rm -rf "$DEST/scripts" && cp -R "$tmp/client/scripts" "$DEST/scripts"
 chmod +x "$DEST"/scripts/holding "$DEST"/scripts/*.sh "$DEST"/scripts/launchd/*.sh
-mkdir -p "$BIN" && ln -sf "$DEST/scripts/holding" "$BIN/holding"
-case ":$PATH:" in *":$BIN:"*) ;; *) warn "Add $BIN to your PATH: echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.zshrc";; esac
+mkdir -p "$BIN" && ln -sfn "$DEST/scripts/holding" "$BIN/holding"
+ah_ensure_holding_path
+say "holding CLI: $BIN/holding (on PATH; open a new terminal if holding is not found)"
 mkdir -p "$HOME/.config/agents-holding" && chmod 700 "$HOME/.config/agents-holding"
 [ -f "$HOME/.config/agents-holding/license.txt" ] && warn "Old plaintext ~/.config/agents-holding/license.txt found; it is no longer used. Delete it after this install: rm ~/.config/agents-holding/license.txt"
 
