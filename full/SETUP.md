@@ -1,20 +1,18 @@
-# Install agents-holding (MCP only)
+# Cài agents-holding (chỉ MCP)
 
-Languages: **English** · [Tiếng Việt](localized/SETUP.vi.md) · [日本語](localized/SETUP.ja.md) · [한국어](localized/SETUP.ko.md) · [简体中文](localized/SETUP.zh-CN.md) · [Español](localized/SETUP.es.md) · [Français](localized/SETUP.fr.md) · [Deutsch](localized/SETUP.de.md)
+Không cần `curl | bash`, không tải script. Chỉ thêm máy chủ MCP vào agent, đăng nhập OAuth trên trình duyệt, rồi để agent tự cài phần còn lại (sau khi bạn đồng ý một lần).
 
-No `curl | bash` to start, no script to download. Add the MCP server to your agent, sign in with OAuth in the browser, then say **yes once** when your agent offers to install the local client.
-
-MCP URL:
+URL MCP:
 
 ```
 https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp
 ```
 
-This document: https://github.com/jokerphuongnam/agents-holding-free/blob/main/full/SETUP.md
+Tài liệu này: https://github.com/jokerphuongnam/agents-holding-free/blob/main/full/SETUP.md
 
 ---
 
-## 1. Add the MCP server (one command)
+## 1. Thêm MCP vào agent (một lệnh)
 
 **Claude Code**
 
@@ -28,113 +26,98 @@ claude mcp add --transport http --scope user agents-holding https://mznrffnvmhmi
 codex mcp add agents-holding --url https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp
 ```
 
-**Default CLI agent (`grok` command)**
+**CLI agent mặc định (lệnh `grok`)**
 
 ```bash
 grok mcp add --transport http agents-holding https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp
 ```
 
-**Cursor**: Settings → MCP → Add server, URL:
+**Cursor** — Settings → MCP → Add server, URL:
 
 ```
 https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp
 ```
 
-or in `~/.cursor/mcp.json`:
+hoặc trong `~/.cursor/mcp.json`:
 
 ```json
 { "mcpServers": { "agents-holding": { "url": "https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp" } } }
 ```
 
-## 2. Sign in with OAuth (browser)
+## 2. Đăng nhập OAuth trên trình duyệt
 
-Open your agent → connect / Authenticate `agents-holding`. A web page opens: **Create key** (Free, on this machine) or **Import key** you already have. The key is never stored in the agent's config file; the OAuth session refreshes automatically.
+Mở agent → kết nối / Authenticate với `agents-holding`. Trang web mở ra: **Tạo key** (Free trên máy này) hoặc **Nhập key** có sẵn. Key không lưu trong file cấu hình agent; phiên OAuth được làm mới tự động.
 
-## 3. Install the local client (one approval, first message)
+## 3. Bootstrap tự động (một lần đồng ý)
 
-On your **first** agents-holding message (for example `/holding key show`), the very first lines of the answer are an install request. Your agent stops and asks once:
+Lần gọi tool MCP đầu tiên, server trả hướng dẫn bootstrap. Agent sẽ hỏi bạn:
 
-> Install the agents-holding local client on this machine? It adds the `holding` command, native /holding slash commands and an instant (no-AI) hook. Safe to rerun; the Jira Listener is not installed now.
+> Cài holding CLI + slash commands lên máy bạn? (an toàn, chạy lại được)
 
-Say **yes**. The agent calls the `install` tool and runs **one** shell command. It shows progress lines `[bootstrap 1/5]` … `[bootstrap 5/5]`:
+Khi bạn đồng ý, agent gọi tool `bootstrap` và:
 
-1. Client scripts into `~/.agents-holding`
-2. `holding` on your PATH (`~/.local/bin`)
-3. Device id in the Keychain (no secrets printed)
-4. Pairs this machine with your agent session using a one-time code (10 minutes, single use; your key is never shown), then installs slash commands and the instant hook
-5. Done; the server now knows this machine has the client, so the install request stops
+1. Ghi slash commands (`setup_commands`)
+2. Cài `holding` vào `~/.agents-holding`, đưa lên PATH (`~/.local/bin`)
+3. Tạo device id trong Keychain (không in bí mật)
+4. Báo tiến độ từng bước trong chat
 
-If the agent did not ask, type: `install agents-holding` (or `/holding install`). Safe to rerun.
+**Không** cài Jira Listener ở bước này.
 
-The Jira Listener is **not** installed in this step.
+Idempotent: chạy lại an toàn.
 
-**Start a new agent session** after installing so the agent loads the new commands.
 
-## 4. Use it in chat: instant, zero AI tokens
+## Client local (tuỳ chọn — zero-token)
 
-After install, pure commands are answered locally by the hook or your shell. The prompt never reaches the model:
+Không có CLI thì **mọi lệnh vẫn chạy qua MCP** (tốn AI token). CLI chỉ để trả lời tức thì, không tốn token.
 
-| Agent | How `/holding key show` runs |
-|---|---|
-| `grok` CLI | `/holding key show`: the UserPromptSubmit hook (`~/.grok/hooks/agents-holding.json`) answers it instantly |
-| Claude Code | `/holding key show`: the UserPromptSubmit hook in `~/.claude/settings.json` answers it instantly |
-| Codex CLI | `/holding key show`: the UserPromptSubmit hook in `~/.codex/hooks.json` answers it instantly (Codex asks once to trust the new hook); `!holding key show` also works |
-| Any terminal | `holding key show` |
+Lần đầu (mỗi key+thiết bị): agent hỏi **một lần** có cài local client không.
+- Có → cài, chạy lại lệnh gốc.
+- Không → đánh dấu no-cli trên server, **không hỏi lại** trên máy này; lệnh tiếp tục qua MCP.
 
-Each instant answer ends with `(agents-holding: instant, no model)`.
+Từ chối rồi vẫn có thể `/holding install` sau.
+
+## 4. Dùng trong chat
 
 ```
 /holding help
 /holding company create
-/holding staff list
-/holding billing
 /ceo …
+/staff list
 ```
 
-Commands that need the agent (`/ceo`, `/task add`, `/flow edit`, `/jira setup`, `/skill add`) still go to the model on purpose.
+Tạo công ty, staff, skill, báo cáo… đều qua `/holding …` hoặc `/ceo`. Không cần cài thêm bằng tay.
 
-### Send feedback
+## 5. Jira (lười — chỉ khi cần)
 
-```
-/holding feedback "<text>"
-```
+Khi lệnh/agent thật sự cần Jira (đọc task, gắn file, chuyển cột, bật Listener…):
 
-Sends your feedback straight from chat (zero AI tokens). Only the owner reads it.
-
-## 5. Jira (lazy: only when needed)
-
-When a command or agent really needs Jira (read tasks, attach files, move columns, start the Listener):
-
-1. The agent asks you, then runs `holding jira connect` (browser OAuth; token in the Keychain; chat shows only the account name)
+1. Agent hỏi bạn → chạy `holding jira connect` (OAuth trình duyệt; token trong Keychain; chat chỉ hiện tên tài khoản)
 2. `holding jira status` / `holding jira logout` / `holding jira connect --switch`
-3. Jira Listener (local process), only when needed: `bash ~/.agents-holding/scripts/listener-ensure.sh --repo <product-repo-path>`
+3. Jira Listener (tiến trình local): chỉ khi cần — `bash ~/.agents-holding/scripts/listener-ensure.sh --repo <đường-dẫn-repo-sản-phẩm>`
 
-Installing MCP, creating a company and non-Jira commands **never** require a Jira sign-in.
+Cài MCP, tạo công ty, lệnh không liên quan Jira **không** yêu cầu đăng nhập Jira.
 
-## 6. Update
+## 6. Cập nhật
 
-In chat: `/holding update` (or ask the agent to run `holding update`). Safe to rerun.
-
----
-
-## 7. Plans and pricing (credits)
-
-Customer price sheet: **[docs/PRICING.md](../docs/PRICING.md)**: credits per month, prices, staff and device limits, action costs, how to upgrade.
-
-To upgrade: send your **key id** (from `holding key show`; never the key itself) to the owner: **phuongnamp99@gmail.com**. `holding billing` and `holding key show` always print the current contact.
-
-On your machine: `holding billing` · `holding usage`.
+Trong chat: `/holding update` (hoặc bảo agent chạy `holding update`). An toàn, chạy lại được.
 
 ---
 
-## Appendix: install by script (not recommended)
+## 7. Gói và giá (credit)
 
-Only when the agent cannot run the install (special environments). Not the default customer flow.
+Bảng giá khách hàng (tiếng Việt): **[docs/PRICING.md](https://github.com/jokerphuongnam/agents-holding-free/blob/main/docs/PRICING.md)** — credit/tháng, giá, giới hạn staff & thiết bị, chi phí thao tác, cách nâng gói (liên hệ owner với key id).
+
+Trên máy: `holding billing` · `holding usage`.
+
+---
+
+## Phụ lục — cài bằng script (không khuyến nghị)
+
+Chỉ dùng khi agent không thể chạy bootstrap (môi trường đặc biệt). Không phải luồng khách hàng mặc định.
 
 ```bash
 git clone --depth 1 https://github.com/jokerphuongnam/agents-holding-free.git ~/.agents-holding-src
 bash ~/.agents-holding-src/full/client/scripts/bootstrap-local.sh
-holding key import
 ```
 
-The old `connect.sh` / `install.sh` scripts stay in the repo for compatibility; they are **not** used in new customer docs.
+Script cũ `connect.sh` / `install.sh` vẫn trong repo cho tương thích; **không** dùng trong tài liệu khách hàng mới.

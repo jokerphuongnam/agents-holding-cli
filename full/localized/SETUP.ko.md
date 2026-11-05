@@ -68,6 +68,13 @@ agents-holding에 보내는 **첫** 메시지(예: `/holding key show`)에서는
 
 설치 후 **새 에이전트 세션을 시작**해야 새 명령이 로드됩니다.
 
+
+## Optional local client (zero-token)
+
+Without the CLI, every command still works via MCP (AI tokens). The CLI only makes replies instant with zero tokens.
+
+First time per key+device the agent asks once to install. Yes → install and re-run the command. No → mark no-cli on the server and never ask again on this device; commands keep working via MCP. You can still run `/holding install` later.
+
 ## 4. 채팅에서 사용: 즉시, AI 토큰 0
 
 설치 후에는 데이터만 돌려주는 명령을 훅이나 셸이 로컬에서 바로 답합니다. 프롬프트는 모델에 전달되지 않습니다:

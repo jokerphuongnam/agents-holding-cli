@@ -68,6 +68,13 @@ Este paso **no** instala el Jira Listener.
 
 **Abre una nueva sesión del agente** después de instalar para que cargue los comandos nuevos.
 
+
+## Optional local client (zero-token)
+
+Without the CLI, every command still works via MCP (AI tokens). The CLI only makes replies instant with zero tokens.
+
+First time per key+device the agent asks once to install. Yes → install and re-run the command. No → mark no-cli on the server and never ask again on this device; commands keep working via MCP. You can still run `/holding install` later.
+
 ## 4. Úsalo en el chat: instantáneo, cero tokens de IA
 
 Tras la instalación, los comandos que solo devuelven datos los responde localmente el hook o tu shell. El mensaje nunca llega al modelo:

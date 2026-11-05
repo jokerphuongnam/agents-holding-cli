@@ -12,6 +12,9 @@ usage: holding <noun> <verb> [args]   (chat: /<noun> <verb> ...; no verb = list/
   jira attach <KEY> <file...> | figma connect [--switch] | figma status | figma logout | figma export <url> [--out f.png] [--attach KEY] | atlassian connect [--switch] | atlassian status | atlassian logout | confluence page create|update <SPACE> "<title>" --file md [--attach png]
   update            update the client: scripts, agent configs + sandbox profiles, slash commands, restart the Jira Listener (safe to rerun; chat: /holding update)
   skill private <name> | skill public <name>   set custom skill visibility (new skills default public)
+  role private <name> | role public <name>     private roles never sync (process steps → private-role-<hash>)
+  process private <name> | process public <name>  private processes stay local; public structure may sync
+  process library                               [owner] browse aggregated process structures (zero token)
   help [group|command]                the commands YOUR key can run (aliases: document, docs)
   staff list | add <role> [--agent P --model M --effort E] | remove <role>   (add: review the staff policy, arrow-key menu)
   staff policy show <staff|*> | set <staff|*> <permission> on|off | rule add|remove <staff|*> "<text>" | git set|unset <staff|*> <field> <value>
@@ -60,6 +63,7 @@ case " $* " in *" --all "*) case "$noun $verb" in "status "|"status --all"|"task
 case "$noun" in update|upgrade|help|document|docs|-h|--help) ;; *) [ "${AH_NO_UPDATE_CHECK:-}" = 1 ] || bash "$here/update.sh" --check 2>/dev/null </dev/tty || true ;; esac
 case "$noun" in
   update|upgrade) exec bash "$here/update.sh" ${verb:+"$verb"} "$@" ;;
+  uninstall) exec bash "$here/uninstall-local.sh" ${verb:+"$verb"} "$@" ;;
   figma) case "$verb" in connect) exec node "$here/attach.mjs" figma-connect "$@" ;; status) exec node "$here/attach.mjs" figma-status ;; logout) exec node "$here/attach.mjs" figma-logout ;; export) exec node "$here/attach.mjs" figma-export "$@" ;; *) usage ;; esac ;;
   atlassian) case "$verb" in connect) exec node "$here/attach.mjs" atlassian-connect "$@" ;; status) exec node "$here/attach.mjs" atlassian-status ;; logout) exec node "$here/attach.mjs" atlassian-logout ;; *) usage ;; esac ;;
   confluence) case "$verb" in page) exec node "$here/attach.mjs" confluence-page "$@" ;; *) usage ;; esac ;;
@@ -87,6 +91,22 @@ case "$noun" in
     set) if [ "${1:-}" = --default ]; then shift; exec node "$here/bind-cli.mjs" remembered set "$@"; fi; exec node "$here/bind-cli.mjs" "$@" ;;
     unset) exec node "$here/bind-cli.mjs" remembered unset "$@" ;;
     *) usage ;; esac ;;
+  role) case "$verb" in
+    private|public) co="${AH_COMPANY:-}"; name=""; for a in "$@"; do case "$a" in --company) shift;; esac; done
+      # args: private|public already consumed as verb; remaining is role name [--company X]
+      rname="$1"; shift || true
+      while [ $# -gt 0 ]; do case "$1" in --company) co="$2"; shift 2;; *) rname="${rname:-$1}"; shift;; esac; done
+      [ -n "$co" ] || { echo "no company: run inside a company repo or pass --company" >&2; exit 2; }
+      [ -n "$rname" ] || { echo "usage: holding role private|public <name> [--company X]" >&2; exit 2; }
+      exec node "$here/roles.mjs" set "$co" "$rname" "$verb" ;;
+    list) co="${AH_COMPANY:-}"; [ -n "$co" ] || { echo "no company" >&2; exit 2; }; exec node "$here/roles.mjs" list "$co" ;;
+    *) usage ;; esac ;;
+  process) case "$verb" in
+    private|public) echo "process $verb: mark local process visibility (structure-only sync when public). See docs/PROCESSES.md"; exit 0 ;;
+    library) srv process library "$@" ;;
+    *) # fall through to company process for templates/list/setup if routed that way
+       case "$verb" in templates|list|setup|add|add-json|remove) exec bash "$0" company process "$verb" "$@" ;; esac
+       usage ;; esac ;;
   skill) case "$verb" in add) exec node "$here/add-skill.mjs" "$@" ;; ""|list|browse|review|variants|library|private|public) srv "$@" ;; where|check|set|sync|consent|run) exec node "$here/skills.mjs" "$verb" "$@" ;; *) usage ;; esac ;;
   team|enterprise|usage) srv "$@" ;;  # server decides who may run these; everyone else gets the unknown-command help
   project) case "$verb" in
@@ -134,8 +154,11 @@ case "$noun" in
   inbox) case "$verb" in ""|list|reply|dismiss) exec node "$here/inbox-cli.mjs" "${verb:-list}" "$@" ;; *) exec node "$here/inbox-cli.mjs" list "$verb" "$@" ;; esac ;;
   ceo) [ -n "$verb" ] && exec node "$here/inbox-cli.mjs" ceo "$verb" "$@"
     echo "The CEO is your current chat session: use /ceo in your agent (Grok/Claude/Codex). Focus one pending item: holding ceo --item <id> (opens a CEO session)."; exit 0 ;;
-  key) case "$verb" in ""|show) [ $# -eq 0 ] && node "$here/companies-cli.mjs" show; srv "$@" ;; generate|import|renew|list|add|remove|set|reset-device|rotate) srv "$@" ;; *) usage ;; esac ;;
+  # key/credit/whoami are license-level: never require a resolved company (no company: none banner)
+  key) case "$verb" in ""|show|generate|import|renew|list|add|remove|set|label|reset-device|rotate|merge|unmerge) srv "$@" ;; *) usage ;; esac ;;
   credit) case "$verb" in ""|show|plans|add|list) srv "$@" ;; *) usage ;; esac ;;
+  feedback) srv "$@" ;;
+  owner) case "$verb" in recovery-code|recover) srv "$@" ;; *) usage ;; esac ;;
   billing) case "$verb" in ""|usage|vi|en) srv "$@" ;; *) bash "$here/ah-cli.sh" billing "$verb" "$@"; exit $? ;; esac ;;
   status) case " $verb $* " in *" --server "*) exec bash "$here/ah-cli.sh" status ;; esac; exec node "$here/status.mjs" status ${verb:+"$verb"} "$@" ;;
   doctor) case " $verb $* " in *" --server "*) exec bash "$here/ah-cli.sh" doctor ;; esac; exec bash "$here/doctor.sh" ${verb:+"$verb"} "$@" ;;

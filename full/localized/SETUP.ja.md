@@ -68,6 +68,13 @@ agents-holding への **最初の** メッセージ（例：`/holding key show`�
 
 インストール後は **エージェントのセッションを新しく開き直して**、新しいコマンドを読み込ませてください。
 
+
+## Optional local client (zero-token)
+
+Without the CLI, every command still works via MCP (AI tokens). The CLI only makes replies instant with zero tokens.
+
+First time per key+device the agent asks once to install. Yes → install and re-run the command. No → mark no-cli on the server and never ask again on this device; commands keep working via MCP. You can still run `/holding install` later.
+
 ## 4. チャットで使う：即答、AI トークンゼロ
 
 インストール後、データを返すだけのコマンドはフックやシェルがローカルで答えます。プロンプトがモデルに届くことはありません：

@@ -9,7 +9,7 @@ if (cmd === "use") {
   if (!hit && !process.argv.includes("--force")) { console.error(`unknown company ${arg} (holding company list lists them; --force to set anyway)`); process.exit(1); }
   C.setActive(hit?.company ?? arg); console.log(`active company: ${hit?.company ?? arg}`); process.exit(0);
 }
-if (cmd === "show") { console.log(cur.company ? `company: ${cur.company} (from ${cur.source})` : "company: none (cd into a repo, pass --company, or holding company use <company>)"); process.exit(0); }
+if (cmd === "show") { console.log(cur.company ? `company: ${cur.company} (from ${cur.source})` : "company: none (cd into a repo with .agents/<company>/COMPANY.md, legacy company.json, pass --company, or holding company use <company>)"); process.exit(0); }
 if (process.argv.includes("--json")) { console.log(JSON.stringify({ active: act, current: cur, companies: cs }, null, 1)); process.exit(0); }
 if (!cs.length) console.log("no local companies yet (holding project add)");
 for (const c of cs) console.log(`${c.company === cur.company ? "▶" : c.company === act ? "*" : " "} ${c.company}  boards: ${c.boards.join(",") || "-"}  staff bound: ${c.staff}  repos: ${c.repos.join(", ") || "-"}${c.company === act ? "  (active)" : ""}`);
