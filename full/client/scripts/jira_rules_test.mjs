@@ -7,7 +7,7 @@ import { template, validateRule, planRule, evaluate, saveRules, loadRules } from
 const sub = (status = "Done") => ({ key: "NAIL-2", fields: { status: { name: status, statusCategory: { key: status === "Done" ? "done" : "in-progress" } }, issuetype: { name: "Sub-task" }, parent: { key: "NAIL-1" }, labels: [] } });
 const parent = (type = "Task", status = "In Progress") => ({ key: "NAIL-1", fields: { issuetype: { name: type }, status: { name: status, statusCategory: { key: "in-progress" } } } });
 test("built-in template includes epics, is an opt-in CLI template, and validates", () => {
- const r = template("parent-auto-done", { project: "nail" }); assert.equal(r.trigger.project, "NAIL"); assert.equal(r.enabled, false); assert.equal(r.conditions.include_epics, true); assert.equal(r.builtin_default, true); assert.equal(validateRule(r), null);
+ const r = template("parent-auto-done", { project: "nail" }); assert.equal(r.trigger.project, "NAIL"); assert.equal(r.enabled, false); assert.equal(r.conditions.include_epics, true); assert.equal(r.builtin_default, true); assert.equal(validateRule(r), null); assert.equal(template("parent-auto-done").trigger.project, undefined);
  assert.equal(planRule({...r,enabled:true}, sub(), "all_subtasks_done", { parent: parent("Epic"), subtasks: [sub()] }).length, 1);
 });
 test("all subtasks Done transitions parent; pending subtask or Done parent does not", () => {

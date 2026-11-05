@@ -35,7 +35,7 @@ export function validateRule(r) {
 }
 export function template(name, { project, id, includeEpics = true } = {}) {
   const base = RULE_TEMPLATES[name]; if (!base) throw new Error(`unknown template ${name}; available: ${Object.keys(RULE_TEMPLATES).join(", ")}`);
-  const r = structuredClone(base); r.id = id ?? r.id; r.trigger.project = project?.toUpperCase(); r.conditions.include_epics = includeEpics;
+  const r = structuredClone(base); r.id = id ?? r.id; r.trigger.project = project?.toUpperCase(); if (r.conditions) r.conditions.include_epics = includeEpics;
   const e = validateRule(r); if (e) throw new Error(e); return r;
 }
 export async function defaultProcess(company, call) {
