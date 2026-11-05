@@ -70,3 +70,5 @@ Claude Code、Codex、`grok` CLI で同じように使えます（Codex では�
 - [会社](../docs/localized/COMPANIES.ja.md) · [プロバイダ](../docs/localized/PROVIDERS.ja.md) · [スタッフルール](../docs/localized/STAFF-POLICY.ja.md) · [誰が何を決めるか](../docs/localized/WHO-DECIDES.ja.md) · [耐障害性](../docs/localized/RESILIENCE.ja.md)
 
 **プライバシー。** お客様の情報を取得することはありません。記録するのは利用傾向（よく作業する時間帯、チャットかコメントか、ツールの設定方法）だけです。接続したツールとマシン上のデータはすべてマシンの中にとどまります。
+
+**依存パッケージ（dependency）** も追加できます。スキル／スクリプト一式の git リポジトリを AI が読めるようにします。プロジェクト外（`~/.agents-holding/packs/<name>`）に clone し、company は参照行だけを保存します。コマンド: `holding dependency add|list|update|remove <link>`。パック内スクリプトは consent 後にだけ実行できます。[COMMANDS.md](../docs/COMMANDS.md#dependency)

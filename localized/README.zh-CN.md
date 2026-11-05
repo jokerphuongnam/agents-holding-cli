@@ -70,3 +70,5 @@ grok mcp add --transport http agents-holding https://mznrffnvmhmiudvfuquk.supaba
 - [公司](../docs/localized/COMPANIES.zh-CN.md) · [提供商](../docs/localized/PROVIDERS.zh-CN.md) · [员工政策](../docs/localized/STAFF-POLICY.zh-CN.md) · [谁决定什么](../docs/localized/WHO-DECIDES.zh-CN.md) · [韧性](../docs/localized/RESILIENCE.zh-CN.md)
 
 **隐私。** 我们不会获取你的信息，只记录使用习惯（常用的工作时间、用聊天还是评论、工具的配置方式）。你连接的所有工具和本机数据都只留在你的机器上。
+
+你也可以添加一个 **dependency**：整仓技能/脚本 git 仓库供 AI 阅读。克隆到项目外（`~/.agents-holding/packs/<name>`）；公司只保存一行引用。命令：`holding dependency add|list|update|remove <link>`。包内脚本需先 consent 才能运行。见 [COMMANDS.md](../docs/COMMANDS.md#dependency)。

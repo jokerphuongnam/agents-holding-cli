@@ -151,6 +151,22 @@ holding codegraph clear                # drop saved choice
 
 Detection covers common local CLIs / MCP servers / index dirs (for example `codegraph` + `.codegraph`, `cgc`/`codegraphcontext`, `code-graph`, MCP-only graph servers) and falls back to **prism** when nothing else is present. One backend → used silently. Several → ask once, then `use`. Works the same for Grok, Claude, Codex, and local AI staff (adapter is local CLI, not a chat vendor).
 
+
+## dependency
+
+Add a skill-pack git repo so every agent can read its skills and commands. The pack is cloned outside the project (`~/.agents-holding/packs/<name>`); the company only stores a reference line, so project git stays clean. Several companies may share one pack.
+
+```bash
+holding dependency add <git-url>       # clone pack + store company reference + expose skills
+holding dependency list                # company refs + packs on this machine
+holding dependency update <name|url>   # pull upstream (local learning commits stay)
+holding dependency remove <name|url>   # drop this company's reference (--purge deletes unused checkout)
+holding dependency consent <name>      # allow pack scripts once (never auto-run)
+holding dependency run <name> <script> # run one pack script (sandboxed; needs consent)
+```
+
+Pack skills/commands are adapted for Grok, Claude, Codex and local AI. Claude-only skill formats are rewritten into portable command files. Do not commit pack contents into the product repo.
+
 ## Update
 
 | Command | What it does | Example |

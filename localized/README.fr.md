@@ -42,6 +42,8 @@ grok mcp add --transport http agents-holding https://mznrffnvmhmiudvfuquk.supaba
 
 Ouvrez ensuite votre agent, authentifiez `agents-holding` dans le navigateur (créez une key Free ou importez la vôtre) et envoyez n'importe quel message à agents-holding. Au premier message, l'agent installe pour vous les commandes locales ; s'il vous le demande, validez une seule fois. Guide complet : [SETUP](../full/localized/SETUP.fr.md).
 
+Vous pouvez aussi ajouter une **dependency** : un dépôt git entier de skills/scripts que l’IA peut lire. Clone hors du projet (`~/.agents-holding/packs/<name>`) ; la company ne stocke qu’une ligne de référence. Commandes : `holding dependency add|list|update|remove <link>`. Les scripts du pack exigent un consent. Voir [COMMANDS.md](../docs/COMMANDS.md#dependency).
+
 ## Commandes courantes
 
 | Commande | Rôle |

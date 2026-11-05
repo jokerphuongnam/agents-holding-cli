@@ -57,3 +57,7 @@ Les scripts ne s'exécutent jamais seuls. Autorisez-les une fois avec `holding s
 - Une publique n'a pas été partagée : cherchez un secret, puis `holding skill sync --dry-run`.
 
 Voir aussi : [Référence des commandes](../COMMANDS.md)
+
+## Dependency (skill-pack)
+
+Ajoutez un dépôt git entier avec `holding dependency add <git-url>`. Le pack est hors projet ; `holding dependency consent` est requis avant d’exécuter des scripts. Voir COMMANDS.md → dependency.

@@ -57,3 +57,7 @@ Steps the staff should follow...
 - 公開スキルが共有されない: ファイルに秘密情報がないか確認し、`holding skill sync --dry-run`。
 
 関連: [コマンド一覧](../COMMANDS.md)
+
+## Dependency (skill-pack)
+
+`holding dependency add <git-url>` でスキル／スクリプトの git リポジトリ全体を追加できます。パックはプロジェクト外。スクリプト実行前に `holding dependency consent` が必要です。COMMANDS.md → dependency。

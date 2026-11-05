@@ -136,6 +136,31 @@ Alle Befehle, die Sie mit Ihrem Schlüssel nutzen können. Im Chat `/holding <Be
 |---|---|---|
 | `holding feedback "<text>"` | Feedback senden | `holding feedback "the inbox is great"` |
 
+
+
+## codegraph
+
+```bash
+holding codegraph list|detect|status|use <name>|clear
+```
+
+Auto-detect PATH/MCP/index; 0→prism, 1→silent, several→ask once per company.
+
+## dependency
+
+Füge ein Skill-Pack-git-Repo hinzu, das alle Agenten lesen können. Das Pack wird außerhalb des Projekts geklont (`~/.agents-holding/packs/<name>`); die Company speichert nur eine Referenz.
+
+```bash
+holding dependency add <git-url>
+holding dependency list
+holding dependency update <name|url>
+holding dependency remove <name|url>
+holding dependency consent <name>
+holding dependency run <name> <script>
+```
+
+Pack-Skills/Befehle werden für Grok, Claude, Codex und lokale KI angepasst. Skripte brauchen Consent.
+
 ## Aktualisieren
 
 | Befehl | Funktion | Beispiel |

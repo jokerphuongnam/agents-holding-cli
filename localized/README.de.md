@@ -70,3 +70,5 @@ Funktioniert gleich in Claude Code, Codex und dem `grok` CLI (Codex fragt einmal
 - [Firmen](../docs/localized/COMPANIES.de.md) · [Provider](../docs/localized/PROVIDERS.de.md) · [Staff-Richtlinie](../docs/localized/STAFF-POLICY.de.md) · [Wer entscheidet was](../docs/localized/WHO-DECIDES.de.md) · [Ausfallsicherheit](../docs/localized/RESILIENCE.de.md)
 
 **Datenschutz.** Wir sammeln keine Informationen über dich. Wir erfassen nur Nutzungsgewohnheiten (wann du meist arbeitest, Chat oder Kommentare, wie du deine Tools konfigurierst). Alle verbundenen Tools und alle Daten auf deinem Rechner bleiben auf deinem Rechner.
+
+Du kannst auch eine **dependency** hinzufügen: ein ganzes git-Repo mit Skills/Skripten, das die KI lesen kann. Clone außerhalb des Projekts (`~/.agents-holding/packs/<name>`); die Company speichert nur eine Referenzzeile. Befehle: `holding dependency add|list|update|remove <link>`. Pack-Skripte brauchen Consent. Siehe [COMMANDS.md](../docs/COMMANDS.md#dependency).

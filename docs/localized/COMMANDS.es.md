@@ -136,6 +136,31 @@ Todos los comandos que puedes usar con tu clave. En el chat escribe `/holding <c
 |---|---|---|
 | `holding feedback "<text>"` | Envía comentarios | `holding feedback "the inbox is great"` |
 
+
+
+## codegraph
+
+```bash
+holding codegraph list|detect|status|use <name>|clear
+```
+
+Auto-detect PATH/MCP/index; 0→prism, 1→silent, several→ask once per company.
+
+## dependency
+
+Añade un repo git de skill-pack para que todos los agentes lo lean. El pack se clona fuera del proyecto (`~/.agents-holding/packs/<name>`); la company solo guarda una referencia.
+
+```bash
+holding dependency add <git-url>
+holding dependency list
+holding dependency update <name|url>
+holding dependency remove <name|url>
+holding dependency consent <name>
+holding dependency run <name> <script>
+```
+
+Las skills/comandos del pack se adaptan a Grok, Claude, Codex e IA local. Los scripts requieren consent.
+
 ## Actualizar
 
 | Comando | Qué hace | Ejemplo |

@@ -61,3 +61,17 @@ See also: [Command reference](COMMANDS.md)
 ## Code graph backends
 
 The `code-graph` staff resolves a backend via `holding codegraph status` (auto-detect; prism fallback; `holding codegraph use <name>` when several are installed). See COMMANDS.md → codegraph.
+
+## Skill-pack dependencies
+
+You can attach a whole git repo of skills/scripts as a **dependency** so the AI can read it:
+
+```bash
+holding dependency add <git-url>
+holding dependency list
+holding dependency update <name>
+holding dependency remove <name>
+```
+
+Packs live under `~/.agents-holding/packs/` (outside the project). Pack scripts need `holding dependency consent <name>` before `holding dependency run`. See COMMANDS.md → dependency.
+

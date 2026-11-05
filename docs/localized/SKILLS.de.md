@@ -57,3 +57,7 @@ Skripte laufen nie von selbst. Einmal erlauben mit `holding skill consent <name>
 - Öffentliche nicht geteilt: Dateien auf Geheimnisse prüfen, dann `holding skill sync --dry-run`.
 
 Siehe auch: [Befehlsreferenz](../COMMANDS.md)
+
+## Dependency (skill-pack)
+
+Ganzes Skill/Skript-git-Repo mit `holding dependency add <git-url>` hinzufügen. Pack liegt außerhalb des Projekts; vor Skripten `holding dependency consent`. Siehe COMMANDS.md → dependency.

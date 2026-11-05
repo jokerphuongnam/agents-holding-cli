@@ -42,6 +42,8 @@ grok mcp add --transport http agents-holding https://mznrffnvmhmiudvfuquk.supaba
 
 Sau đó mở agent, xác thực `agents-holding` trên trình duyệt (tạo key Free hoặc nhập key của bạn) và gửi một tin nhắn agents-holding bất kỳ. Ở tin nhắn đầu, agent tự cài các lệnh trên máy cho bạn; nếu được hỏi, chỉ cần đồng ý một lần. Hướng dẫn đầy đủ: [SETUP](../full/localized/SETUP.vi.md).
 
+Bạn cũng có thể thêm một **dependency**: cả một repo git chứa skill/script để AI đọc. Repo được clone ngoài project (`~/.agents-holding/packs/<name>`); company chỉ lưu một dòng tham chiếu. Lệnh: `holding dependency add|list|update|remove <link>`. Script trong pack cần consent trước khi chạy. Xem [COMMANDS.md](../docs/COMMANDS.md#dependency).
+
 ## Lệnh thường dùng
 
 | Lệnh | Tác dụng |

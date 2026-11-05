@@ -57,3 +57,7 @@ Script của kỹ năng không bao giờ tự chạy. Cho phép một lần bằ
 - Kỹ năng công khai không được chia sẻ: kiểm tra file có bí mật không, rồi `holding skill sync --dry-run`.
 
 Xem thêm: [Danh sách lệnh](../COMMANDS.md)
+
+## Dependency (skill-pack)
+
+Thêm cả một repo git skill/script bằng `holding dependency add <git-url>`. Pack nằm ngoài project; cần `holding dependency consent` trước khi chạy script. Xem COMMANDS.md → dependency.

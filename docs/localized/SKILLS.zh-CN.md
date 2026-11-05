@@ -57,3 +57,7 @@ Steps the staff should follow...
 - 公开技能未共享:检查文件中是否有密钥,然后 `holding skill sync --dry-run`。
 
 另见:[命令参考](../COMMANDS.md)
+
+## Dependency（skill-pack）
+
+用 `holding dependency add <git-url>` 添加整仓技能/脚本。包在项目外；运行脚本前需 `holding dependency consent`。见 COMMANDS.md → dependency。

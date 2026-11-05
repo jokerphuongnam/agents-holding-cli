@@ -70,3 +70,5 @@ Claude Code, Codex, `grok` CLI에서 똑같이 동작합니다(Codex는 훅 신�
 - [회사](../docs/localized/COMPANIES.ko.md) · [프로바이더](../docs/localized/PROVIDERS.ko.md) · [스태프 정책](../docs/localized/STAFF-POLICY.ko.md) · [누가 무엇을 결정하는가](../docs/localized/WHO-DECIDES.ko.md) · [복원력](../docs/localized/RESILIENCE.ko.md)
 
 **개인정보.** 여러분의 정보를 가져가지 않습니다. 사용 습관(주로 일하는 시간, 채팅과 댓글 중 무엇을 쓰는지, 도구 설정 방식)만 기록합니다. 연결한 모든 도구와 컴퓨터의 데이터는 컴퓨터 안에 남습니다.
+
+**dependency**로 스킬/스크립트 git 저장소 전체를 추가해 AI가 읽게 할 수 있습니다. 프로젝트 밖(`~/.agents-holding/packs/<name>`)에 clone되며 company는 참조 한 줄만 저장합니다. 명령: `holding dependency add|list|update|remove <link>`. 팩 스크립트는 consent 후에만 실행됩니다. [COMMANDS.md](../docs/COMMANDS.md#dependency)
