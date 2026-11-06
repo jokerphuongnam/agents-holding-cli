@@ -83,6 +83,17 @@ if [ "${1:-}" = "--check" ]; then
 fi
 
 before_raw="$(ver_raw)"; before="$(ver)"
+listener_was_active=0; listener_was_autostart=0; listener_repo=""
+if command -v launchctl >/dev/null 2>&1; then
+  lbl=com.agentsholding.jira-listener; domain="gui/$(id -u)"
+  launchctl print "$domain/$lbl" >/dev/null 2>&1 && listener_was_active=1
+  [ -f "$HOME/Library/LaunchAgents/$lbl.plist" ] && listener_was_autostart=1
+  if [ "$listener_was_active" = 1 ] || [ "$listener_was_autostart" = 1 ]; then
+    listener_repo="$(/usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:AH_REPO_DIR' "$HOME/Library/Application Support/agents-holding/$lbl.plist" 2>/dev/null || true)"
+    echo "   listener active before update; stopping it for an atomic replace"
+    bash "$here/launchd/listener.sh" stop >/dev/null 2>&1 || { echo "ERROR: could not stop the Jira Listener safely; update aborted" >&2; exit 1; }
+  fi
+fi
 root="$(git -C "$here" rev-parse --show-toplevel 2>/dev/null || true)"
 echo "1/4 client scripts ($before_raw)"
 if [ -n "$root" ] && [ -d "$root/.git" ] && git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
@@ -106,7 +117,15 @@ echo "   (configs are also regenerated on every launch)"
 echo "3/4 slash commands"; bash "$here/sync-commands.sh" 2>&1 | tail -1 | sed 's/^/   /'
 echo "4/4 Jira Listener"
 lbl=com.agentsholding.jira-listener
-if launchctl print "gui/$(id -u)/$lbl" >/dev/null 2>&1; then launchctl kickstart -k "gui/$(id -u)/$lbl" && echo "   restarted";
+if [ "$listener_was_active" = 1 ]; then
+  [ -n "$listener_repo" ] || listener_repo="$PWD"
+  if bash "$here/launchd/listener.sh" start --repo "$listener_repo"; then
+    [ "$listener_was_autostart" = 1 ] && bash "$here/launchd/listener.sh" autostart on >/dev/null || true
+    echo "   restarted and ready"
+  else
+    echo "ERROR: listener update completed but restart/readiness failed; autostart was $([ "$listener_was_autostart" = 1 ] && echo on || echo off). Run: holding listener start --repo '$listener_repo'" >&2
+    exit 1
+  fi
 elif command -v systemctl >/dev/null && systemctl --user is-active -q agents-holding-listener 2>/dev/null; then systemctl --user restart agents-holding-listener && echo "   restarted";
 else echo "   not installed as a service (start: holding jira listen)"; fi
 ah_ensure_holding_path "$here/holding"

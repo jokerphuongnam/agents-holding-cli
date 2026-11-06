@@ -3,6 +3,7 @@ import "./kc-guard.mjs"; // pin keychain calls to the real login keychain (never
 // holding status: is the listener alive, realtime joined, last Jira event, last server heartbeat, what it is working on.
 // holding notify on|off: macOS notifications for start/done/fail (default on; AH_NOTIFY=0 also turns them off).
 import { homedir } from "node:os";
+import { execFileSync } from "node:child_process";
 import * as L from "./lean.mjs";
 import { readFileSync as readFileSync_AH } from "node:fs";
 const AH_CLIENT_VERSION = (() => { try { return readFileSync_AH(new URL("./VERSION", import.meta.url), "utf8").trim(); } catch { return "0"; } })();
@@ -12,10 +13,12 @@ if (cmd === "notify") {
   else console.log(`notifications ${L.notifyOn(home) ? "on" : "off"}  (holding notify on|off)`);
 } else {
   const st = L.readStatus(home); let alive = false;
-  try { if (st?.pid) { process.kill(st.pid, 0); alive = true; } } catch {}
+  try { if (st?.pid) { process.kill(st.pid, 0); const cmd = execFileSync("ps", ["-p", String(st.pid), "-o", "command="], { encoding: "utf8" }); alive = /run-listener|holding-listen|node/.test(cmd); } } catch {}
   { const { resolveCompany } = await import("./company.mjs"); const c = resolveCompany(); console.log(c.company ? `company: ${c.company} (from ${c.source})` : "company: none (cd into a repo with .agents/<company>/COMPANY.md, legacy company.json, or holding company use <company>)"); }
   { const w = L.listenerWarning(home); if (w) console.log(w + "\n"); }
   console.log(L.formatStatus(st, alive));
+  const ready = alive && Object.values(st?.companies ?? {}).length > 0 && Object.values(st.companies).every((v) => v.realtime === "joined" && v.heartbeat_ok === true && v.heartbeat_at && Date.now() - Date.parse(v.heartbeat_at) < 180000);
+  if (alive && !ready) console.log("\x1b[31m⚠️  NOT READY: process is alive, but realtime join/server heartbeat is missing or stale; status is offline until recovered.\x1b[0m");
   if (alive && st?.server?.state && st.server.state !== "ok") console.log(`\x1b[31m⚠️  SERVER ${String(st.server.state).toUpperCase()} since ${st.server.since}: ${st.server.msg}\x1b[0m\n   Work pauses; missed Jira changes are replayed automatically when it recovers.`);
   else if (st?.server?.recovered_at) console.log(`server: ok (recovered ${st.server.recovered_at})`);
   for (const [co, v] of Object.entries(st?.companies ?? {})) if (v.reconciled_at) console.log(`${co}: last replay of missed Jira changes ${v.reconciled_at} (${v.reconciled ?? 0})`);

@@ -29,6 +29,8 @@ install_watchdog() { # always on (also at login), independent of the listener jo
 }
 running_pid() { launchctl print "$DOMAIN/$LABEL" 2>/dev/null | awk '/^\tpid = /{print $3; exit}'; }
 loaded() { launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; }
+process_ok() { local p="${1:-}"; [ -n "$p" ] && kill -0 "$p" 2>/dev/null && ps -p "$p" -o command= 2>/dev/null | grep -Eq 'run-listener|holding-listen|node'; }
+running() { local p; p="$(running_pid)"; process_ok "$p"; }
 plist_repo() { [ -f "$1" ] || return 0; /usr/libexec/PlistBuddy -c "Print :EnvironmentVariables:AH_REPO_DIR" "$1" 2>/dev/null || true; }
 
 write_plist() { # $1 repo
@@ -61,7 +63,7 @@ fi
 cmd_status() {
   local pid repo last
   repo="$(plist_repo "$MASTER")"; [ -z "$repo" ] && repo="$(plist_repo "$AUTO")"
-  if loaded; then pid="$(running_pid)"; echo "Jira Listener: ON  (running${pid:+, PID $pid})"; else printf '\033[1;31m🔴 Jira Listener is off — all Jira automation is stopped until you start it:\n   %s\033[0m\n   (Jira Listener keeps all Jira automation running.)\n' "$START_CMD"; fi
+  pid="$(running_pid)"; if process_ok "$pid"; then echo "Jira Listener: ON  (running, PID $pid)"; elif loaded; then echo "Jira Listener: DEGRADED (launchd loaded but no verified listener process${pid:+, stale PID $pid})"; else printf '\033[1;31m🔴 Jira Listener is off — all Jira automation is stopped until you start it:\n   %s\033[0m\n   (Jira Listener keeps all Jira automation running.)\n' "$START_CMD"; fi
   if launchctl print "$DOMAIN/$WD_LABEL" >/dev/null 2>&1; then echo "watchdog     : ON  (notifies at once if the Jira Listener stops)"; else echo "watchdog     : OFF (holding listener start installs it)"; fi
   if [ -f "$AUTO" ]; then echo "autostart    : ON  (starts at login: $AUTO)"; else echo "autostart    : OFF"; fi
   echo "repo         : ${repo:-<not installed; run: holding listener start --repo DIR>}"
@@ -84,15 +86,15 @@ cmd_on() {
   install_watchdog
   [ "$OLD_AUTO" = 1 ] && cp "$MASTER" "$AUTO"   # migrated: keep autostart ON
   [ -f "$AUTO" ] && cp "$MASTER" "$AUTO"   # keep the login copy in sync
-  if loaded; then echo "already running; restarting with current config"; launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true; sleep 1; fi
+  if loaded; then echo "replacing existing listener"; launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true; for _ in $(seq 1 15); do running || break; sleep 1; done; loaded && { echo "error: old listener job did not stop cleanly" >&2; return 1; }; fi
   launchctl bootstrap "$DOMAIN" "$MASTER"
-  echo "Jira Listener ON for $repo; waiting for 'join ok'..."
+  echo "Jira Listener started for $repo; waiting for process, realtime join, and heartbeat readiness..."
   local start; start=$(date -u +%Y-%m-%dT%H:%M:%S)
-  for _ in $(seq 1 20); do
+  for _ in $(seq 1 45); do
     sleep 1
-    if awk -v s="$start" '$1>=s && / join ok /' "$LOG" 2>/dev/null | grep -q .; then echo "join ok ✔"; cmd_status; return 0; fi
+    if process_ok "$(running_pid)" && awk -v s="$start" '$1>=s && / readiness online /' "$LOG" 2>/dev/null | grep -q .; then echo "listener readiness online ✔"; cmd_status; return 0; fi
   done
-  echo "no 'join ok' yet after 20s — check: holding listener logs   (macOS permission? see holding doctor)"; cmd_status; return 1
+  echo "listener failed readiness within 45s (process/realtime/server heartbeat not all ready) — check: holding listener logs" >&2; cmd_status; return 1
 }
 
 cmd_off() {

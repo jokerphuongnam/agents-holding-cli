@@ -14,9 +14,20 @@ notify() { /usr/bin/osascript -e "display notification \"$2\" with title \"$1\" 
 now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 PID=""
 up() { local pid; pid="$(launchctl print "$DOMAIN/$LABEL" 2>/dev/null | awk '/^\tpid = /{print $3; exit}')"; PID="$pid"; [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; }
-prev=""; down_since=""; last_remind=0; misses=0; lastpid=""
+prev=""; down_since=""; last_remind=0; misses=0; lastpid=""; restart_window=0; restart_count=0
 while true; do
   if up; then cur=running; misses=0; else misses=$((misses+1)); cur=stopped; fi
+  # launchd can retain a loaded job with no child after SIGTERM. Kick it only with a bounded
+  # budget so a bad install cannot spin forever; KeepAlive remains the normal crash path.
+  if [ "$cur" = stopped ] && loaded=1; then
+    if ! launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; then loaded=0; fi
+    now_s=$(date +%s)
+    [ "$restart_window" = 0 ] || [ $((now_s - restart_window)) -ge 300 ] && { restart_window=$now_s; restart_count=0; }
+    if [ "$loaded" = 1 ] && [ "$restart_count" -lt 3 ]; then
+      restart_count=$((restart_count+1)); echo "$(now) KICKSTART attempt=$restart_count" >> "$LOG"
+      launchctl kickstart -k "$DOMAIN/$LABEL" >/dev/null 2>&1 || true
+    fi
+  fi
   # crashed and restarted by launchd between two checks (PID changed while we saw it running): warn, runs resume from checkpoints
   if [ "$cur" = running ] && [ "$prev" = running ] && [ -n "$lastpid" ] && [ "$PID" != "$lastpid" ]; then
     notify "⚠️ Jira Listener restarted" "The Jira Listener crashed and was restarted automatically; Jira automation is running again (unfinished runs resume from their checkpoint)."
