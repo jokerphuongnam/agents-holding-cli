@@ -113,7 +113,7 @@ else
     2|i|import) say "Paste your key (ah_live_...) at the hidden prompt, then again to confirm:"
       security add-generic-password -U -s "$KSVC" -a "$USER" -l "agents-holding license" -w < /dev/tty || die "could not store the key" ;;
     3|m|machine) kc "$KSVC" >/dev/null || die "no key is stored on this Mac; choose Generate or Import first"; say "Reusing the key already stored in the macOS Keychain." ;;
-    *) die "choose 1 (Generate), 2 (Import), or 3 (Use key on this Mac)" ;; esac
+    *) die "choose 1 (Generate key) or 2 (Import key); 3 (Use key on this Mac)" ;; esac
 fi
 export AGENTS_HOLDING_KEY="$(kc "$KSVC")" AGENTS_HOLDING_DEVICE="$(kc "$DSVC")"
 export AGENTS_HOLDING_DEVICE_NAME="$( (scutil --get LocalHostName 2>/dev/null || hostname -s) | LC_ALL=C tr -cd 'A-Za-z0-9 ._-' | cut -c1-60)"
