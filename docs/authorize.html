@@ -5,18 +5,19 @@ input{width:100%;box-sizing:border-box;padding:9px;font:14px ui-monospace,monosp
 .err{color:#c9372c;background:#ffeceb;padding:8px 10px;border-radius:6px}.muted{color:#626f86;font-size:13px}</style></head>
 <body><h1>Connect <span id="client">your agent</span> to agents-holding</h1>
 <p>Your agent receives an access token; the key itself is never shown or given to the agent.</p>
-<p><button type="button" id="imp">Use existing key</button></p>
-<p class="muted">Use the key already created in Grok, Codex, or another agents-holding client. Keys are shared across clients.</p>
+<p><button type="button" id="imp">Use existing key</button> <button type="button" id="gen">Generate key</button></p>
+<p class="muted">Enter a key issued to you, or generate a new key if you do not have one yet.</p>
 <p id="err" class="err" hidden></p>
 <form id="f" method="post" hidden><label for="k">Your key</label>
-<input id="k" name="license_key" type="password" autocomplete="current-password" required autofocus placeholder="ah_live_...">
-<button type="submit">Connect</button> <button type="submit" name="cancel" value="1" formnovalidate>Cancel</button></form>
+<input id="k" name="license_key" type="password" autocomplete="current-password" placeholder="ah_live_...">
+<button type="submit" id="submit-key">Use existing key</button> <button type="submit" name="cancel" value="1" formnovalidate>Cancel</button></form>
 <p class="muted">No key? See <a href="https://github.com/jokerphuongnam/agents-holding-free">agents-holding-free</a>.</p>
 <script>
 const q = new URLSearchParams(location.search), f = document.getElementById("f");
 const action = q.get("action") || "";
 if (!/^https:\/\/[a-z0-9-]+\.supabase\.co\/functions\/v1\/mcp\/authorize$/.test(action)) { document.body.innerHTML = "<h1>Invalid sign-in link</h1><p>Start again from your agent.</p>"; }
 f.action = action;
+const mode = document.createElement("input"); mode.type = "hidden"; mode.name = "key_mode"; f.appendChild(mode);
 for (const k of ["client_id","redirect_uri","response_type","code_challenge","code_challenge_method","state","scope","resource"]) {
   if (!q.has(k)) continue; const i = document.createElement("input"); i.type = "hidden"; i.name = k; i.value = q.get(k); f.appendChild(i); }
 // 1 key = 1 machine: a stable id for this browser profile, generated once and kept in localStorage.
@@ -27,6 +28,10 @@ if (q.get("client_name")) document.getElementById("client").textContent = q.get(
 const msg = { invalid_key: "That license key was not accepted. Check it and try again.", too_many_attempts: "Too many failed attempts. Wait 15 minutes and try again.",
   license_expired: "This key has expired. Contact the owner to renew it.", license_revoked: "This license is revoked.",
   device_bound: "This key is already used on its maximum number of machines. Contact the owner to allow another machine." }[q.get("error")] || (q.get("error") ? "Sign-in failed: " + q.get("error") : "");
-document.getElementById("imp").onclick = () => { f.hidden = false; document.getElementById("k").focus(); };
+const keyInput = document.getElementById("k");
+document.getElementById("imp").onclick = () => { mode.value = "import"; keyInput.required = true; f.hidden = false; keyInput.focus(); };
+document.getElementById("gen").onclick = () => {
+  mode.value = "generate"; keyInput.required = false; keyInput.value = ""; f.requestSubmit();
+};
 if (msg) { const e = document.getElementById("err"); e.textContent = msg; e.hidden = false; }
 </script></body></html>
