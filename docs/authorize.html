@@ -4,9 +4,9 @@
 input{width:100%;box-sizing:border-box;padding:9px;font:14px ui-monospace,monospace;margin:6px 0 14px}button{padding:9px 16px;font-size:15px;cursor:pointer}
 .err{color:#c9372c;background:#ffeceb;padding:8px 10px;border-radius:6px}.muted{color:#626f86;font-size:13px}</style></head>
 <body><h1>Connect <span id="client">your agent</span> to agents-holding</h1>
-<p>Choose one. Your agent receives an access token; the key itself is never shown or given to the agent.</p>
-<p><button type="button" id="gen">Generate key</button> <button type="button" id="imp">Import key</button></p>
-<p class="muted">Generate key: a new Free key for this machine (one per machine). Import key: a key you already have (also to use your key on another machine, within its device limit).</p>
+<p>Your agent receives an access token; the key itself is never shown or given to the agent.</p>
+<p><button type="button" id="imp">Use existing key</button></p>
+<p class="muted">Use the key already created in Grok, Codex, or another agents-holding client. Keys are shared across clients.</p>
 <p id="err" class="err" hidden></p>
 <form id="f" method="post" hidden><label for="k">Your key</label>
 <input id="k" name="license_key" type="password" autocomplete="current-password" required autofocus placeholder="ah_live_...">
@@ -27,17 +27,6 @@ if (q.get("client_name")) document.getElementById("client").textContent = q.get(
 const msg = { invalid_key: "That license key was not accepted. Check it and try again.", too_many_attempts: "Too many failed attempts. Wait 15 minutes and try again.",
   license_expired: "This key has expired. Contact the owner to renew it.", license_revoked: "This license is revoked.",
   device_bound: "This key is already used on its maximum number of machines. Contact the owner to allow another machine." }[q.get("error")] || (q.get("error") ? "Sign-in failed: " + q.get("error") : "");
-const MCP = action.replace(/\/authorize$/, "");
 document.getElementById("imp").onclick = () => { f.hidden = false; document.getElementById("k").focus(); };
-document.getElementById("gen").onclick = async () => { const e = document.getElementById("err"), b = document.getElementById("gen"); e.hidden = true; b.disabled = true;
-  const show = (t) => { e.textContent = t; e.hidden = false; b.disabled = false; };
-  let r, j = null;
-  try { r = await fetch(MCP + "/free-signup", { method: "POST", headers: { "Content-Type": "application/json", "X-AH-Lang": (navigator.language || "en").slice(0, 2) },
-      body: JSON.stringify({ device: dev, device_name: (q.get("client_name") || "browser") + " on " + (navigator.platform || "web"), lang: (navigator.language || "en").slice(0, 2) }) });
-  } catch (x) { return show("Could not reach the agents-holding server (" + String(x.message || x) + "). Check your connection, then try again."); }
-  try { j = await r.json(); } catch (x) {}
-  if (!j || !j.ok || !j.key) return show((j && (j.message || j.error_description || j.error)) || ("Generate key failed (HTTP " + r.status + "). Try again later or use Import key."));
-  document.getElementById("k").value = j.key; j.key = ""; f.requestSubmit ? f.requestSubmit() : f.submit();   // signs in with it, never displayed
-};
 if (msg) { const e = document.getElementById("err"); e.textContent = msg; e.hidden = false; }
 </script></body></html>
