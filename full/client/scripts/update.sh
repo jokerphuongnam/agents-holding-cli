@@ -39,11 +39,19 @@ behind_label() {
 }
 
 ah_refresh_package() {
-  local dest="${AH_INSTALL_DIR:-$HOME/.agents-holding}" url branch tmp
-  branch="${AH_BRANCH:-main}"
+  local dest="${AH_INSTALL_DIR:-$HOME/.agents-holding}" url tag tmp tags
   url="${AH_FREE_REPO:-https://github.com/jokerphuongnam/agents-holding-free.git}"
+  if [ -n "${AH_VERSION:-}" ]; then
+    tag="${AH_VERSION#v}"
+    [[ "$tag" =~ ^[0-9]{10}$ ]] || { echo "   invalid AH_VERSION: $AH_VERSION (expected YYYYMMDDNN)" >&2; return 2; }
+  else
+    tags="$(git ls-remote --tags --refs "$url" 2>/dev/null | awk '{t=$2; sub("refs/tags/", "", t); if (t ~ /^v?[0-9]{10}$/) print substr(t,1,1)=="v" ? substr(t,2)"\t"t : t"\t"t}' | sort -k1,1V)"
+    tag="$(printf '%s\n' "$tags" | tail -n 1 | cut -f2)"
+    [ -n "$tag" ] || { echo "   no release tags found in $url (expected YYYYMMDDNN)" >&2; return 1; }
+  fi
+  echo "   resolved release tag: $tag"
   tmp="$(mktemp -d "${TMPDIR:-/tmp}/ah-update.XXXXXX")"
-  if ! git clone -q --depth 1 --branch "$branch" "$url" "$tmp/src" 2>/dev/null; then
+  if ! git clone -q --depth 1 --branch "$tag" "$url" "$tmp/src" 2>/dev/null; then
     echo "   package download failed (network?); keeping current scripts" >&2
     rm -rf "$tmp"; return 1
   fi
@@ -83,7 +91,7 @@ if [ -n "$root" ] && [ -d "$root/.git" ] && git -C "$root" rev-parse --is-inside
   if [ -n "$(git -C "$root" status --porcelain -- "$here" 2>/dev/null)" ]; then echo "   local edits in $here: not pulling (commit or stash them, then rerun)";
   else git -C "$root" pull --ff-only -q 2>&1 | sed 's/^/   /' || echo "   pull failed (network?); continuing with the current scripts"; fi
 else
-  echo "   package install: downloading latest agents-holding-free (${AH_BRANCH:-main})"
+  echo "   package install: downloading latest agents-holding-free (tag ${AH_VERSION:-latest})"
   ah_refresh_package || true
 fi
 echo "   now $(ver_raw)"
