@@ -56,7 +56,7 @@ Lần gọi tool MCP đầu tiên, server trả hướng dẫn bootstrap. Agent 
 
 Khi bạn đồng ý, agent gọi tool `bootstrap` và:
 
-1. Ghi slash commands (`setup_commands`)
+1. Đồng bộ command/hook được client hỗ trợ (Codex dùng `!holding`, không dùng `/holding`)
 2. Cài `holding` vào `~/.agents-holding`, đưa lên PATH (`~/.local/bin`)
 3. Tạo device id trong Keychain (không in bí mật)
 4. Báo tiến độ từng bước trong chat
@@ -74,9 +74,24 @@ Lần đầu (mỗi key+thiết bị): agent hỏi **một lần** có cài loca
 - Có → cài, chạy lại lệnh gốc.
 - Không → đánh dấu no-cli trên server, **không hỏi lại** trên máy này; lệnh tiếp tục qua MCP.
 
-Từ chối rồi vẫn có thể `/holding install` sau.
+Từ chối rồi vẫn có thể yêu cầu agent cài sau qua MCP. Trong Codex, sau khi cài mới dùng `!holding install`.
 
-## 4. Dùng trong chat
+## 4. Dùng trong Codex
+
+Codex không nhận `/holding` như slash command tùy chỉnh; dấu `/` được Codex dành cho lệnh tích hợp. Lần đầu, gửi yêu cầu bình thường để agent gọi MCP, ví dụ `holding key show`. Nếu máy chưa có CLI, agent hỏi cài một lần:
+
+- **Có** → cài local client, mở phiên Codex mới, sau đó dùng `!holding key show` để chạy CLI trực tiếp, không tốn model token.
+- **Không** → lệnh tiếp tục qua MCP trong agent, có tốn model token; không hỏi cài lại trên thiết bị này.
+
+Sau khi CLI đã cài, dùng `!holding <noun> <verb>` trong Codex, ví dụ:
+
+```
+!holding help
+!holding key show
+!holding company list
+```
+
+## 5. Dùng trong chat của Grok/Claude
 
 ```
 /holding help
@@ -87,7 +102,7 @@ Từ chối rồi vẫn có thể `/holding install` sau.
 
 Tạo công ty, staff, skill, báo cáo… đều qua `/holding …` hoặc `/ceo`. Không cần cài thêm bằng tay.
 
-## 5. Jira (lười — chỉ khi cần)
+## 6. Jira (lười — chỉ khi cần)
 
 Khi lệnh/agent thật sự cần Jira (đọc task, gắn file, chuyển cột, bật Listener…):
 
@@ -97,7 +112,7 @@ Khi lệnh/agent thật sự cần Jira (đọc task, gắn file, chuyển cột
 
 Cài MCP, tạo công ty, lệnh không liên quan Jira **không** yêu cầu đăng nhập Jira.
 
-## 6. Cập nhật
+## 7. Cập nhật
 
 Trong chat: `/holding update` (hoặc bảo agent chạy `holding update`). An toàn, chạy lại được.
 

@@ -32,7 +32,7 @@ codex mcp add agents-holding --url $AH_MCP_URL                           # Codex
 grok mcp add --transport http agents-holding $AH_MCP_URL                 # the default AI agent CLI
 ```
 
-Slash commands come from the server as MCP prompts (default AI agent CLI: as command files in ~/.grok/commands, written by `full/connect.sh` or `holding setup sync`). MCP alone is enough: every `/holding …` command works without the local CLI (AI tokens). The CLI is optional zero-token. First time per key+device the agent asks once to install; No marks no-cli and never asks again on that device.
+Slash commands come from the server as MCP prompts (Grok/Claude can expose them as native commands). Codex reserves `/` for built-in commands, so use `!holding <noun> <verb>` after installing the local client to run directly without model tokens. Before installation, ask Codex normally to run the agents-holding MCP command (for example, “holding key show”); the agent asks once whether to install. Yes installs the CLI and reruns the command; No continues through MCP and costs model tokens.
 
 The installer (`full/install.sh`) is optional: you only need it for the background Jira listener, which runs the default AI agent CLI, Claude Code or Codex on your Mac.
 
