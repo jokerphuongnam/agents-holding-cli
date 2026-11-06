@@ -3,8 +3,8 @@
 # For chat use you don't need it: add the MCP URL to your agent and sign in with your license key (see full/SETUP.md).
 #   curl -fsSL https://raw.githubusercontent.com/jokerphuongnam/agents-holding-free/main/full/install.sh | bash -s -- [--agent grok,claude,codex]
 # Installs the client into ~/.agents-holding, links `holding` into ~/.local/bin, stores your license key in the macOS Keychain
-# (service agents-holding-license; typed at a hidden prompt, never written to a file) for the listener, and optionally adds the
-# MCP server URL to the agents you pick (no key in any config: they sign in with OAuth; Grok falls back to an env header).
+# (service agents-holding-license; typed at a hidden prompt, never written to a file) and configures MCP clients with a
+# Keychain-backed bearer header (Codex, Claude Code, and Grok).
 # Options: --agent LIST (grok,claude,codex | all | none; default: the ones installed), --no-key. Env: AH_INSTALL_DIR, AH_SRC=<checkout>.
 set -euo pipefail
 # >>> ah_kc_guard (canonical: full/lib/kc-guard.sh): macOS `security` resolves the default keychain from $HOME; under a
@@ -132,8 +132,10 @@ for a in ${LIST[@]+"${LIST[@]}"}; do case "$a" in
     if claude mcp get agents-holding >/dev/null 2>&1; then say "Claude Code already has agents-holding"
     else claude mcp add --transport http --scope user agents-holding "$MCP_URL" >/dev/null && say "Claude Code: added agents-holding (user scope). Run /mcp in claude to sign in with your key."; fi ;;
   codex) has codex || { warn "codex not found, skipped"; continue; }
-    if codex mcp get agents-holding >/dev/null 2>&1; then say "Codex already has agents-holding"
-    else codex mcp add agents-holding --url "$MCP_URL" < /dev/tty || warn "codex mcp add failed"; say "Codex: if no browser opened, run: codex mcp login agents-holding"; fi ;;
+    CC="$HOME/.codex/config.toml"; mkdir -p "$HOME/.codex"; touch "$CC"
+    TMP="$CC.ah-tmp"; awk 'BEGIN{s=0} /^\[/{if(s) s=0} !s {if($0=="[mcp_servers.agents-holding]"){s=1;next} print}' "$CC" > "$TMP"
+    printf '\n[mcp_servers.agents-holding]\nurl = "%s"\nbearer_token_env_var = "AGENTS_HOLDING_KEY"\nenv_http_headers = { "X-AH-Device" = "AGENTS_HOLDING_DEVICE", "X-AH-Device-Name" = "AGENTS_HOLDING_DEVICE_NAME" }\n' "$MCP_URL" >> "$TMP"
+    mv "$TMP" "$CC"; say "Codex: configured remote MCP with Keychain-backed bearer header (no OAuth browser)" ;;
   grok) GC="$HOME/.grok/config.toml"; mkdir -p "$HOME/.grok"
     if grep -qs '^\[mcp_servers.agents-holding\]' "$GC"; then say "Grok already has agents-holding"
     else printf '\n[mcp_servers.agents-holding]\nurl = "%s"\nheaders = { "Authorization" = "Bearer ${AGENTS_HOLDING_KEY}", "X-AH-Device" = "${AGENTS_HOLDING_DEVICE}" }\n' "$MCP_URL" >> "$GC"; say "Grok: added agents-holding to $GC (key + device id from the Keychain via env)"; fi

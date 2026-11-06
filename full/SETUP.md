@@ -1,6 +1,6 @@
-# Cài agents-holding (chỉ MCP)
+# Cài agents-holding
 
-Không cần `curl | bash`, không tải script. Chỉ thêm máy chủ MCP vào agent, đăng nhập OAuth trên trình duyệt, rồi để agent tự cài phần còn lại (sau khi bạn đồng ý một lần).
+Thêm MCP trực tiếp bằng OAuth nếu muốn nhập key trong browser. Nếu muốn flow như Grok — chọn Generate/Import một lần, giữ key trong Keychain và cấu hình bearer header — chạy `full/connect.sh` trên Mac.
 
 URL MCP:
 
@@ -20,7 +20,7 @@ Tài liệu này: https://github.com/jokerphuongnam/agents-holding-free/blob/mai
 claude mcp add --transport http --scope user agents-holding https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp
 ```
 
-**Codex CLI**
+**Codex CLI** (after `full/connect.sh` has configured the key-backed header)
 
 ```bash
 codex mcp add agents-holding --url https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp
@@ -44,9 +44,9 @@ hoặc trong `~/.cursor/mcp.json`:
 { "mcpServers": { "agents-holding": { "url": "https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp" } } }
 ```
 
-## 2. Đăng nhập OAuth trên trình duyệt
+## 2. Key và xác thực
 
-Mở agent → kết nối / Authenticate với `agents-holding`. Trang web mở ra: **Tạo key** (Free trên máy này) hoặc **Nhập key** có sẵn. Key không lưu trong file cấu hình agent; phiên OAuth được làm mới tự động.
+`full/connect.sh` giữ nguyên key đã có. Nếu chưa có, chọn **Generate** (tạo license mới) hoặc **Import** (dùng key được cấp). Key được lưu trong Keychain; Codex/Grok gửi key tới MCP bằng bearer header. Key Pro được import vẫn là cùng license và giữ nguyên plan.
 
 ## 3. Bootstrap tự động (một lần đồng ý)
 

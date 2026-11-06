@@ -149,8 +149,9 @@ for a in "${LIST[@]}"; do case "$a" in
       && say "Claude Code: added agents-holding (user scope, key from env)" || warn "claude mcp add failed" ;;
   codex) has codex || { warn "codex not found, skipped"; continue; }
     CC="$HOME/.codex/config.toml"; mkdir -p "$HOME/.codex"; touch "$CC"
-    if grep -qs '^\[mcp_servers.agents-holding\]' "$CC"; then say "Codex already has agents-holding ($CC)"
-    else printf '\n[mcp_servers.agents-holding]\nurl = "%s"\nbearer_token_env_var = "AGENTS_HOLDING_KEY"\nenv_http_headers = { "X-AH-Device" = "AGENTS_HOLDING_DEVICE" }\n' "$MCP_URL" >> "$CC"; say "Codex: added agents-holding to $CC"; fi ;;
+    TMP="$CC.ah-tmp"; awk 'BEGIN{s=0} /^\[/{if(s) s=0} !s {if($0=="[mcp_servers.agents-holding]"){s=1;next} print}' "$CC" > "$TMP"
+    printf '\n[mcp_servers.agents-holding]\nurl = "%s"\nbearer_token_env_var = "AGENTS_HOLDING_KEY"\nenv_http_headers = { "X-AH-Device" = "AGENTS_HOLDING_DEVICE", "X-AH-Device-Name" = "AGENTS_HOLDING_DEVICE_NAME" }\n' "$MCP_URL" >> "$TMP"
+    mv "$TMP" "$CC"; say "Codex: configured remote MCP with key from Keychain-backed environment in $CC" ;;
   *) warn "unknown agent '$a' (grok|claude|codex)";; esac; done
 
 # 5. shell profile: load key + device from the Keychain in every new shell (idempotent)
