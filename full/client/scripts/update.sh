@@ -45,7 +45,7 @@ ah_refresh_package() {
     tag="${AH_VERSION#v}"
     [[ "$tag" =~ ^[0-9]{10}$ ]] || { echo "   invalid AH_VERSION: $AH_VERSION (expected YYYYMMDDNN)" >&2; return 2; }
   else
-    tags="$(git ls-remote --tags --refs "$url" 2>/dev/null | awk '{t=$2; sub("refs/tags/", "", t); if (t ~ /^v?[0-9]{10}$/) print substr(t,1,1)=="v" ? substr(t,2)"\t"t : t"\t"t}' | sort -k1,1V)"
+    tags="$(git ls-remote --tags --refs "$url" 2>/dev/null | awk '{t=$2; sub("refs/tags/", "", t); if (t ~ /^v?[0-9]{10}$/) { if (substr(t,1,1)=="v") print substr(t,2) "\t" t; else print t "\t" t; }}' | sort -k1,1V)"
     tag="$(printf '%s\n' "$tags" | tail -n 1 | cut -f2)"
     [ -n "$tag" ] || { echo "   no release tags found in $url (expected YYYYMMDDNN)" >&2; return 1; }
   fi
