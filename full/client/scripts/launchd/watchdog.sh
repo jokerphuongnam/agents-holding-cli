@@ -11,6 +11,7 @@ LOG="$HOME/Library/Logs/agents-holding/watchdog.log"
 CMD="holding listener start && holding listener autostart on"
 EVERY="${AH_WATCHDOG_SEC:-5}"; REMIND=900
 STALE="${AH_STALE_HEARTBEAT_SEC:-150}"
+STARTUP="${AH_LISTENER_STARTUP_GRACE_SEC:-60}"
 export PATH="$HOME/.grok/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 NODE_BIN="$(command -v node || true)"
 mkdir -p "$(dirname "$STATE")" "$(dirname "$LOG")"
@@ -29,6 +30,17 @@ try { const [file, max] = process.argv.slice(2); const s = JSON.parse(fs.readFil
 } catch { process.exit(1); }
 NODE
 }
+startup_grace() {
+  [ -f "$HOME/.config/agents-holding/listener-status.json" ] || return 1
+  [ -n "$NODE_BIN" ] || return 1
+  "$NODE_BIN" - "$HOME/.config/agents-holding/listener-status.json" "$STARTUP" <<'NODE'
+const fs = require("fs");
+try { const [file, max] = process.argv.slice(2); const s = JSON.parse(fs.readFileSync(file, "utf8"));
+  const t = Date.parse(s.started_at || "");
+  process.exit(s.listener_state !== "online" && Number.isFinite(t) && Date.now() - t <= Number(max) * 1000 ? 0 : 1);
+} catch { process.exit(1); }
+NODE
+}
 up() { local pid; pid="$(launchctl print "$DOMAIN/$LABEL" 2>/dev/null | awk '/^\tpid = /{print $3; exit}')"; PID="$pid"; process_ok "$pid" && heartbeat_ok; }
 prev=""; down_since=""; last_remind=0; misses=0; lastpid=""; restart_window=0; restart_count=0
 while true; do
@@ -40,7 +52,10 @@ while true; do
     loaded=1; launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1 || loaded=0
     now_s=$(date +%s)
     [ "$restart_window" = 0 ] || [ $((now_s - restart_window)) -ge 300 ] && { restart_window=$now_s; restart_count=0; }
-    if [ "$loaded" = 1 ] && [ "$restart_count" -lt 3 ]; then
+    # A fresh launch is expected to be process-live but heartbeat-not-ready while
+    # it joins every company. Never kickstart that child; kickstart only after the
+    # explicit startup grace expires, otherwise launchd sends it SIGTERM mid-start.
+    if [ "$loaded" = 1 ] && ! startup_grace && [ "$restart_count" -lt 3 ]; then
       restart_count=$((restart_count+1)); echo "$(now) KICKSTART attempt=$restart_count" >> "$LOG"
       launchctl kickstart -k "$DOMAIN/$LABEL" >/dev/null 2>&1 || true
     fi

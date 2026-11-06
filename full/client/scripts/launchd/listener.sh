@@ -40,6 +40,16 @@ try { const [file, max] = process.argv.slice(2); const s = JSON.parse(fs.readFil
 NODE
 }
 running() { local p; p="$(running_pid)"; process_ok "$p"; }
+ready_for_start() {
+  local n; n="$(command -v node || true)"; [ -n "$n" ] || return 1
+  "$n" - "$HOME/.config/agents-holding/listener-status.json" "$1" <<'NODE'
+const fs = require("fs");
+try { const [file, start] = process.argv.slice(2); const s = JSON.parse(fs.readFileSync(file, "utf8"));
+  const started = Date.parse(s.started_at || ""), beat = Date.parse(s.heartbeat_ok_at || "");
+  process.exit(s.listener_state === "online" && Number.isFinite(started) && Number.isFinite(beat) && started >= Number(start) && beat >= Number(start) ? 0 : 1);
+} catch { process.exit(1); }
+NODE
+}
 plist_repo() { [ -f "$1" ] || return 0; /usr/libexec/PlistBuddy -c "Print :EnvironmentVariables:AH_REPO_DIR" "$1" 2>/dev/null || true; }
 
 write_plist() { # $1 repo
@@ -98,10 +108,10 @@ cmd_on() {
   if loaded; then echo "replacing existing listener"; launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true; for _ in $(seq 1 15); do running || break; sleep 1; done; loaded && { echo "error: old listener job did not stop cleanly" >&2; return 1; }; fi
   launchctl bootstrap "$DOMAIN" "$MASTER"
   echo "Jira Listener started for $repo; waiting for process, realtime join, and heartbeat readiness..."
-  local start; start=$(date -u +%Y-%m-%dT%H:%M:%S)
+  local start start_ms; start=$(date -u +%Y-%m-%dT%H:%M:%S); start_ms=$(date +%s000)
   for _ in $(seq 1 45); do
     sleep 1
-    if process_ok "$(running_pid)" && awk -v s="$start" '$1>=s && / readiness online /' "$LOG" 2>/dev/null | grep -q .; then echo "listener readiness online ✔"; cmd_status; return 0; fi
+    if process_ok "$(running_pid)" && awk -v s="$start" '$1>=s && / readiness online /' "$LOG" 2>/dev/null | grep -q . && ready_for_start "$start_ms"; then echo "listener readiness online ✔"; cmd_status; return 0; fi
   done
   echo "listener failed readiness within 45s (process/realtime/server heartbeat not all ready) — check: holding listener logs" >&2; cmd_status; return 1
 }
