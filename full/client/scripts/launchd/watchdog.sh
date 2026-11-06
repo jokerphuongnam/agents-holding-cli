@@ -43,6 +43,7 @@ NODE
 }
 up() { local pid; pid="$(launchctl print "$DOMAIN/$LABEL" 2>/dev/null | awk '/^\tpid = /{print $3; exit}')"; PID="$pid"; process_ok "$pid" && heartbeat_ok; }
 prev=""; down_since=""; last_remind=0; misses=0; lastpid=""; restart_window=0; restart_count=0
+seen_pid=""; pid_grace_until=0
 while true; do
   if up; then cur=running; misses=0; else misses=$((misses+1)); cur=stopped; fi
   # launchd can retain a loaded job with no child after SIGTERM, or a process can hang
@@ -51,11 +52,15 @@ while true; do
   if [ "$cur" = stopped ]; then
     loaded=1; launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1 || loaded=0
     now_s=$(date +%s)
+    if [ "$loaded" = 1 ] && [ -n "$PID" ] && [ "$PID" != "$seen_pid" ]; then
+      seen_pid="$PID"; pid_grace_until=$((now_s + STARTUP))
+      echo "$(now) PID_OBSERVED pid=$PID grace_until=$pid_grace_until" >> "$LOG"
+    fi
     [ "$restart_window" = 0 ] || [ $((now_s - restart_window)) -ge 300 ] && { restart_window=$now_s; restart_count=0; }
     # A fresh launch is expected to be process-live but heartbeat-not-ready while
     # it joins every company. Never kickstart that child; kickstart only after the
     # explicit startup grace expires, otherwise launchd sends it SIGTERM mid-start.
-    if [ "$loaded" = 1 ] && ! startup_grace && [ "$restart_count" -lt 3 ]; then
+    if [ "$loaded" = 1 ] && [ "$now_s" -ge "$pid_grace_until" ] && ! startup_grace && [ "$restart_count" -lt 3 ]; then
       restart_count=$((restart_count+1)); echo "$(now) KICKSTART attempt=$restart_count" >> "$LOG"
       launchctl kickstart -k "$DOMAIN/$LABEL" >/dev/null 2>&1 || true
     fi
