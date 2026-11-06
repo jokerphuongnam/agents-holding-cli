@@ -1,6 +1,7 @@
 #!/bin/bash
 # Jira Listener watchdog (launchd job com.agentsholding.listener-watchdog, tiny bash loop, no network, no secrets).
-# Every AH_WATCHDOG_SEC (default 5s) it checks that the Jira Listener launchd job is loaded and has a live PID.
+# Every AH_WATCHDOG_SEC (default 5s) it checks that the Jira Listener launchd job is loaded,
+# has the expected live process, and has reported a successful online heartbeat recently.
 # running -> stopped (crash, kill, launchctl bootout/unload): macOS notification at once, reminder every 15 min while off.
 # stopped -> running: "running again" notification. State: ~/.config/agents-holding/watchdog.json (read by holding status).
 LABEL=com.agentsholding.jira-listener
@@ -9,18 +10,34 @@ STATE="$HOME/.config/agents-holding/watchdog.json"
 LOG="$HOME/Library/Logs/agents-holding/watchdog.log"
 CMD="holding listener start && holding listener autostart on"
 EVERY="${AH_WATCHDOG_SEC:-5}"; REMIND=900
+STALE="${AH_STALE_HEARTBEAT_SEC:-150}"
+export PATH="$HOME/.grok/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+NODE_BIN="$(command -v node || true)"
 mkdir -p "$(dirname "$STATE")" "$(dirname "$LOG")"
 notify() { /usr/bin/osascript -e "display notification \"$2\" with title \"$1\" sound name \"Basso\"" >/dev/null 2>&1 || true; }
 now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 PID=""
-up() { local pid; pid="$(launchctl print "$DOMAIN/$LABEL" 2>/dev/null | awk '/^\tpid = /{print $3; exit}')"; PID="$pid"; [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; }
+process_ok() { local p="${1:-}"; [ -n "$p" ] && kill -0 "$p" 2>/dev/null && ps -p "$p" -o command= 2>/dev/null | grep -Eq 'run-listener|holding-listen|node'; }
+heartbeat_ok() {
+  [ -f "$HOME/.config/agents-holding/listener-status.json" ] || return 1
+  [ -n "$NODE_BIN" ] || return 1
+  "$NODE_BIN" - "$HOME/.config/agents-holding/listener-status.json" "$STALE" <<'NODE'
+const fs = require("fs");
+try { const [file, max] = process.argv.slice(2); const s = JSON.parse(fs.readFileSync(file, "utf8"));
+  const t = Date.parse(s.heartbeat_ok_at || "");
+  process.exit(s.listener_state === "online" && Number.isFinite(t) && Date.now() - t <= Number(max) * 1000 ? 0 : 1);
+} catch { process.exit(1); }
+NODE
+}
+up() { local pid; pid="$(launchctl print "$DOMAIN/$LABEL" 2>/dev/null | awk '/^\tpid = /{print $3; exit}')"; PID="$pid"; process_ok "$pid" && heartbeat_ok; }
 prev=""; down_since=""; last_remind=0; misses=0; lastpid=""; restart_window=0; restart_count=0
 while true; do
   if up; then cur=running; misses=0; else misses=$((misses+1)); cur=stopped; fi
-  # launchd can retain a loaded job with no child after SIGTERM. Kick it only with a bounded
-  # budget so a bad install cannot spin forever; KeepAlive remains the normal crash path.
-  if [ "$cur" = stopped ] && loaded=1; then
-    if ! launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; then loaded=0; fi
+  # launchd can retain a loaded job with no child after SIGTERM, or a process can hang
+  # after its last successful heartbeat. Kick it with a bounded budget; KeepAlive is
+  # still the normal crash path.
+  if [ "$cur" = stopped ]; then
+    loaded=1; launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1 || loaded=0
     now_s=$(date +%s)
     [ "$restart_window" = 0 ] || [ $((now_s - restart_window)) -ge 300 ] && { restart_window=$now_s; restart_count=0; }
     if [ "$loaded" = 1 ] && [ "$restart_count" -lt 3 ]; then

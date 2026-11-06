@@ -131,9 +131,13 @@ const heartbeat = (requested = "online") => { const state = requested === "stopp
     if (state !== "online" || !(r?.was_offline || r?.missed?.length)) return;
     log(`Jira Listener back online for ${company} (server saw it offline since ${r.offline_since ?? "?"}); ${r.missed?.length ?? 0} card(s) changed meanwhile`);
     for (const m of r.missed ?? []) if (m.issue && m.comment) await comms(m.issue, m.comment);
-    reconcile(company, r.offline_since ?? undefined).catch((e) => log("reconcile failed:", e.message)); })
-  .catch((e) => { log("heartbeat failed:", e.message); L.writeStatus(homedir(), { companies: { [company]: { heartbeat_at: new Date().toISOString(), heartbeat_ok: false } } }); })))); };
-L.writeStatus(homedir(), { pid: process.pid, started_at: new Date().toISOString(), notify: L.notifyOn(homedir()), running: null, companies: {} });
+    reconcile(company, r.offline_since ?? undefined).catch((e) => log("reconcile failed:", e.message)); return true; })
+  .catch((e) => { log("heartbeat failed:", e.message); L.writeStatus(homedir(), { companies: { [company]: { heartbeat_at: new Date().toISOString(), heartbeat_ok: false } } }); return false; })))).then((results) => {
+    const ok = results.every(Boolean);
+    L.writeStatus(homedir(), { listener_state: state, ...(ok && state === "online" ? { heartbeat_ok_at: new Date().toISOString() } : {}) });
+    return ok;
+  }); };
+L.writeStatus(homedir(), { pid: process.pid, started_at: new Date().toISOString(), notify: L.notifyOn(homedir()), running: null, listener_state: "starting", companies: {} });
 // keep-alive every 10 min (was 60s); joins re-announce only if the last beat is > 5 min old
 setInterval(heartbeat, Number(process.env.AH_HEARTBEAT_SEC ?? 600) * 1000);
 

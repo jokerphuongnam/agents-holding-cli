@@ -94,6 +94,21 @@ if command -v launchctl >/dev/null 2>&1; then
     bash "$here/launchd/listener.sh" stop >/dev/null 2>&1 || { echo "ERROR: could not stop the Jira Listener safely; update aborted" >&2; exit 1; }
   fi
 fi
+restore_listener() {
+  [ "$listener_was_active" = 1 ] || return 0
+  local script="$here/launchd/listener.sh"
+  [ -x "$script" ] || script="${AH_INSTALL_DIR:-$HOME/.agents-holding}/scripts/launchd/listener.sh"
+  echo "   restoring Jira Listener after update" >&2
+  if ! bash "$script" start --repo "$listener_repo" >/dev/null 2>&1; then
+    echo "ERROR: holding update could not restore a healthy Jira Listener" >&2
+    return 1
+  fi
+  if [ "$listener_was_autostart" = 1 ]; then bash "$script" autostart on >/dev/null 2>&1 || return 1; fi
+}
+if [ "$listener_was_active" = 1 ]; then
+  update_rc=0
+  trap 'rc=$?; trap - EXIT; if [ "$rc" -ne 0 ]; then restore_listener || rc=1; fi; exit "$rc"' EXIT
+fi
 root="$(git -C "$here" rev-parse --show-toplevel 2>/dev/null || true)"
 echo "1/4 client scripts ($before_raw)"
 if [ -n "$root" ] && [ -d "$root/.git" ] && git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1 \

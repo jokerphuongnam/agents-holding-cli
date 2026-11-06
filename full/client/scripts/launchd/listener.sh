@@ -30,6 +30,15 @@ install_watchdog() { # always on (also at login), independent of the listener jo
 running_pid() { launchctl print "$DOMAIN/$LABEL" 2>/dev/null | awk '/^\tpid = /{print $3; exit}'; }
 loaded() { launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; }
 process_ok() { local p="${1:-}"; [ -n "$p" ] && kill -0 "$p" 2>/dev/null && ps -p "$p" -o command= 2>/dev/null | grep -Eq 'run-listener|holding-listen|node'; }
+heartbeat_fresh() {
+  local n; n="$(command -v node || true)"; [ -n "$n" ] || return 1
+  "$n" - "$HOME/.config/agents-holding/listener-status.json" "${AH_STALE_HEARTBEAT_SEC:-150}" <<'NODE'
+const fs = require("fs");
+try { const [file, max] = process.argv.slice(2); const s = JSON.parse(fs.readFileSync(file, "utf8")); const t = Date.parse(s.heartbeat_ok_at || "");
+  process.exit(s.listener_state === "online" && Number.isFinite(t) && Date.now() - t <= Number(max) * 1000 ? 0 : 1);
+} catch { process.exit(1); }
+NODE
+}
 running() { local p; p="$(running_pid)"; process_ok "$p"; }
 plist_repo() { [ -f "$1" ] || return 0; /usr/libexec/PlistBuddy -c "Print :EnvironmentVariables:AH_REPO_DIR" "$1" 2>/dev/null || true; }
 
@@ -63,7 +72,7 @@ fi
 cmd_status() {
   local pid repo last
   repo="$(plist_repo "$MASTER")"; [ -z "$repo" ] && repo="$(plist_repo "$AUTO")"
-  pid="$(running_pid)"; if process_ok "$pid"; then echo "Jira Listener: ON  (running, PID $pid)"; elif loaded; then echo "Jira Listener: DEGRADED (launchd loaded but no verified listener process${pid:+, stale PID $pid})"; else printf '\033[1;31m🔴 Jira Listener is off — all Jira automation is stopped until you start it:\n   %s\033[0m\n   (Jira Listener keeps all Jira automation running.)\n' "$START_CMD"; fi
+  pid="$(running_pid)"; if process_ok "$pid" && heartbeat_fresh; then echo "Jira Listener: ON  (running and heartbeat fresh, PID $pid)"; elif loaded; then echo "Jira Listener: DEGRADED (launchd loaded but listener process/heartbeat is not healthy${pid:+, PID $pid})"; else printf '\033[1;31m🔴 Jira Listener is off — all Jira automation is stopped until you start it:\n   %s\033[0m\n   (Jira Listener keeps all Jira automation running.)\n' "$START_CMD"; fi
   if launchctl print "$DOMAIN/$WD_LABEL" >/dev/null 2>&1; then echo "watchdog     : ON  (notifies at once if the Jira Listener stops)"; else echo "watchdog     : OFF (holding listener start installs it)"; fi
   if [ -f "$AUTO" ]; then echo "autostart    : ON  (starts at login: $AUTO)"; else echo "autostart    : OFF"; fi
   echo "repo         : ${repo:-<not installed; run: holding listener start --repo DIR>}"
