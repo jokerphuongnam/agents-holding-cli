@@ -52,12 +52,12 @@ hoặc trong `~/.cursor/mcp.json`:
 
 Lần gọi tool MCP đầu tiên, server trả hướng dẫn bootstrap. Agent sẽ hỏi bạn:
 
-> Cài holding CLI + slash commands lên máy bạn? (an toàn, chạy lại được)
+> Cài holding CLI để lệnh chạy tức thì, không tốn model token? (an toàn, chạy lại được)
 
 Khi bạn đồng ý, agent gọi tool `bootstrap` và:
 
-1. Đồng bộ command/hook được client hỗ trợ (Codex dùng `!holding`, không dùng `/holding`)
-2. Cài `holding` vào `~/.agents-holding`, đưa lên PATH (`~/.local/bin`)
+1. Cài `holding` vào `~/.agents-holding`, đưa lên PATH (`~/.local/bin`)
+2. Đồng bộ slash command cho Grok/Claude; trong Codex dùng `!holding` (không dùng `/holding`)
 3. Tạo device id trong Keychain (không in bí mật)
 4. Báo tiến độ từng bước trong chat
 

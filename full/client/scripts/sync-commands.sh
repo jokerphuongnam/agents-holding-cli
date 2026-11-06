@@ -70,18 +70,6 @@ if [ -n "$HOOK" ]; then # zero-model path: Grok UserPromptSubmit hook (global; G
     node -e 'const fs=require("fs"),p=process.argv[1],cmd=process.argv[2];let j={};try{j=JSON.parse(fs.readFileSync(p,"utf8"))}catch{}
       j.hooks??={};const L=(j.hooks.UserPromptSubmit??=[]).filter(h=>!JSON.stringify(h).includes("ah-hook.sh"));L.push({hooks:[{type:"command",command:cmd,timeout:8}]});j.hooks.UserPromptSubmit=L;
       fs.writeFileSync(p,JSON.stringify(j,null,2)+"\n")' "$HOME/.claude/settings.json" "$HOOKCMD" && echo "hook: ~/.claude/settings.json UserPromptSubmit -> $SD/ah-hook.sh (Claude Code: instant, no model)"; fi
-  # Codex CLI: same UserPromptSubmit contract (exit 2 = blocked, stderr shown); merged into ~/.codex/hooks.json + hooks feature on.
-  # Codex asks once to trust a new hook (/hooks review); after that /holding ... is answered with no model turn.
-  if [ -d "$HOME/.codex" ] && command -v node >/dev/null; then
-    node -e 'const fs=require("fs"),p=process.argv[1],cmd=process.argv[2];let j={};try{j=JSON.parse(fs.readFileSync(p,"utf8"))}catch{}
-      j.hooks??={};const L=(j.hooks.UserPromptSubmit??=[]).filter(h=>!JSON.stringify(h).includes("ah-hook.sh"));L.push({hooks:[{type:"command",command:cmd,timeout:8,statusMessage:"agents-holding"}]});j.hooks.UserPromptSubmit=L;
-      fs.writeFileSync(p,JSON.stringify(j,null,2)+"\n")' "$HOME/.codex/hooks.json" "$HOOKCMD"
-    CC="$HOME/.codex/config.toml"; touch "$CC"
-    if ! grep -qs '^codex_hooks *= *true' "$CC"; then
-      if grep -qs '^\[features\]' "$CC"; then sed -i.ahbak '/^\[features\]/a\
-codex_hooks = true
-' "$CC" && rm -f "$CC.ahbak"; else printf '\n[features]\ncodex_hooks = true\n' >> "$CC"; fi; fi
-    echo "hook: ~/.codex/hooks.json UserPromptSubmit -> $SD/ah-hook.sh (Codex: instant, no model; trust it once when Codex asks)"; fi
 fi
 if [ -n "$OWNER" ]; then
   GC="$HOME/.grok/config.toml"; touch "$GC"

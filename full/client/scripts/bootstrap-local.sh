@@ -76,10 +76,10 @@ if [ -n "${AH_PAIR_CODE:-}" ] && [ "$(uname -s)" = Darwin ] && ! security find-g
   else progress 4/5 "pairing failed (code expired or used): ask your agent to run install again"; fi
 else progress 4/5 "already paired or no pairing code (skipped)"; fi
 
-progress 4/5 "slash commands + instant hooks"
+progress 4/5 "sync agent commands and local shortcuts"
 SYNC=(); [ -d "$HOME/.claude" ] && SYNC+=(--claude)
-# Codex CLI: custom prompts in ~/.codex/prompts -> /prompts:holding, /prompts:ceo (keep the Grok default dir too)
-[ -d "$HOME/.codex" ] && SYNC+=(--dir "$HOME/.grok/commands" --dir "$HOME/.codex/prompts")
+# Codex uses its shell escape (`!holding`) for the zero-model path; generated prompt files still invoke the model.
+[ -d "$HOME/.codex" ] && SYNC+=(--dir "$HOME/.grok/commands")
 if [ -x "$DEST/scripts/sync-commands.sh" ]; then
   bash "$DEST/scripts/sync-commands.sh" ${SYNC[@]+"${SYNC[@]}"} 2>&1 | tail -5 | sed 's/^/[bootstrap 4\/5] /' || true
 else
