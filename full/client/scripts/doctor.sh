@@ -30,6 +30,14 @@ if [ -n "$repo" ] && [ -f "$repo/.agents/company.json" ]; then ok "Company repo:
 if grep -qs "mcp.atlassian.com" "$HOME/.grok/config.toml" ${repo:+"$repo/.grok/config.toml"}; then
   ok "Atlassian MCP configured in Grok (verify login: grok mcp doctor atlassian; if it asks, run: grok mcp login atlassian)"
 else bad "Atlassian MCP in Grok" "add [mcp_servers.atlassian] url = \"https://mcp.atlassian.com/v1/mcp\" to ~/.grok/config.toml, then grok mcp login atlassian (other clients: add Atlassian's remote MCP and sign in)"; fi
+jira_cfg="$HOME/.config/agents-holding/jira.json"
+if [ -f "$jira_cfg" ] && grep -q '"oauth"[[:space:]]*:[[:space:]]*true' "$jira_cfg"; then
+  ok "Listener Jira OAuth readiness recorded (holding listener will advertise online only after token resolution)"
+elif [ -f "$jira_cfg" ] && grep -q '"keychain_service"' "$jira_cfg" && security find-generic-password -s "$(sed -nE 's/.*"keychain_service"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$jira_cfg" | head -1)" -a "$(sed -nE 's/.*"email"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$jira_cfg" | head -1)" >/dev/null 2>&1; then
+  ok "Listener Jira API-token readiness available (holding listener will advertise online)"
+else
+  bad "Listener Jira OAuth/API credentials ready" "run holding jira connect, then holding listener restart; holding doctor will re-check readiness"
+fi
 if grep -qs "Operation not permitted" "$LOG_DIR/jira-listener.err.log"; then
   bad "macOS permission: node may read your Documents folder" "System Settings > Privacy & Security > Files and Folders > node > Documents ON (or Full Disk Access > + > $(command -v node)); then holding listener stop && holding listener start, and clear $LOG_DIR/jira-listener.err.log"
 else

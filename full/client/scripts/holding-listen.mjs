@@ -20,6 +20,7 @@ import * as POL from "./policy.mjs";
 import * as XT from "./crossteam.mjs";
 import { client as jiraRaw } from "./jira.mjs";
 import * as JR from "./jira-rules.mjs";
+import { atlassianToken } from "./attach.mjs";
 import { readFileSync as readFileSync_AH } from "node:fs";
 const AH_CLIENT_VERSION = (() => { try { return readFileSync_AH(new URL("./VERSION", import.meta.url), "utf8").trim(); } catch { return "0"; } })();
 
@@ -123,7 +124,7 @@ const autostartPlist = join(homedir(), "Library/LaunchAgents/com.agentsholding.j
 const myJira = {}; // enterprise: this key's Jira account; work starts only on cards assigned to it
 let lastBeat = 0;
 const heartbeatIfStale = () => { if (Date.now() - lastBeat > 300000) heartbeat(); };
-const heartbeat = (state = "online") => (lastBeat = Date.now(), Promise.all(companyList.map((company) => mcp("listener_heartbeat", { company, host: hostname(), pid: process.pid, autostart: existsSync(autostartPlist), version: "4", state, meta: localMeta() })
+const heartbeat = (state = (listenerJira ? "online" : "offline")) => (lastBeat = Date.now(), Promise.all(companyList.map((company) => mcp("listener_heartbeat", { company, host: hostname(), pid: process.pid, autostart: existsSync(autostartPlist), version: "4", state, meta: { ...localMeta(), jira_ready: listenerJira } })
   .then(async (r) => { if (r?.communication) commMode[company] = r.communication; if (r?.enterprise) myJira[company] = r.jira_account ?? null; L.writeStatus(homedir(), { companies: { [company]: { heartbeat_at: new Date().toISOString(), heartbeat_ok: true } } });
     if (state !== "online" || !(r?.was_offline || r?.missed?.length)) return;
     log(`Jira Listener back online for ${company} (server saw it offline since ${r.offline_since ?? "?"}); ${r.missed?.length ?? 0} card(s) changed meanwhile`);
@@ -217,15 +218,18 @@ loadSessions();
 const saveSessions = () => { try { writeFileSync(sessFile, JSON.stringify(sessions, null, 1), { mode: 0o600 }); } catch (e) { log("session store failed:", e.message); } };
 // ~/.config/agents-holding/jira.json (chmod 600): {"site","email","keychain_service"} -- NO token. The API token lives in the macOS
 // Keychain (security add-generic-password -s <keychain_service> -a <email> -w) and is read per request, kept in memory only.
-const jiraCfg = (() => { const p = join(homedir(), ".config/agents-holding/jira.json"); try { const j = JSON.parse(readFileSync(p, "utf8"));
+const jiraCfg = await (async () => { try {
+  const connected = await atlassianToken(homedir());
+  if (connected) return connected;
+  const p = join(homedir(), ".config/agents-holding/jira.json"); const j = JSON.parse(readFileSync(p, "utf8"));
   if (j.token) log("WARNING: jira.json contains a token; it is ignored. Move it to the Keychain and delete the field.");
   if (j.site && j.email && j.keychain_service) return { site: j.site, email: j.email, keychain_service: j.keychain_service, oauth: !!j.oauth };
   if (j.site && j.oauth) return { site: j.site, email: j.email || "", keychain_service: j.keychain_service || "", oauth: true };
   return null; } catch { return null; } })();
 const lean = process.env.AH_LEAN !== "0";
 // Prefer legacy API-token client; OAuth handled in jiraOps via attach.atlassianToken (no browser in launchd).
-const jira = (jiraCfg && jiraCfg.email && jiraCfg.keychain_service && !jiraCfg.oauth) ? L.jiraClient(jiraCfg, { dry: dryJira, log }) : null;
-if (!jira) log("Jira client: deferred (OAuth or connect later). Listener runs; card moves wait until holding jira connect.");
+const jira = jiraCfg ? L.jiraClient(jiraCfg, { dry: dryJira, log }) : null;
+if (!jira) log("Jira client: not ready (holding jira connect or Atlassian OAuth required); listener will remain offline until credentials are available.");
 // Communication (per company, from the heartbeat; `holding company set communication jira+chat|chat`): everything the user must act on
 // (question, 1/2/3, hire, blocked, gate, QC stop, failed, which repo) ALWAYS goes to the CEO inbox + an 'Agents Holding'
 // notification; Jira comments only in jira+chat mode. Labels/status/assignee update in both modes. Runs never wait for input:
@@ -243,7 +247,7 @@ async function comms(issue, text, kind = null) {
   await jira.comment(issue, text).catch((e) => log("Jira comment failed:", e.message));
 }
 const leanHome = lean ? L.leanGrokHome(homedir()) : null;
-const listenerJira = true; // auth resolved per op (OAuth or API token); missing token -> skip with log
+const listenerJira = dryJira || !!jiraCfg; // readiness is established before the listener advertises online
 const sessDir = (sid, home = join(homedir(), ".grok")) => join(home, "sessions", encodeURIComponent(repo), sid);
 
 // User events on the same card within AH_DEBOUNCE_SEC (default 15s) are coalesced into ONE run (latest notice wins):
@@ -279,10 +283,14 @@ function wake(p) {
 async function useCtx(p) {
   const issue = p.issue ?? p.task_id ?? "";
   company = p.company ?? company; loadSessions();
+  // A foreground replay scoped to --repo may start from a parent/child repo while
+  // the active company points at the other subscription. Resolve the board on that repo.
   let meta = { labels: [], components: [] };
+  const scopedRoute = onlyRepo && !p.company ? R.routeForRepo(registry, { repo: onlyRepo, issue, site: jiraSite }) : null;
+  if (scopedRoute?.company) company = scopedRoute.company;
   const cands = R.candidates(registry, { company, issue, site: jiraSite });
   if (cands.length > 1 && jira) { try { meta = await jira.meta(issue); } catch (e) { log(`route: Jira labels for ${issue} failed (${e.message})`); } }
-  const r = R.route(registry, { company, issue, site: jiraSite, ...meta });
+  const r = scopedRoute ? R.routeForRepo(registry, { repo: onlyRepo, company, issue, site: jiraSite, ...meta }) : R.route(registry, { company, issue, site: jiraSite, ...meta });
   if (r.none) { log(`route: ${issue} (${company}) matches no registered repo; skipped`); return false; }
   if (r.ask) {
     const st = L.stateDir(homedir(), company);

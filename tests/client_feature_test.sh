@@ -50,5 +50,7 @@ if [ -x /usr/bin/osascript ] || command -v osascript >/dev/null; then
   grep -q 'AH_CLI_TIMEOUT="${AH_CLI_TIMEOUT:-8}"' "$S/ah-hook.sh" && grep -q 'AH_HOOK_TIMEOUT:-8' "$S/ah-hook.sh" && ok 'hook production cap defaults to eight seconds' || no 'hook production cap defaults to eight seconds'
 fi
 grep -q 'HOOKCMD="\[ -x .*ah-hook.sh \] && bash .* || exit 0"' full/client/scripts/sync-commands.sh && ok 'host hook installation is executable guarded' || no 'host hook installation is executable guarded'
+grep -q 'atlassianToken(homedir())' "$S/holding-listen.mjs" && grep -q 'const listenerJira = dryJira || !!jiraCfg' "$S/holding-listen.mjs" && grep -q 'jira_ready: listenerJira' "$S/holding-listen.mjs" && ok 'fresh install listener checks OAuth readiness before online heartbeat' || no 'fresh install listener checks OAuth readiness before online heartbeat'
+grep -q 'routeForRepo' "$S/holding-listen.mjs" && grep -q 'export function routeForRepo' "$S/registry.mjs" && ok 'foreground replay routes parent and child repos explicitly' || no 'foreground replay routes parent and child repos explicitly'
 printf '%s\n' "client_feature_test: $pass passed, $fail failed"
 [ "$fail" = 0 ]

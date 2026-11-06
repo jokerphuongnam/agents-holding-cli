@@ -238,10 +238,10 @@ export function jiraToken(cfg) {
   catch { return null; }
 }
 export function jiraClient(cfg, { dry, log }) {
-  const site = cfg?.site?.replace(/\/$/, "");
-  const auth = () => { const t = jiraToken(cfg); return t ? "Basic " + Buffer.from(`${cfg.email}:${t}`).toString("base64") : null; }; // token only in memory, per call
-  const req = async (m, path, body) => { const a = auth(); if (!a) throw new Error("no Jira token in Keychain");
-    const r = await fetch(`${site}/rest/api/3${path}`, { method: m, headers: { Authorization: a, "Content-Type": "application/json", Accept: "application/json" }, body: body && JSON.stringify(body) });
+  const site = (cfg?.jira ?? cfg?.site)?.replace(/\/$/, "");
+  const auth = () => { if (typeof cfg?.auth === "function") return cfg.auth(); const t = jiraToken(cfg); return t ? "Basic " + Buffer.from(`${cfg.email}:${t}`).toString("base64") : null; }; // token only in memory, per call
+  const req = async (m, path, body) => { const a = auth(); if (!a) throw new Error("no Jira credentials available (holding jira connect)");
+    const r = await fetch(`${site}${cfg?.jira ? path : `/rest/api/3${path}`}`, { method: m, headers: { Authorization: a, "Content-Type": "application/json", Accept: "application/json" }, body: body && JSON.stringify(body) });
     if (!r.ok) throw new Error(`Jira ${m} ${path.split("?")[0]} -> ${r.status}`); return r.status === 204 ? null : r.json(); };
   return {
     async issue(key) { return req("GET", `/issue/${encodeURIComponent(key)}?fields=summary,description,comment`); },
