@@ -286,7 +286,9 @@ async function useCtx(p) {
   // A foreground replay scoped to --repo may start from a parent/child repo while
   // the active company points at the other subscription. Resolve the board on that repo.
   let meta = { labels: [], components: [] };
-  const scopedRoute = onlyRepo && !p.company ? R.routeForRepo(registry, { repo: onlyRepo, issue, site: jiraSite }) : null;
+  // --repo is an explicit manual replay scope; the default company supplied by
+  // --run must not bypass repo-scoped routing for parent/child boards.
+  const scopedRoute = onlyRepo ? R.routeForRepo(registry, { repo: onlyRepo, issue, site: jiraSite }) : null;
   if (scopedRoute?.company) company = scopedRoute.company;
   const cands = R.candidates(registry, { company, issue, site: jiraSite });
   if (cands.length > 1 && jira) { try { meta = await jira.meta(issue); } catch (e) { log(`route: Jira labels for ${issue} failed (${e.message})`); } }

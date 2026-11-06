@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import * as R from "./registry.mjs";
 import * as L from "./lean.mjs";
 
@@ -12,6 +13,9 @@ const oauthSite = "https://api.atlassian.com/ex/jira/cloud-id/rest/api/3";
 assert.equal(R.routeForRepo(reg, { repo: "/tmp/marlin-parent", issue: "MARLIN-1", site: oauthSite }).company, "parent");
 assert.equal(R.routeForRepo(reg, { repo: "/tmp/nail-child", issue: "NAIL-1", site: oauthSite }).company, "child");
 assert.equal(R.routeForRepo(reg, { repo: "/tmp/nail-child", issue: "MARLIN-1", site: oauthSite }).none, true);
+const listenerSource = readFileSync(new URL("./holding-listen.mjs", import.meta.url), "utf8");
+assert.match(listenerSource, /const scopedRoute = onlyRepo \? R\.routeForRepo/,
+  "manual --repo replay must remain repo-scoped even when --run supplies a company");
 
 const calls = [];
 const jira = L.jiraClient({ jira: "https://api.atlassian.com/ex/jira/cloud/rest/api/3", auth: () => "Bearer oauth-access" }, { dry: false, log() {} });
