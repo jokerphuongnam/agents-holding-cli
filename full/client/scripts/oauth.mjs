@@ -39,7 +39,7 @@ export async function connect(provider, { log = console.log, timeoutMs = 300000,
   else if (!sw && load(provider)?.access_token) return `${provider}: already connected as ${accountOf(load(provider))} (use: holding ${provider} connect --switch)`;
   const verifier = randomBytes(32).toString("hex"), challenge = createHash("sha256").update(verifier).digest("hex");
   let done; const got = new Promise((r) => (done = r));
-  const srv = createServer((q, s) => { const u = new URL(q.url, "http://x"); if (u.pathname === "/cb") { s.end("<meta charset=utf-8><h3>Đã kết nối. Quay lại terminal.</h3>"); done(u.searchParams.get("state")); } else { s.statusCode = 404; s.end(); } });
+  const srv = createServer((q, s) => { const u = new URL(q.url, "http://x"); if (u.pathname === "/cb") { s.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" }); s.end("<!doctype html><html lang=vi><head><meta charset=utf-8><title>agents-holding</title></head><body style=font-family:system-ui;padding:3em><h3>Đã kết nối thành công.</h3><p>Bạn có thể đóng tab này và quay lại terminal.</p><script>setTimeout(()=>window.close(),800)</script></body></html>"); done(u.searchParams.get("state")); } else { s.statusCode = 404; s.end(); } });
   await new Promise((r) => srv.listen(0, "127.0.0.1", r)); const port = srv.address().port;
   try {
     const b = await post("/begin", { provider, loopback: `http://127.0.0.1:${port}/cb`, challenge });
