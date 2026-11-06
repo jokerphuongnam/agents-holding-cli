@@ -20,10 +20,10 @@ Tài liệu này: https://github.com/jokerphuongnam/agents-holding-free/blob/mai
 claude mcp add --transport http --scope user agents-holding https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp
 ```
 
-**Codex CLI** (after `full/connect.sh` has configured the key-backed header)
+**Codex CLI** (setup installs a tiny Keychain header helper; no shell environment is needed)
 
 ```bash
-codex mcp add agents-holding --url https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp
+curl -fsSL https://raw.githubusercontent.com/jokerphuongnam/agents-holding-free/main/full/connect.sh | bash
 ```
 
 **CLI agent mặc định (lệnh `grok`)**

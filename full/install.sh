@@ -133,9 +133,10 @@ for a in ${LIST[@]+"${LIST[@]}"}; do case "$a" in
     else claude mcp add --transport http --scope user agents-holding "$MCP_URL" >/dev/null && say "Claude Code: added agents-holding (user scope). Run /mcp in claude to sign in with your key."; fi ;;
   codex) has codex || { warn "codex not found, skipped"; continue; }
     CC="$HOME/.codex/config.toml"; mkdir -p "$HOME/.codex"; touch "$CC"
+    HELPER="$DEST/scripts/codex-mcp-headers.sh"
     TMP="$CC.ah-tmp"; awk 'BEGIN{s=0} /^\[/{if(s) s=0} !s {if($0=="[mcp_servers.agents-holding]"){s=1;next} print}' "$CC" > "$TMP"
-    printf '\n[mcp_servers.agents-holding]\nurl = "%s"\nbearer_token_env_var = "AGENTS_HOLDING_KEY"\nenv_http_headers = { "X-AH-Device" = "AGENTS_HOLDING_DEVICE", "X-AH-Device-Name" = "AGENTS_HOLDING_DEVICE_NAME" }\n' "$MCP_URL" >> "$TMP"
-    mv "$TMP" "$CC"; say "Codex: configured remote MCP with Keychain-backed bearer header (no OAuth browser)" ;;
+    printf '\n[mcp_servers.agents-holding]\nurl = "%s"\nhttp_headers_helper = "bash %s"\n' "$MCP_URL" "$HELPER" >> "$TMP"
+    mv "$TMP" "$CC"; say "Codex: configured remote MCP with Keychain header helper (no OAuth browser)" ;;
   grok) GC="$HOME/.grok/config.toml"; mkdir -p "$HOME/.grok"
     if grep -qs '^\[mcp_servers.agents-holding\]' "$GC"; then say "Grok already has agents-holding"
     else printf '\n[mcp_servers.agents-holding]\nurl = "%s"\nheaders = { "Authorization" = "Bearer ${AGENTS_HOLDING_KEY}", "X-AH-Device" = "${AGENTS_HOLDING_DEVICE}" }\n' "$MCP_URL" >> "$GC"; say "Grok: added agents-holding to $GC (key + device id from the Keychain via env)"; fi
