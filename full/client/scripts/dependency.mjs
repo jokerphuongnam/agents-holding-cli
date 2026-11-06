@@ -259,6 +259,7 @@ function adaptSkillBody(entry) {
 
 /** Expose pack entries to Grok / Claude / Codex command dirs (and Claude skills). */
 export function exposePack(name, packDir) {
+  if (existsSync(packMetaPath(name))) unexposePack(name);
   const entries = discoverPackEntries(packDir).map((e) => ({ ...e, _pack: name }));
   const dirs = agentDirs();
   for (const d of Object.values(dirs)) mkdirSync(d, { recursive: true, mode: 0o700 });
@@ -412,6 +413,8 @@ function cmdAdd(link) {
   const { reused, url } = clonePack(link, dest);
   const refs = loadRefs(company);
   if (refs.some((d) => d.name === name)) {
+    const existing = refs.find((d) => d.name === name);
+    if (existing && existing.url !== (url || link)) { existing.url = url || link; existing.updated_at = new Date().toISOString(); saveRefs(company, refs); }
     console.log(`already\t${name}\tcompany=${company}\t${dest}`);
   } else {
     refs.push({
