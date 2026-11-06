@@ -10,7 +10,18 @@ import { basename, dirname, join, resolve } from "node:path";
 export const registryPath = (home) => join(home, ".config/agents-holding/projects.json");
 export const empty = () => ({ version: 1, projects: [] });
 export const projectKeyOf = (issue) => (String(issue ?? "").match(/^([A-Z][A-Z0-9_]*)-\d+$/) ?? [])[1] ?? null;
-const sameSite = (a, b) => !a || !b || a.replace(/\/$/, "").toLowerCase() === b.replace(/\/$/, "").toLowerCase();
+// Registry boards store the human-facing Jira site, while OAuth clients may
+// expose an Atlassian API/ex-jira base. Compare canonical identities when
+// possible; an API cloud id cannot be derived back into a site hostname.
+const siteKey = (site) => {
+  if (!site) return null;
+  try {
+    const u = new URL(String(site));
+    const m = u.pathname.match(/^\/ex\/jira\/([^/]+)/i);
+    return m ? `cloud:${m[1].toLowerCase()}` : `host:${u.hostname.toLowerCase()}`;
+  } catch { return String(site).replace(/\/$/, "").toLowerCase(); }
+};
+const sameSite = (a, b) => !a || !b || siteKey(a) === siteKey(b);
 
 export function load(home) {
   const p = registryPath(home); if (!existsSync(p)) return null;
@@ -69,10 +80,14 @@ export function routeForRepo(reg, { repo, company, issue, site, labels = [], com
   const path = resolve(repo); const pr = reg.projects.find((p) => resolve(p.path) === path);
   if (!pr) return { none: true };
   const key = projectKeyOf(issue);
-  const board = pr.boards.find((b) => (!key || b.project_key === key || b.project_key === "*") && sameSite(b.site, site));
+  const boards = pr.boards.filter((b) => !key || b.project_key === key || b.project_key === "*");
+  // --repo is an explicit routing decision. If OAuth gives us only an
+  // api.atlassian.com cloud endpoint, keep the repo-scoped replay usable while
+  // still requiring the issue key to belong to a board on that repo.
+  const board = boards.find((b) => sameSite(b.site, site)) ?? (boards.length === 1 ? boards[0] : null);
   if (!board) return { none: true };
   const scoped = { ...reg, projects: [pr] };
-  return { ...route(scoped, { company: company ?? board.company, issue, site, labels, components }), company: board.company };
+  return { ...route(scoped, { company: company ?? board.company, issue, site: board.site, labels, components }), company: board.company };
 }
 export const askComment = (issue, names) => `[agent-holding] [Tech Lead] WHICH REPO?\n${issue} is on a board that feeds several repos: ${names.join(", ")}.\n` +
   `Add a label repo:<name> (one per repo, e.g. repo:${names[0]}; repo:all for every repo) or a component with the repo name, then move or comment on the card again. Nothing was run.`;

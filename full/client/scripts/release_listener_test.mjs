@@ -8,6 +8,10 @@ R.addBoard(reg, { path: "/tmp/marlin-parent", site, project_key: "MARLIN", compa
 R.addBoard(reg, { path: "/tmp/nail-child", site, project_key: "NAIL", company: "child" });
 assert.equal(R.routeForRepo(reg, { repo: "/tmp/marlin-parent", issue: "MARLIN-1", site }).company, "parent");
 assert.equal(R.routeForRepo(reg, { repo: "/tmp/nail-child", issue: "NAIL-1", site }).company, "child");
+const oauthSite = "https://api.atlassian.com/ex/jira/cloud-id/rest/api/3";
+assert.equal(R.routeForRepo(reg, { repo: "/tmp/marlin-parent", issue: "MARLIN-1", site: oauthSite }).company, "parent");
+assert.equal(R.routeForRepo(reg, { repo: "/tmp/nail-child", issue: "NAIL-1", site: oauthSite }).company, "child");
+assert.equal(R.routeForRepo(reg, { repo: "/tmp/nail-child", issue: "MARLIN-1", site: oauthSite }).none, true);
 
 const calls = [];
 const jira = L.jiraClient({ jira: "https://api.atlassian.com/ex/jira/cloud/rest/api/3", auth: () => "Bearer oauth-access" }, { dry: false, log() {} });
