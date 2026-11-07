@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { implementationEvidence, terminalSessionEvidence } from "../full/client/scripts/lean.mjs";
+import { implementationEvidence, terminalSessionEvidence, validatePtyExecutionEvidence } from "../full/client/scripts/lean.mjs";
 import { resolveAgent } from "../full/client/scripts/agents.mjs";
 
 const good = { summary: "Changed canonical cache routing", tests: "build: ok; install: ok; smoke: ok" };
@@ -25,4 +25,12 @@ assert.equal(terminalSessionEvidence({ session, result: terminal, command: "make
 assert.equal(terminalSessionEvidence({ session, result: { ...terminal, exit_code: 1 }, command: "make test", repo: "/repo" }).ok, false, "terminal exit failure fails");
 assert.equal(terminalSessionEvidence({ session: { ...session, status: "disconnected" }, result: terminal, command: "make test", repo: "/repo" }).ok, false, "disconnect cannot pass");
 assert.equal(terminalSessionEvidence({ session, result: { ...terminal, status: "running" }, command: "make test", repo: "/repo" }).ok, false, "no completion cannot pass");
+const ptySession = { ...session, transport: "pty", authenticated: true };
+const pty = { ...terminal, cwd: "/repo", repo: "/repo", ended_at: new Date().toISOString(), transcript_digest: "sig", transcript_signature: "sig" };
+assert.equal(validatePtyExecutionEvidence({ session: ptySession, result: pty, command: "make test", repo: "/repo", actual: { commit: "abc", tree: "tree", artifact_digest: "sha256:art" } }).ok, true, "authenticated PTY evidence passes");
+assert.equal(validatePtyExecutionEvidence({ session: null, result: pty, command: "make test", repo: "/repo" }).state, "waiting", "missing PTY transport waits");
+assert.equal(validatePtyExecutionEvidence({ session: ptySession, result: { ...pty, command: "fake success" }, command: "make test", repo: "/repo" }).ok, false, "fake claimed command fails");
+assert.equal(validatePtyExecutionEvidence({ session: ptySession, result: { ...pty, cwd: "/wrong" }, command: "make test", repo: "/repo" }).ok, false, "wrong cwd fails");
+assert.equal(validatePtyExecutionEvidence({ session: ptySession, result: { ...pty, ended_at: "2020-01-01T00:00:00Z" }, command: "make test", repo: "/repo" }).ok, false, "stale transcript fails");
+assert.equal(validatePtyExecutionEvidence({ session: ptySession, result: { ...pty, exit_code: 0, transcript_signature: "forged" }, command: "make test", repo: "/repo" }).ok, false, "forged transcript/exit evidence fails");
 console.log("workflow_invariant_test: pass");

@@ -35,6 +35,10 @@ holding terminal heartbeat <session-id>
 
 Use `holding terminal unregister <session-id>` to remove it. `holding terminal link <one-time-token> --repo ...` remains a compatibility path for workflow-issued one-time requests. Registration binds user, device, company, repository, cwd, shell and toolchain; the listener selects only a connected, heartbeating terminal matching company/repo/policy. It never guesses a window title/process, opens a native dialog, or treats comments/model output as terminal evidence. If no terminal is available, Jira is flagged and CEO/chat instructs the user to run `holding terminal register` in the intended terminal. Only the bound terminal's live output, exit code, timestamps, toolchain/env and artifact evidence can reach QC.
 
+Integrity rule: agent claims/logs are never evidence. The PTY transcript must be authenticated, fresh, and match the exact command, cwd, repo, exit status, commit/tree and artifact digest from the user machine. Fake success, forged exit code, stale output, wrong checkout, or transport disconnect keeps the workflow waiting/Blocked and sends a Jira + CEO/chat recovery instruction; it never advances QC.
+
+Terminal registration is opt-in. The default workflow never asks for a terminal and never dispatches commands there. Only a confirmed company/project QC rule with `runner: "registered_terminal"`, command, repo/cwd, consent/allowlist, evidence, timeout and recovery activates terminal selection. Without that rule, normal workflow behavior is unchanged. With it but no available registered terminal, the listener stays waiting/Blocked and tells the user through Jira + CEO/chat to run `holding terminal register`.
+
 Got a license key (`ah_live_...`)? Add the server to your agent and sign in with the key when the browser opens. Works with Claude Code, Codex, Cursor and the default AI agent CLI:
 
 `$AH_MCP_URL` is the server URL; set it once with `export AH_MCP_URL="$(curl -fsSL https://raw.githubusercontent.com/jokerphuongnam/agents-holding-cli/main/full/connect.sh | bash -s -- --print-url)"`.

@@ -218,6 +218,20 @@ export function terminalSessionEvidence({ session, result, command, repo }) {
   const absent = fields.filter((k) => result[k] === undefined || result[k] === null || result[k] === "");
   return absent.length ? { ok: false, reason: `terminal evidence incomplete: missing ${absent.join(", ")}` } : { ok: result.exit_code === 0, reason: result.exit_code === 0 ? null : `terminal command exited ${result.exit_code}`, evidence: result };
 }
+/** Non-bypassable integrity gate: agent claims are never execution evidence. */
+export function validatePtyExecutionEvidence({ session, result, command, repo, actual = {}, maxAgeSec = 900 }) {
+  if (!session || session.status !== "connected" || session.transport !== "pty" || session.authenticated !== true) return { ok: false, state: "waiting", reason: "authenticated PTY transport unavailable; ask the user to register/reconnect the terminal in CEO/chat" };
+  const base = terminalSessionEvidence({ session, result, command, repo });
+  if (!base.ok && base.reason) return { ok: false, state: "blocked", reason: base.reason };
+  const end = new Date(result.ended_at).getTime();
+  if (!Number.isFinite(end) || Date.now() - end > maxAgeSec * 1000) return { ok: false, state: "blocked", reason: "terminal transcript is stale; rerun the exact command in the registered PTY" };
+  const mismatches = [];
+  for (const [k, expected] of [["command", command], ["cwd", repo], ["repo", repo]]) if (expected && result[k] !== expected) mismatches.push(`${k} mismatch`);
+  for (const k of ["commit", "tree", "artifact_digest"]) if (actual[k] && result[k] !== actual[k]) mismatches.push(`${k} mismatch`);
+  if (result.exit_code !== 0) mismatches.push(`exit_code=${result.exit_code}`);
+  if (!result.transcript_digest || result.transcript_digest !== result.transcript_signature) mismatches.push("unauthenticated transcript");
+  return mismatches.length ? { ok: false, state: "blocked", reason: `PTY evidence mismatch: ${mismatches.join(", ")}` } : { ok: true, state: "completed", evidence: result };
+}
 /** QC verdict: a check fails QC only if it passed on the baseline (pre-existing failures are reported, not blamed on the change). */
 export function qcVerdict(baseline, after) {
   const was = Object.fromEntries((baseline ?? []).map((r) => [r.name, r.ok]));
