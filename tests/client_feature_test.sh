@@ -55,5 +55,7 @@ grep -q 'routeForRepo' "$S/holding-listen.mjs" && grep -q 'export function route
 node "$S/release_listener_test.mjs" >/dev/null && ok 'OAuth transport and parent/child replay behavior' || no 'OAuth transport and parent/child replay behavior'
 node "$S/registry_registration_test.mjs" >/dev/null && ok 'generic project registration reconcile detects missing/stale/duplicate mappings' || no 'generic project registration reconcile detects missing/stale/duplicate mappings'
 node "$S/assignment_recovery_test.mjs" >/dev/null && ok 'generic unassigned agent-owned stage auto-assigns without native dialog' || no 'generic unassigned agent-owned stage auto-assigns without native dialog'
+grep -q 'do not read user files by default' README.md && grep -q 'Denied/private paths are never read' README.md && ok 'privacy contract documents default no-read and denied-content exclusion' || no 'privacy contract documents default no-read and denied-content exclusion'
+grep -q 'registered real terminal and consent' README.md && grep -q 'no hidden execution' README.md && ok 'privacy contract requires visible terminal execution' || no 'privacy contract requires visible terminal execution'
 printf '%s\n' "client_feature_test: $pass passed, $fail failed"
 [ "$fail" = 0 ]
