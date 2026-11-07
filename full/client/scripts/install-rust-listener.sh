@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-base="${AH_RUST_RELEASE_BASE_URL:-https://github.com/jokerphuongnam/agents-holding/releases/download/latest}"
+# Listener binaries are optional public distribution artifacts. The Rust source
+# stays in the private server repo; end users only download a Release asset.
+base="${AH_RUST_RELEASE_BASE_URL:-https://github.com/jokerphuongnam/agents-holding-cli/releases/latest/download}"
 os="$(uname -s | tr '[:upper:]' '[:lower:]')"
 arch="$(uname -m)"
 case "$os:$arch" in
