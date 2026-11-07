@@ -18,7 +18,13 @@ jobs:
       - name: Verify public payload
         run: test -x full/client/scripts/holding && test -f full/install.sh && test -f full/SETUP.md
       - name: Run client tests
-        run: bash scripts/test-all.sh
+        run: |
+          # Interactive TTY/menu tests are covered on macOS; CI packaging must
+          # run deterministic, non-interactive contract tests on Linux.
+          bash tests/client_feature_test.sh
+          node tests/workflow_invariant_test.mjs
+          bash tests/notice_test.sh
+          node tests/access_exception_test.mjs
       - name: Package public distribution
         run: |
           mkdir -p dist
