@@ -524,7 +524,9 @@ async function leanModelOnce(kind, issue, stage, prompt, role, context, rsv, { s
   } else log(`TOKENS ${issue} ${stage}: no usage reported by ${agent}`);
   const outTxt = () => { let t = ""; try { t = readFileSync(out, "utf8").slice(-6000); } catch {} return `${t}\n${ctx.stdout().slice(-4000)}\n${res.error ?? ""}`; };
   if (code !== 0) { log(`lean ${kind} call exited ${code} for ${issue}`);
-    if (!r || !Object.keys(r).length) { const e = new Error(code === "SIGTERM" || code === "SIGKILL" ? `${kind} call timed out (${runTimeoutMs / 60000} min cap)` : `${kind} call exited ${code}`); e.agentOut = outTxt(); e.agentCode = code; throw e; } }
+    const e = new Error(code === "SIGTERM" || code === "SIGKILL" ? `${kind} call timed out (${runTimeoutMs / 60000} min cap)` : `${kind} call exited ${code}`);
+    e.agentOut = outTxt(); e.agentCode = code; e.command = `${agent}${model ? ` -m ${model}` : ""}${effort ? ` --effort ${effort}` : ""}`;
+    throw e; }
   const sig = L.compactionSignal(outTxt());
   if (sig && (!r || !Object.keys(r).length)) { const e = new Error(`${kind} call lost its context (${sig})`); e.agentOut = `compacted conversation: ${sig}`; e.agentCode = 1; throw e; }
   if (sig) log(`lean ${kind} ${issue}: compaction signal "${sig}" (answer kept; checkpoint saved)`);
@@ -541,7 +543,8 @@ async function leanRun(p, na, depth = 0) {
   catch (e) {
     log(`lean run ${issue} FAILED in ${vis.stage}: ${e.message}`);
     const stp = L.stateDir(homedir(), company);
-    X.ckptSave(stp, issue, { stage: X.ckptLoad(stp, issue)?.stage ?? vis.stage, failed: e.message.slice(0, 200), blocked: e.agent?.cause ?? null });
+    const detail = [e.message, e.agentCode !== undefined && `exit_code=${e.agentCode}`, e.command && `command=${e.command}`, e.agentOut && `stderr/progress:\n${String(e.agentOut).slice(-5000)}`].filter(Boolean).join("\n");
+    X.ckptSave(stp, issue, { stage: X.ckptLoad(stp, issue)?.stage ?? vis.stage, failed: e.message.slice(0, 200), failure: { message: e.message, command: e.command ?? null, exit_code: e.agentCode ?? null, stderr_progress: String(e.agentOut ?? "").slice(-5000), at: new Date().toISOString() }, blocked: e.agent?.cause ?? null });
     if (e.server) { L.writeStatus(homedir(), { last_run: { issue, result: `PAUSED ${vis.stage}: ${e.message.slice(0, 120)}`, at: new Date().toISOString() } }); return; } // server problem: already warned; resumes from the checkpoint on the replay
     if (e.agent) {
       if (jira) { await jira.labels(issue, [X.BLOCKED_LABEL]).catch((x) => log("Jira label failed:", x.message));
@@ -551,7 +554,7 @@ async function leanRun(p, na, depth = 0) {
       return;
     }
     if (jira && /git staging|commit failed|\.agents\//i.test(String(e.message))) await jira.labels(issue, [WORKFLOW_FAILURE_LABEL]).catch((x) => log("workflow failure label failed:", x.message));
-    await comms(issue, L.failedComment(vis.staff, vis.stage, e.message), "failed");
+    await comms(issue, `${L.failedComment(vis.staff, vis.stage, e.message)}\n\nFailure evidence:\n${detail}\n\nNext action: remain in ${L.stageTitle(vis.stage)}; fix the failed command/evidence and rerun from this checkpoint.`, "failed");
     L.desktopNotify(homedir(), `agents-holding: ${issue} FAILED`, `${L.stageTitle(vis.stage)}: ${e.message}`);
     L.writeStatus(homedir(), { last_run: { issue, result: `FAILED ${vis.stage}: ${String(e.message).slice(0, 120)}`, at: new Date().toISOString() } });
   } finally {
@@ -677,7 +680,7 @@ Jira: ${issue}` });
         const r1 = await leanModel("code", issue, stage, L.codePrompt(iss, {  plan: (plan ?? "") + multi, techPlan: o.techPlan, approval, feedback: o.feedback, hints: L.fileHints(files, `${iss.summary} ${iss.description} ${plan ?? ""}`), qc: !!o.selfCheck?.[rp], preexisting: L.preexistingFails(L.loadPlan(st, issue).qc_baseline?.[rp] ?? o.baselines?.[rp]), review: !!o.review, branch }), o.dev, L.contextOf({ brief: await brief(o.dev), habits }));
         if (r1.question && !r1.summary) { await record("question", r1.question); await say(o.who, `QUESTION (${rname(rp)})\n${r1.question}`, "question"); repo = runRepos[0]; return null; }
         const sha = L.commitAll(rp, `${o.wip ? `WIP(${issue}) ${o.wip}: ` : `${issue}: `}${r1.commit_message || iss.summary || "agent change"}`);
-        if (typeof sha === "string" && sha.startsWith("failed:")) throw new Error(`git staging/commit failed: ${sha}. Task remains in Coding; fix the command and rerun from the Coding checkpoint.`);
+        if (typeof sha === "string" && sha.startsWith("failed:")) { const e = new Error(`git staging/commit failed: ${sha}`); e.command = "git add -u --; git ls-files --others --exclude-standard; git add -- <eligible paths>; git commit"; e.agentOut = sha; e.agentCode = 1; throw e; }
         const h = o.host ? host(r1) : { msg: [] };
         wheres.push(`${runRepos.length > 1 ? rname(rp) + ": " : ""}Branch ${branch}${sha ? ` @ ${sha}` : " (no changes)"}${h.url ? ` PR ${h.url}${h.merged ? " (merged)" : ""}` : " (local, not pushed)"}${h.msg.length && !h.url ? ` - ${h.msg.join("; ")}` : ""}`);
         if (!r) r = { ...r1, commit: sha }; else r = { ...r, summary: `${r.summary ?? ""}\n${r1.summary ?? ""}`, tests: [r.tests, r1.tests].filter(Boolean).join("\n"), tech_plan: [r.tech_plan, r1.tech_plan].filter(Boolean).join("\n") };
@@ -717,7 +720,9 @@ Jira: ${issue}` });
         r = parts.length ? { ...parts.at(-1), summary: parts.map((x) => x.summary).filter(Boolean).join("\n"), tests: parts.map((x) => x.tests).filter(Boolean).join("\n") } : { summary: sv.summary ?? "resumed: all sub-steps were already committed", where: sv.where ?? `Branch ${branch}` };
       }
       if (!r) return;
-      L.savePlan(st, issue, { tech_plan: sv.tech_plan ?? r.tech_plan, summary: r.summary, tests: r.tests, commit: r.commit, branch, repos: runRepos, developer: dev, qc_baseline: baselines, where: r.where });
+      const evidence = L.implementationEvidence(r, r.commit, r.where, na.implementation_policy ?? na.workflow_policy?.implementation ?? {});
+      if (!evidence.ok) { const e = new Error(`implementation evidence gate failed: ${evidence.reasons.join("; ")}`); e.command = "coding worker + local commit + required build/test"; e.agentCode = 1; e.agentOut = JSON.stringify({ summary: r.summary ?? "", tests: r.tests ?? "", commit: r.commit ?? null, where: r.where ?? "", reasons: evidence.reasons }); throw e; }
+      L.savePlan(st, issue, { tech_plan: sv.tech_plan ?? r.tech_plan, summary: r.summary, tests: r.tests, commit: r.commit, branch, repos: runRepos, developer: dev, qc_baseline: baselines, where: r.where, implementation_evidence: evidence });
       await say(who, [review ? "CODE (review feedback)" : "CODE", !sv.tech_plan && r.tech_plan && `Tech plan:\n${r.tech_plan}`, `Summary: ${r.summary ?? ""}`, r.tests && `Checks: ${r.tests}`, r.where].filter(Boolean).join("\n"));
       const art = (k) => ({ tech_plan: r.tech_plan, pr: `${r.summary}\n${r.where}`, qc_pass: r.tests || r.summary, note: `${r.summary}\n${r.tests ?? ""}\n${r.where}` }[k] ?? r.summary);
       const to = seg.moves[0];

@@ -116,6 +116,25 @@ export function neededArtifact(from, to, onEnter = false) {
   if (from === "qc") return to === "in_review" ? "pr" : "qc_pass";
   return null;
 }
+/** Evidence gate for implementation -> the next quality/review stage.  A model
+ * answer is not evidence: the worker must have produced a local commit and a
+ * non-empty, successful verification report.  Flow definitions may relax the
+ * exact command names, but never the requirement for an auditable result. */
+export function implementationEvidence(result, commit, where = "", policy = {}) {
+  const r = result && typeof result === "object" ? result : {};
+  const sha = String(commit ?? "").trim();
+  const summary = String(r.summary ?? "").trim();
+  const tests = String(r.tests ?? "").trim();
+  const location = String(r.where ?? where ?? "").trim();
+  const failures = /(?:^|\b)(?:fail(?:ed|ure)?|error|exception|not\s+run|skipped|timeout|timed\s*out|no\s+changes?)(?:\b|$)/i;
+  const reasons = [];
+  if (!summary) reasons.push("worker output is missing a summary");
+  if (!policy.allow_no_commit && (!sha || /^failed:/i.test(sha))) reasons.push("no local implementation commit exists");
+  if (!tests) reasons.push("build/test evidence is missing");
+  else if (failures.test(tests)) reasons.push("build/test evidence reports failure or was not run");
+  if (!location) reasons.push("implementation location/evidence is missing");
+  return { ok: reasons.length === 0, reasons, commit: sha || null, summary, tests, where: location };
+}
 /** Feedback quoted by the server in next_action steps (planned / coding / in_review / ba_question). */
 export function feedbackOf(na) {
   for (const s of na?.steps ?? []) { const m = s.match(/^(?:User feedback on the plan|Address|Review comment|User answered): (.*)$/s); if (m) { try { return JSON.parse(m[1]); } catch { return m[1]; } } }
