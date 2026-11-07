@@ -8,6 +8,8 @@ assert.equal(accessDecision(policy, "secrets/key.txt", "read", { ...id, agent_id
 assert.equal(accessDecision(policy, "secrets/key.txt", "read", { ...id, device_id: "dev-2" }).allowed, false, "wrong device denied");
 assert.equal(accessDecision(policy, "secrets/key.txt", "read", { ...id, repo: "/other" }).allowed, false, "wrong repo denied");
 assert.equal(accessDecision(policy, "secrets/key.txt", "read", { ...id, remote: true }).allowed, false, "remote/server agent denied");
+assert.equal(accessDecision({ files: { deny: ["secrets/**"], exceptions: [{ ...policy.files.exceptions[0], agent_id: "deploy-service", agent_type: "hosted_service", device_id: null, session_id: null }] } }, "secrets/key.txt", "read", { company: "acme", repo: "/repo", agent_id: "deploy-service", agent_type: "hosted_service", remote: true, hosted: true }).allowed, true, "approved hosted special allow works");
+assert.equal(accessDecision({ files: { deny: ["secrets/**"], exceptions: [{ ...policy.files.exceptions[0], agent_id: "deploy-service", agent_type: "hosted_service", device_id: null, session_id: null }] } }, "secrets/key.txt", "read", { company: "acme", repo: "/repo", agent_id: "deploy-service", agent_type: "other", remote: true, hosted: true }).allowed, false, "hosted identity mismatch denied");
 assert.equal(accessDecision(policy, "secrets/key.txt", "read", id, Date.parse("2100-01-01T00:00:00Z")).allowed, false, "expired exception denied");
 assert.equal(accessDecision({ files: { ...policy.files, exceptions: [{ ...policy.files.exceptions[0], revoked: true }] } }, "secrets/key.txt", "read", id).allowed, false, "revoked exception denied");
 console.log("access_exception_test: pass");

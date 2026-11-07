@@ -6,7 +6,9 @@ The runner and listener do not read user files by default, crawl the home direct
 
 Terminal commands require a registered real terminal and consent. The user sees every command in that terminal; agents-holding performs no hidden execution elsewhere.
 
-Company deny paths remain denied to all staff and terminal sessions unless a local exception exactly matches company, canonical repo, agent identity, device/session, operation, consent, reason, expiry and revocation state. Exceptions are read/write/execute-specific, never apply to remote/server agents, and never upload the protected content. Audit records are redacted metadata only; QC verifies no leakage.
+Company deny paths remain denied to all staff and terminal sessions unless the company creates a `special allow` for an exact named authenticated identity. The identity may be a local agent or an approved hosted agent/service, but hosted access is permitted only through the policy-controlled runtime. The exception must match company, canonical repo/path, agent identity/type, operation, consent, reason, expiry and revocation state. Normal staff permissions never override company deny. Audit records are redacted metadata only; QC verifies no leakage.
+
+Setup is explicit through CEO/chat (`company deny` → `special allow` → dry-run → owner confirmation) or policy JSON, for example: `holding company process add-json '{"files":{"exceptions":[{"kind":"special_allow","agent_id":"deploy-service","agent_type":"hosted_service","path":"deploy/prod.env","operations":["read"],"consent":true,"reason":"release deploy","expires_at":"2099-01-01T00:00:00Z"}]}}'`. Revoke by setting `revoked: true` or removing the exception; least privilege and path traversal checks remain mandatory.
 
 Languages: **English** · [Tiếng Việt](localized/README.vi.md) · [日本語](localized/README.ja.md) · [한국어](localized/README.ko.md) · [简体中文](localized/README.zh-CN.md) · [Español](localized/README.es.md) · [Français](localized/README.fr.md) · [Deutsch](localized/README.de.md)
 
