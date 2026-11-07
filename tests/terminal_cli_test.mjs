@@ -6,7 +6,7 @@ import { join } from "node:path";
 const root = new URL("../full/client/scripts/terminal.mjs", import.meta.url).pathname;
 const home = mkdtempSync(join(tmpdir(), "ah-terminal-")), repo = join(home, "repo");
 execFileSync("mkdir", ["-p", repo]);
-const run = (cwd, ...a) => execFileSync(process.execPath, [root, ...a], { cwd, env: { ...process.env, HOME: home, AGENTS_HOLDING_DEVICE: "device-test" }, encoding: "utf8" });
+const run = (cwd, ...a) => execFileSync(process.execPath, [root, ...a], { cwd, env: { ...process.env, HOME: home, AGENTS_HOLDING_DEVICE: "device-test", AH_TERMINAL_TEST_METADATA: "1" }, encoding: "utf8" });
 assert.throws(() => run(home, "link", "bad", "--repo", repo), /invalid terminal token/);
 assert.throws(() => run(home, "link", "ahterm_12345678", "--repo", repo), /wrong repo\/cwd/);
 const linked = JSON.parse(run(repo, "register", "--company", "acme", "--repo", repo));
