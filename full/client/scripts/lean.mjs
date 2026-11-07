@@ -181,7 +181,7 @@ export function detectChecks(repo, has = (f) => existsSync(join(repo, f)), read 
     if (Array.isArray(checks) && checks.length) return checks.map((x, i) => {
       const command = String(x.command ?? "").trim();
       const parts = command ? command.split(/\s+/) : [];
-      return { name: x.id || `qc-check-${i + 1}`, cmd: parts[0], args: [...parts.slice(1), ...(Array.isArray(x.args) ? x.args.map(String) : [])], runner: x.runner ?? "script", repo: x.repo, cwd: x.cwd, timeout_ms: Number(x.timeout_sec ?? 300) * 1000, required: x.required !== false, evidence: x.evidence };
+      return { name: x.id || `qc-check-${i + 1}`, cmd: parts[0], args: [...parts.slice(1), ...(Array.isArray(x.args) ? x.args.map(String) : [])], runner: x.runner ?? "script", company: cfg.company, repo: x.repo, cwd: x.cwd, timeout_ms: Number(x.timeout_sec ?? 300) * 1000, required: x.required !== false, evidence: x.evidence };
     }).filter((x) => x.cmd);
   } catch {}
   if (has("package.json")) {
@@ -200,7 +200,7 @@ export function runChecks(repo, checks, exec = (c, a, opts = {}) => execFileSync
       const sessionsFile = join(homedir(), ".config/agents-holding/terminal-sessions/sessions.json");
       const sessions = JSON.parse(readFileSync(sessionsFile, "utf8"));
       const targetRepo = realpathSync(resolve(c.repo || repo));
-      const s = Object.values(sessions).find((x) => x?.status === "connected" && x?.repo === targetRepo && x?.heartbeat_at && Date.now() - new Date(x.heartbeat_at).getTime() < 90000);
+      const s = Object.values(sessions).filter((x) => x?.status === "connected" && (!c.company || x.company === c.company) && x?.repo === targetRepo && x?.heartbeat_at && Date.now() - new Date(x.heartbeat_at).getTime() < 90000).sort((a, b) => new Date(b.heartbeat_at) - new Date(a.heartbeat_at))[0];
       if (!s) throw new Error(`no connected registered terminal for ${targetRepo}`);
       const script = join(homedir(), ".agents-holding/scripts/terminal.mjs");
       o = execFileSync(process.execPath, [script, "dispatch", s.session_id, [c.cmd, ...(c.args ?? [])].join(" ")], { cwd: c.cwd ? resolve(repo, c.cwd) : repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: c.timeout_ms || 0, env: { ...process.env, CI: "1" } });
