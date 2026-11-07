@@ -800,6 +800,20 @@ setInterval(() => {
   }
   log(`scheduled Jira task sync started (every ${reconcileEverySec}s)`);
 }, reconcileEverySec * 1000).unref?.();
+const configChangeSeen = new Map();
+setInterval(async () => {
+  for (const c of companyList) {
+    const marker = join(homedir(), ".config/agents-holding/state", c, "config-changed");
+    try {
+      const m = statSync(marker).mtimeMs;
+      if (m > (configChangeSeen.get(c) ?? 0)) {
+        configChangeSeen.set(c, m);
+        log(`config changed: reconciling ${c}`);
+        await reconcile(c);
+      }
+    } catch {}
+  }
+}, 5000).unref?.();
 // Startup recovery is a state scan, not event replay: Jira may have changed while this process was off.
 const startupRecovered = new Set();
 async function startupRecovery(company) {
