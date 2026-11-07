@@ -25,6 +25,13 @@ Only companies connected to holding are listed. Older local-only companies are n
 ## Migrating an older local company
 
 `holding company migrate <repo or .agents/x-company folder>`
+
+The migration reads the canonical role catalog from `.grok/agents`, `.claude/agents`,
+and `.codex/agents` (all harnesses are supported). Files ending in ` 2.md` or
+` 3.md` are treated as iCloud duplicates. Role ids, parent links, and layout paths
+are reconciled idempotently into the holding company; the imported roster is not
+truncated by the interactive hiring limit, and existing provider bindings, skills,
+plans, and parent-child relationships are preserved.
 1. Backs up the folder to `~/.config/agents-holding/backups/<name>-<time>.tgz` (originals stay on disk).
 2. Sends only names and counts: staff role ids, number of plans, parent, creation time. No file contents.
 3. Staff whose role exists in the holding catalog become real staff (up to the plan limit, see below). Custom roles (not in the catalog) are recorded by name only in the company's history; holding does not read their persona files. To keep reusing one, turn it into a private repo skill at `.agents/custom-skills/<id>/SKILL.md`.

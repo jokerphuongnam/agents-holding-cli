@@ -16,6 +16,29 @@ let dir = resolve(pos[0]);
 if (!basename(dir).endsWith("-company")) { const a = join(dir, ".agents"); const c = existsSync(a) ? readdirSync(a).filter((d) => d.endsWith("-company")) : []; if (c.length !== 1) { console.error(vi ? "Không tìm thấy đúng 1 thư mục công ty (.agents/*-company)." : "Could not find exactly one .agents/*-company folder."); process.exit(1); } dir = join(a, c[0]); }
 const repo = dirname(dirname(dir)), rd = (p) => { try { return readFileSync(join(dir, p), "utf8"); } catch { return ""; } };
 const walk = (d) => { try { return readdirSync(d).flatMap((f) => { const p = join(d, f); return statSync(p).isDirectory() ? walk(p) : [p]; }); } catch { return []; } };
+function canonicalRoleId(file) {
+  const n = basename(file, ".md").toLowerCase().replace(/\s+[23]$/, "");
+  return /^[a-z][a-z0-9-]{1,60}$/.test(n) ? n : null;
+}
+function roleParent(text) {
+  const m = text.match(/(?:parent|reports\s+to|team\s+lead|lead)\s*[:—-]\s*`?([a-z][a-z0-9-]{1,60})`?/i);
+  return m ? m[1].toLowerCase() : null;
+}
+function roleCatalog(repo, dir) {
+  const roots = [join(repo, ".grok/agents"), join(repo, ".claude/agents"), join(repo, ".codex/agents")];
+  const byId = new Map();
+  for (const root of roots) for (const p of walk(root)) {
+    if (!p.endsWith(".md") || /README/i.test(p) || /\s+[23]\.md$/i.test(p)) continue;
+    const id = canonicalRoleId(p); if (!id || byId.has(id)) continue;
+    let body = ""; try { body = readFileSync(p, "utf8"); } catch {}
+    byId.set(id, { id, parent: roleParent(body), layout: p.slice(root.length + 1).replace(/\\/g, "/"), persona_md: body || null });
+  }
+  // Legacy company exports are authoritative when the repo has no harness catalog.
+  if (!byId.size) for (const p of walk(join(dir, "system/staffs"))) {
+    const id = canonicalRoleId(p); if (id && !byId.has(id)) byId.set(id, { id, parent: null, layout: p.slice(join(dir, "system/staffs").length + 1), persona_md: null });
+  }
+  return [...byId.values()].sort((a, b) => a.id.localeCompare(b.id));
+}
 export function parseLocal(dir) {
   const rdx = (p) => { try { return readFileSync(join(dir, p), "utf8"); } catch { return ""; } };
   const roles = walk(join(dir, "system/staffs")).filter((p) => p.endsWith(".md") && !/README/i.test(p)).map((p) => basename(p, ".md").toLowerCase());
@@ -26,7 +49,7 @@ export function parseLocal(dir) {
   let created = null; try { created = statSync(dir).birthtime.toISOString(); } catch {}
   return { name, roles: [...new Set(roles)], plans, parentLocal: parent, tech, created_at: created };
 }
-const L = parseLocal(dir); if (opt("--name")) L.name = opt("--name"); const slug = opt("--slug") || L.name, parent = opt("--parent") || (L.parentLocal ? L.parentLocal.replace(/-company$/, "") : null);
+const L = parseLocal(dir); const catalog = roleCatalog(repo, dir); if (catalog.length) L.roles = catalog.map((x) => x.id); if (opt("--name")) L.name = opt("--name"); const slug = opt("--slug") || L.name, parent = opt("--parent") || (L.parentLocal ? L.parentLocal.replace(/-company$/, "") : null);
 say(`Local company ${L.name}: ${L.roles.length} staff files, ${L.plans} plans${parent ? `, parent ${parent}` : ""}`, `Công ty cục bộ ${L.name}: ${L.roles.length} file nhân sự, ${L.plans} kế hoạch${parent ? `, công ty mẹ ${parent}` : ""}`);
 if (argv.includes("--dry-run")) process.exit(0);
 const bk = join(homedir(), ".config/agents-holding/backups"); mkdirSync(bk, { recursive: true, mode: 0o700 });
@@ -42,7 +65,7 @@ async function mcp(name, args) {
   const j = await r.json(), t = j.result?.content?.[0]?.text ?? j.error?.message ?? "";
   if (j.error || j.result?.isError) { console.error(t); process.exit(1); } try { return JSON.parse(t); } catch { return t; }
 }
-const out = await mcp("company_import", { name: L.name, slug, roles: L.roles, plans: L.plans, tech: L.tech, ...(L.created_at ? { created_at: L.created_at } : {}), ...(parent ? { parent } : {}), ...(opt("--jira") ? { jira_project_key: opt("--jira") } : {}) });
+const out = await mcp("company_import", { name: L.name, slug, roles: L.roles, catalog, plans: L.plans, tech: L.tech, ...(L.created_at ? { created_at: L.created_at } : {}), ...(parent ? { parent } : {}), ...(opt("--jira") ? { jira_project_key: opt("--jira") } : {}) });
 const d = out.data ?? out;
 const cj = join(repo, ".agents/company.json"); if (existsSync(cj)) writeFileSync(cj + ".bak", readFileSync(cj));
 writeFileSync(cj, JSON.stringify({ company: d.company }, null, 1) + "\n");
