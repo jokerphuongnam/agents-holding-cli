@@ -128,7 +128,7 @@ const joined = new Set();
 const readiness = () => listenerJira && joined.size === companyList.length && companyList.length > 0;
 const heartbeatIfStale = () => { if (Date.now() - lastBeat > 300000) heartbeat(); };
 const heartbeat = (requested = "online") => { heartbeatChain = heartbeatChain.catch(() => {}).then(() => { const state = requested === "stopped" ? "stopped" : (readiness() ? "online" : "starting"); if (state === "online") log("readiness online", companyList.join(",")); return (lastBeat = Date.now(), Promise.all(companyList.map((company) => mcp("listener_heartbeat", { company, host: hostname(), pid: process.pid, autostart: existsSync(autostartPlist), version: AH_CLIENT_VERSION, state, meta: { ...localMeta(), jira_ready: listenerJira, process_ready: true, realtime_ready: readiness() } })
-  .then(async (r) => { if (r?.communication) commMode[company] = r.communication; if (r?.enterprise) myJira[company] = r.jira_account ?? null; L.writeStatus(homedir(), { companies: { [company]: { heartbeat_at: new Date().toISOString(), heartbeat_ok: true } } });
+  .then(async (r) => { if (r?.communication) commMode[company] = r.communication; if (r?.enterprise) myJira[company] = r.jira_account ?? null; L.writeStatus(homedir(), { heartbeat_ok_at: new Date().toISOString(), companies: { [company]: { heartbeat_at: new Date().toISOString(), heartbeat_ok: true } } });
     if (state !== "online" || !(r?.was_offline || r?.missed?.length)) return;
     log(`Jira Listener back online for ${company} (server saw it offline since ${r.offline_since ?? "?"}); ${r.missed?.length ?? 0} card(s) changed meanwhile`);
     for (const m of r.missed ?? []) if (m.issue && m.comment) await comms(m.issue, m.comment);
