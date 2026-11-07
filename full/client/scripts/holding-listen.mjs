@@ -254,6 +254,17 @@ async function comms(issue, text, kind = null) {
   if (!jira) return log(`JIRA (no client): ${String(text).slice(0, 160).replace(/\n/g, " ")}`);
   await jira.comment(issue, text).catch((e) => log("Jira comment failed:", e.message));
 }
+async function markWaiting(issue, na) {
+  if (!issue || !na?.waiting) return;
+  const reason = Array.isArray(na.steps) ? na.steps[0] : (na.waiting_reason ?? `Agents Holding is waiting at ${na.stage ?? "this stage"}.`);
+  const marker = `${na.stage ?? "?"}|${reason}`;
+  const st = L.readStatus(homedir())?.companies?.[company] ?? {};
+  if (st.waiting_notice?.[issue] === marker) return;
+  try { if (jira) await jira.flag(issue); } catch (e) { log("Jira flag failed:", e.message); }
+  await comms(issue, `⏸️ Agents Holding đang chờ xử lý tại ${na.stage ?? "flow"}.\n\n${reason}`, "gate");
+  const waiting = { ...(st.waiting_notice ?? {}), [issue]: marker };
+  L.writeStatus(homedir(), { companies: { [company]: { waiting_notice: waiting } } });
+}
 const leanHome = lean ? L.leanGrokHome(homedir()) : null;
 const listenerJira = dryJira || !!jiraCfg; // readiness is established before the listener advertises online
 const sessDir = (sid, home = join(homedir(), ".grok")) => join(home, "sessions", encodeURIComponent(repo), sid);
@@ -316,7 +327,7 @@ async function run(p, depth = 0) {
   const issue = p.issue ?? p.task_id ?? "";
   if (depth === 0 && !(await useCtx(p))) return;
   let na = null; try { na = await mcp("next_action", { company, task: issue, listener_jira: listenerJira }); } catch (e) { log("next_action failed:", e.message); }
-  if (na?.waiting && p.event !== "manual") { log(`skip ${issue}: waiting (${na.stage})`); return; }
+  if (na?.waiting && p.event !== "manual") { await markWaiting(issue, na); log(`skip ${issue}: waiting (${na.stage})`); return; }
   if (lean && na) return leanRun(p, na, depth);
   const model = process.env.AH_MODEL || na?.model || null;
   const chainTxt = na?.chain?.length ? ` Chain these stages in this run: ${na.chain.map((c) => c.name).join(" -> ")}.` : "";
@@ -854,7 +865,7 @@ async function connect(company) {
         if (!(p.event === "staffing_choice" && !p.waiting)) return; // "3 proceed": confirm, then run
       }
       applyJiraRules(p).catch((e) => log("rules failed:", e.message));
-      if (p.waiting) return; // user gate
+      if (p.waiting) { markWaiting(p.issue ?? p.task_id, p).catch((e) => log("waiting marker failed:", e.message)); return; } // user gate
       if (DEBOUNCED.has(p.event)) return debounce(p); // a drag + comment arrive as 2 webhooks: one run, after both landed
       // agent_move: the agent's own advance. If a run for that issue is still active it is queued and handled
       // after exit (the run may stop right after advancing, e.g. pre_coding -> coding, leaving the new stage undone).
