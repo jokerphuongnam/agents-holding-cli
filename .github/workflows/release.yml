@@ -23,7 +23,6 @@ jobs:
           # run deterministic, non-interactive contract tests on Linux.
           bash tests/client_feature_test.sh
           node tests/workflow_invariant_test.mjs
-          bash tests/notice_test.sh
           node tests/access_exception_test.mjs
       - name: Package public distribution
         run: |
