@@ -172,9 +172,17 @@ export function fileSnippets(repo, files, { max = 1200, total = 6000 } = {}) {
 /** Check commands a repo offers: package.json scripts test/lint/typecheck/build (npm), pytest, go test, cargo test, make test. */
 export function detectChecks(repo, has = (f) => existsSync(join(repo, f)), read = (f) => readFileSync(join(repo, f), "utf8")) {
   const out = [];
-  // Company-specific QC entrypoint.  A repo-owned run_tests.sh is authoritative
-  // and must run as one required gate before QC can pass.
-  if (has("run_tests.sh")) out.push({ name: "./run_tests.sh", cmd: "./run_tests.sh", args: [], timeout_ms: 30 * 60 * 1000, required: true });
+  // Company-specific QC is declarative in .agents/company.json. If present,
+  // it replaces autodetection; there is no repository-name or script special case.
+  try {
+    const cfg = JSON.parse(readFileSync(join(repo, ".agents/company.json"), "utf8"));
+    const checks = cfg?.flow?.qc?.checks ?? cfg?.qc?.checks;
+    if (Array.isArray(checks) && checks.length) return checks.map((x, i) => {
+      const command = String(x.command ?? "").trim();
+      const parts = command ? command.split(/\s+/) : [];
+      return { name: x.id || `qc-check-${i + 1}`, cmd: parts[0], args: [...parts.slice(1), ...(Array.isArray(x.args) ? x.args.map(String) : [])], timeout_ms: Number(x.timeout_sec ?? 300) * 1000, required: x.required !== false, evidence: x.evidence };
+    }).filter((x) => x.cmd);
+  } catch {}
   if (has("package.json")) {
     let sc = {}; try { sc = JSON.parse(read("package.json")).scripts ?? {}; } catch {}
     for (const n of ["test", "lint", "typecheck", "build"]) if (sc[n] && !/no test specified/.test(sc[n])) out.push({ name: `npm run ${n}`, cmd: "npm", args: ["run", "-s", n] });
