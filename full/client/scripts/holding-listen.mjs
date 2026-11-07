@@ -808,7 +808,13 @@ async function startupRecovery(company) {
   const boards = registry.projects.flatMap((p) => p.boards).filter((b) => b.company === company);
   for (const b of boards) {
     const res = await jira.search(`project = "${b.project_key}" AND statusCategory = "In Progress" ORDER BY updated ASC`, ["status", "updated", "summary", "labels"]);
-    for (const x of res ?? []) { if (!x.key) continue; log(`startup recovery: checking ${x.key} (${x.fields?.status?.name ?? "In Progress"})`); wake({ company, issue: x.key, event: "startup_recovery", stage: x.fields?.status?.name }); }
+    for (const x of res ?? []) {
+      if (!x.key) continue;
+      const stage = x.fields?.status?.name ?? "In Progress";
+      log(`startup recovery: checking ${x.key} (${stage})`);
+      if (jira) await jira.comment(x.key, `🔄 Agents Holding startup recovery: đã kiểm tra task khi Jira Listener khởi động lại (${stage}).`).catch((e) => log(`startup recovery comment ${x.key} failed:`, e.message));
+      wake({ company, issue: x.key, event: "startup_recovery", stage });
+    }
   }
 }
 // Company-defined Jira Listener rules: real events only; deterministic planning and Jira actions use zero model tokens.
