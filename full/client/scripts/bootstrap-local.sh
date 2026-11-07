@@ -21,15 +21,15 @@ REPO_URL="${AH_FREE_REPO:-https://github.com/jokerphuongnam/agents-holding-cli.g
 SRC="${AH_FREE_SRC:-$HOME/.agents-holding-src}"
 progress() { printf '[bootstrap %s] %s\n' "$1" "$2"; }
 
-progress 1/5 "client scripts -> $DEST"
+progress 1/5 "published client artifact -> $DEST"
 mkdir -p "$HOME/.config/agents-holding" "$HOME/.local/bin"
-if [ -d "$SRC/.git" ]; then
-  git -C "$SRC" fetch -q --depth 1 origin main 2>/dev/null || true
-  git -C "$SRC" checkout -q -f origin/main 2>/dev/null || git -C "$SRC" pull -q --ff-only 2>/dev/null || true
-else
-  rm -rf "$SRC"
-  git clone -q --depth 1 --branch main "$REPO_URL" "$SRC"
-fi
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/ah-bootstrap.XXXXXX")"; trap 'rm -rf "$tmp"' EXIT
+endpoint="https://api.github.com/repos/jokerphuongnam/agents-holding-cli/releases/latest"
+asset_url="$(curl -fsSL -H 'Accept: application/vnd.github+json' "$endpoint" | awk -F'"' '$2=="browser_download_url" && $4 ~ /agents-holding-cli-.*\.tar\.gz$/ {print $4; exit}')"
+[ -n "$asset_url" ] || { echo "published agents-holding-cli release artifact not found" >&2; exit 1; }
+curl -fsSL "$asset_url" -o "$tmp/client.tar.gz"
+mkdir -p "$tmp/src" && tar xzf "$tmp/client.tar.gz" -C "$tmp/src"
+SRC="$tmp/src"
 mkdir -p "$DEST"
 rsync -a --delete --exclude .git "$SRC/full/client/scripts/" "$DEST/scripts/" 2>/dev/null \
   || { mkdir -p "$DEST/scripts"; cp -R "$SRC/full/client/scripts/." "$DEST/scripts/"; }
