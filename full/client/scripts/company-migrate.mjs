@@ -13,8 +13,8 @@ const pos = argv.filter((x, i) => !x.startsWith("--") && !["--parent", "--slug",
 const vi = /^vi/.test(process.env.AH_LANG || process.env.LANG || ""), say = (en, v) => console.log(vi ? v : en);
 if (!pos[0]) { console.error("usage: holding company migrate <local company folder> [--parent <company>] [--dry-run]"); process.exit(2); }
 let dir = resolve(pos[0]);
-if (!basename(dir).endsWith("-company")) { const a = join(dir, ".agents"); const c = existsSync(a) ? readdirSync(a).filter((d) => d.endsWith("-company")) : []; if (c.length !== 1) { console.error(vi ? "Không tìm thấy đúng 1 thư mục công ty (.agents/*-company)." : "Could not find exactly one .agents/*-company folder."); process.exit(1); } dir = join(a, c[0]); }
-const repo = dirname(dirname(dir)), rd = (p) => { try { return readFileSync(join(dir, p), "utf8"); } catch { return ""; } };
+if (!basename(dir).endsWith("-company")) { const a = join(dir, ".agents"); const c = existsSync(a) ? readdirSync(a).filter((d) => d.endsWith("-company")) : []; if (c.length === 1) dir = join(a, c[0]); else if (!existsSync(join(a, "company.json"))) { console.error(vi ? "Không tìm thấy đúng 1 thư mục công ty (.agents/*-company)." : "Could not find a company catalog (legacy .agents/*-company or .agents/company.json)."); process.exit(1); } }
+const repo = basename(dir).endsWith("-company") ? dirname(dirname(dir)) : dir, rd = (p) => { try { return readFileSync(join(dir, p), "utf8"); } catch { return ""; } };
 const walk = (d) => { try { return readdirSync(d).flatMap((f) => { const p = join(d, f); return statSync(p).isDirectory() ? walk(p) : [p]; }); } catch { return []; } };
 function canonicalRoleId(file) {
   const n = basename(file, ".md").toLowerCase().replace(/\s+[23]$/, "");

@@ -10,4 +10,5 @@ assert.match(source, /replace\(\/\\s\+\[23\]\$\//);
 assert.match(source, /catalog/);
 assert.match(source, /repoCompany/);
 assert.match(source, /repo_hint: repo/);
+assert.match(source, /company\.json/);
 console.log("company-migrate catalog contract: ok");
