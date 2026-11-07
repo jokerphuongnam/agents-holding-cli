@@ -29,26 +29,13 @@ install_watchdog() { # always on (also at login), independent of the listener jo
 }
 running_pid() { launchctl print "$DOMAIN/$LABEL" 2>/dev/null | awk '/^\tpid = /{print $3; exit}'; }
 loaded() { launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; }
-process_ok() { local p="${1:-}"; [ -n "$p" ] && kill -0 "$p" 2>/dev/null && ps -p "$p" -o command= 2>/dev/null | grep -Eq 'run-listener|holding-listen|node'; }
+process_ok() { local p="${1:-}"; [ -n "$p" ] && kill -0 "$p" 2>/dev/null && ps -p "$p" -o command= 2>/dev/null | grep -Eq 'run-listener|agents-holding-listener'; }
 heartbeat_fresh() {
-  local n; n="$(command -v node || true)"; [ -n "$n" ] || return 1
-  "$n" - "$HOME/.config/agents-holding/listener-status.json" "${AH_STALE_HEARTBEAT_SEC:-150}" <<'NODE'
-const fs = require("fs");
-try { const [file, max] = process.argv.slice(2); const s = JSON.parse(fs.readFileSync(file, "utf8")); const t = Date.parse(s.heartbeat_ok_at || "");
-  process.exit(s.listener_state === "online" && Number.isFinite(t) && Date.now() - t <= Number(max) * 1000 ? 0 : 1);
-} catch { process.exit(1); }
-NODE
+  curl -fsS --max-time 2 "http://${AH_LISTENER_HOST:-127.0.0.1}:${AH_LISTENER_PORT:-8787}/health" >/dev/null 2>&1
 }
 running() { local p; p="$(running_pid)"; process_ok "$p"; }
 ready_for_start() {
-  local n; n="$(command -v node || true)"; [ -n "$n" ] || return 1
-  "$n" - "$HOME/.config/agents-holding/listener-status.json" "$1" <<'NODE'
-const fs = require("fs");
-try { const [file, start] = process.argv.slice(2); const s = JSON.parse(fs.readFileSync(file, "utf8"));
-  const started = Date.parse(s.started_at || ""), beat = Date.parse(s.heartbeat_ok_at || "");
-  process.exit(s.listener_state === "online" && Number.isFinite(started) && Number.isFinite(beat) && started >= Number(start) && beat >= Number(start) ? 0 : 1);
-} catch { process.exit(1); }
-NODE
+  curl -fsS --max-time 2 "http://${AH_LISTENER_HOST:-127.0.0.1}:${AH_LISTENER_PORT:-8787}/health" >/dev/null 2>&1
 }
 plist_repo() { [ -f "$1" ] || return 0; /usr/libexec/PlistBuddy -c "Print :EnvironmentVariables:AH_REPO_DIR" "$1" 2>/dev/null || true; }
 
@@ -89,7 +76,7 @@ cmd_status() {
   last="$(grep -E ' join ' "$LOG" 2>/dev/null | tail -1 || true)"
   echo "last join    : ${last:-never}"
   grep -q "Operation not permitted" "$ERR" 2>/dev/null && \
-    echo "WARNING  : macOS blocked file access (jira-listener.err.log). Allow node in System Settings > Privacy & Security > Files and Folders (Documents) or Full Disk Access, then: holding listener stop && holding listener start" || true
+    echo "WARNING  : macOS blocked file access (jira-listener.err.log). Allow the native Rust listener in System Settings > Privacy & Security > Files and Folders (Documents) or Full Disk Access, then: holding listener stop && holding listener start" || true
 }
 
 cmd_on() {
