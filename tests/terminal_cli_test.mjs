@@ -1,0 +1,17 @@
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+const root = new URL("../full/client/scripts/terminal.mjs", import.meta.url).pathname;
+const home = mkdtempSync(join(tmpdir(), "ah-terminal-")), repo = join(home, "repo");
+execFileSync("mkdir", ["-p", repo]);
+const run = (cwd, ...a) => execFileSync(process.execPath, [root, ...a], { cwd, env: { ...process.env, HOME: home, AGENTS_HOLDING_DEVICE: "device-test" }, encoding: "utf8" });
+assert.throws(() => run(home, "link", "bad", "--repo", repo), /invalid terminal token/);
+assert.throws(() => run(home, "link", "ahterm_12345678", "--repo", repo), /wrong repo\/cwd/);
+const linked = JSON.parse(run(repo, "link", "ahterm_12345678", "--repo", repo));
+assert.equal(linked.status, "connected");
+assert.match(run(repo, "status", linked.session_id), /connected/);
+assert.equal(JSON.parse(run(repo, "approve", linked.session_id)).consent, "approved");
+assert.equal(JSON.parse(run(repo, "cancel", linked.session_id)).status, "cancelled");
+console.log("terminal_cli_test: pass");

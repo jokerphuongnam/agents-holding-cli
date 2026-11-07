@@ -22,6 +22,19 @@ See [docs/WHO-DECIDES.md](docs/WHO-DECIDES.md): the default Jira flow, colour-co
 
 No key yet? `full/install.sh` offers **Generate key** (a Free key for this Mac, 1,500 credits a month) or **Import key**. Plans, credits and recovery: [docs/RESILIENCE.md](docs/RESILIENCE.md#keys-and-credits).
 
+### Link an already-open terminal
+
+When CEO/chat posts a one-time terminal request, run this in the real terminal, from the exact repository:
+
+```bash
+cd /path/to/repository
+holding terminal link ahterm_<one-time-token> --repo /path/to/repository
+holding terminal status
+holding terminal approve <session-id>
+```
+
+Use `holding terminal cancel <session-id>` to cancel. The CLI binds user, device, repository and cwd; wrong token/repo, expiry, disconnect or missing consent fails closed and returns to CEO/chat. The listener never guesses a window title/process, opens a native dialog, or treats comments/model output as terminal evidence. Only the bound terminal's live output, exit code, timestamps, toolchain/env and artifact evidence can reach QC.
+
 Got a license key (`ah_live_...`)? Add the server to your agent and sign in with the key when the browser opens. Works with Claude Code, Codex, Cursor and the default AI agent CLI:
 
 `$AH_MCP_URL` is the server URL; set it once with `export AH_MCP_URL="$(curl -fsSL https://raw.githubusercontent.com/jokerphuongnam/agents-holding-cli/main/full/connect.sh | bash -s -- --print-url)"`.

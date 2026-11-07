@@ -65,6 +65,7 @@ srv() { exec bash "$here/ah-cli.sh" "$noun" "$verb" "$@"; }  # server-rendered t
 case " $* " in *" --all "*) case "$noun $verb" in "status "|"status --all"|"task list"|"task history"|"jira list"|"jira board"|"billing usage"|"staff list") exec node "$here/all-cli.mjs" "$noun" "$verb" "$@" ;; esac ;; esac
 case "$noun" in update|upgrade|help|document|docs|-h|--help) ;; *) [ "${AH_NO_UPDATE_CHECK:-}" = 1 ] || [ "${AH_HOOK_RUN:-}" = 1 ] || bash "$here/update.sh" --check 2>/dev/null </dev/tty || true ;; esac
 case "$noun" in
+  terminal) exec node "$here/terminal.mjs" "$verb" "$@" ;;
   update|upgrade) exec bash "$here/update.sh" ${verb:+"$verb"} "$@" ;;
   uninstall) exec bash "$here/uninstall-local.sh" ${verb:+"$verb"} "$@" ;;
   codegraph|code-graph) case "${verb:-status}" in
