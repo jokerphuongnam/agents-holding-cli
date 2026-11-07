@@ -60,11 +60,13 @@ export async function connect(provider, { log = console.log, timeoutMs = 300000,
     const b = await post("/begin", { provider, loopback: `http://127.0.0.1:${port}/cb`, challenge });
     log(`Opening the browser to connect ${provider}...`); if (!openUrl(b.url)) log(`Open this link to approve: ${b.url}`); else log(`(If it did not open: ${b.url})`);
     const t0 = Date.now(); let tok = null;
-    await Promise.race([got, new Promise((r) => setTimeout(r, timeoutMs))]);
+    let timeoutHandle;
+    await Promise.race([got, new Promise((r) => { timeoutHandle = setTimeout(r, timeoutMs); })]);
+    if (timeoutHandle) clearTimeout(timeoutHandle);
     while (!tok && Date.now() - t0 < timeoutMs) { const j = await post("/claim", { provider, state: b.state, verifier }); if (!j.pending) tok = j; else await new Promise((r) => setTimeout(r, 2000)); }
     if (!tok) throw new Error("timed out waiting for approval");
     tok = await enrichAccount(provider, tok); save(provider, tok); return `${provider} connected as ${accountOf(tok)}`;
-  } finally { srv.closeAllConnections?.(); srv.closeIdleConnections?.(); srv.close(); }
+  } finally { srv.closeAllConnections?.(); srv.closeIdleConnections?.(); srv.close(); srv.unref?.(); }
 }
 /** Valid access token (refreshing through our server when expired), or null when not connected. */
 export async function token(provider, f = fetch) {
