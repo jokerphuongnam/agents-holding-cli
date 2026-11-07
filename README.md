@@ -39,6 +39,19 @@ Integrity rule: agent claims/logs are never evidence. The PTY transcript must be
 
 Terminal registration is opt-in. The default workflow never asks for a terminal and never dispatches commands there. Only a confirmed company/project QC rule with `runner: "registered_terminal"`, command, repo/cwd, consent/allowlist, evidence, timeout and recovery activates terminal selection. Without that rule, normal workflow behavior is unchanged. With it but no available registered terminal, the listener stays waiting/Blocked and tells the user through Jira + CEO/chat to run `holding terminal register`.
 
+Registration scope is immutable and exact:
+
+```bash
+cd /path/to/repo
+holding terminal register --repo /path/to/repo        # explicit repo
+holding terminal register --repo Nailly                # registered repo name
+holding terminal register                              # infer company + current repo from canonical config
+holding terminal status
+holding terminal unregister <session-id>
+```
+
+The session records company, canonical repo path, cwd, user and device. Every workflow command and evidence handoff must match that company+repo (parent/child access is allowed only by the effective company policy). A mismatch is rejected and routed to Jira + CEO/chat; it never silently rebinds. To change scope, explicitly unregister and register again. Restart persistence does not widen scope.
+
 Got a license key (`ah_live_...`)? Add the server to your agent and sign in with the key when the browser opens. Works with Claude Code, Codex, Cursor and the default AI agent CLI:
 
 `$AH_MCP_URL` is the server URL; set it once with `export AH_MCP_URL="$(curl -fsSL https://raw.githubusercontent.com/jokerphuongnam/agents-holding-cli/main/full/connect.sh | bash -s -- --print-url)"`.
