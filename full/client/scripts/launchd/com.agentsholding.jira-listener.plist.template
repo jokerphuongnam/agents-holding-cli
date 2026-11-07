@@ -7,6 +7,7 @@
     <key>AH_SERVER_DIR</key><string>__SERVER_DIR__</string>
     <key>AH_REPO_DIR</key><string>__REPO_DIR__</string>
     <key>HOME</key><string>__HOME__</string>
+    <key>AH_RECONCILE_SEC</key><string>60</string>
   </dict>
   <key>WorkingDirectory</key><string>__HOME__</string>
   <key>RunAtLoad</key><true/>

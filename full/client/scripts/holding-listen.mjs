@@ -769,7 +769,7 @@ async function reconcile(company, sinceIso) {
         log(`reconcile ${x.key} "${x.status}": ${r.duplicate ? "already applied" : r.replayed ? `replayed (${r.event ?? "?"}, ${r.stage_before ?? "new"} -> ${r.stage_after ?? "?"})` : `skipped (${r.reason ?? "?"})`}`);
       }
     }
-    log(`reconcile ${company}: ${n} change(s) since ${since}`);
+    log(`Jira task sync ${company}: ${n} change(s) since ${since}`);
     L.writeStatus(homedir(), { companies: { [company]: { reconciled_at: new Date().toISOString(), reconciled: n } } });
   } finally { reconciling[company] = false; }
 }
@@ -778,9 +778,9 @@ async function reconcile(company, sinceIso) {
 const reconcileEverySec = Math.max(60, Number(process.env.AH_RECONCILE_SEC ?? 300));
 setInterval(() => {
   for (const c of companyList) {
-    reconcile(c).catch((e) => log(`scheduled reconcile ${c} failed:`, e.message));
+    reconcile(c).catch((e) => log(`scheduled Jira task sync ${c} failed:`, e.message));
   }
-  log(`scheduled Jira reconcile started (every ${reconcileEverySec}s)`);
+  log(`scheduled Jira task sync started (every ${reconcileEverySec}s)`);
 }, reconcileEverySec * 1000).unref?.();
 // Company-defined Jira Listener rules: real events only; deterministic planning and Jira actions use zero model tokens.
 const RULE_EVENTS = { user_move: "issue_transitioned", agent_move: "issue_transitioned", issue_transitioned: "issue_transitioned", user_comment: "comment_created", comment_created: "comment_created", task_done: "issue_transitioned", subtask_done: "all_subtasks_done", assignee_changed: "assignee_changed", label_added: "label_added" };
