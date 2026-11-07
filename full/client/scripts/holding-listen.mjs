@@ -237,9 +237,9 @@ let jiraCfg = await (async () => { try {
 const lean = process.env.AH_LEAN !== "0";
 // Prefer legacy API-token client; OAuth handled in jiraOps via attach.atlassianToken (no browser in launchd).
 let jira = jiraCfg ? L.jiraClient(jiraCfg, { dry: dryJira, log }) : null;
-async function refreshJiraAuth() {
+async function refreshJiraAuth(force = false) {
   if (!jiraCfg?.oauth) return;
-  try { const fresh = await atlassianToken(homedir()); if (fresh) { jiraCfg = fresh; jira = L.jiraClient(jiraCfg, { dry: dryJira, log }); } }
+  try { const fresh = await atlassianToken(homedir(), force); if (fresh) { jiraCfg = fresh; jira = L.jiraClient(jiraCfg, { dry: dryJira, log }); } }
   catch (e) { log("Jira OAuth refresh failed:", e.message); }
 }
 if (!jira) log("Jira client: not ready (holding jira connect or Atlassian OAuth required); listener will remain offline until credentials are available.");
@@ -768,7 +768,7 @@ setInterval(() => {
 // Replay real Jira changes missed during an outage (listener or server down): issues updated since the last seen event,
 // one reconcile_issue per (issue, status, updated), deduped locally and on the server. Reads Jira only; never writes Jira events.
 const reconciling = {};
-async function reconcile(company, sinceIso) {
+async function reconcile(company, sinceIso, retried = false) {
   await refreshJiraAuth();
   if (!jira || reconciling[company]) return; reconciling[company] = true;
   try {
@@ -789,6 +789,9 @@ async function reconcile(company, sinceIso) {
     log(`Jira task sync ${company}: ${n} change(s) since ${since}`);
     L.writeStatus(homedir(), { companies: { [company]: { reconciled_at: new Date().toISOString(), reconciled: n } } });
     if (!sinceIso) await startupRecovery(company);
+  } catch (e) {
+    if (!retried && /401/.test(String(e.message))) { log(`Jira 401 for ${company}; forcing OAuth refresh and retrying`); await refreshJiraAuth(true); reconciling[company] = false; return reconcile(company, sinceIso, true); }
+    throw e;
   } finally { reconciling[company] = false; }
 }
 // Webhooks/realtime are the fast path; direct Jira reconciliation is the recovery path.

@@ -38,9 +38,9 @@ function apiTokenBases(cfg, tk) {
   };
 }
 /** Resolve Atlassian access without prompting. OAuth Keychain first, else API token from jira.json + Keychain. */
-export async function atlassianToken(home = homedir()) {
+export async function atlassianToken(home = homedir(), forceRefresh = false) {
   const O = await import("./oauth.mjs");
-  const t = await O.token("atlassian");
+  const t = await O.token("atlassian", fetch, forceRefresh);
   if (t?.cloud_id && t?.access_token) { syncJiraConfig(t, home); return oauthBases(t); }
   try {
     const cfg = JSON.parse(readFileSync(join(home, ".config/agents-holding/jira.json"), "utf8"));

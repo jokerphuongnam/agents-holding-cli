@@ -52,9 +52,9 @@ export async function connect(provider, { log = console.log, timeoutMs = 300000,
   } finally { srv.closeAllConnections?.(); srv.closeIdleConnections?.(); srv.close(); }
 }
 /** Valid access token (refreshing through our server when expired), or null when not connected. */
-export async function token(provider, f = fetch) {
+export async function token(provider, f = fetch, force = false) {
   const t = load(provider); if (!t?.access_token) return null;
-  if (Date.now() < (t.expires_at ?? 0)) return t;
+  if (!force && Date.now() < (t.expires_at ?? 0)) return t;
   if (!t.refresh_token) return null;
   try { const n = await post("/refresh", { provider, refresh_token: t.refresh_token }, f); const m = { ...t, ...n, expires_at: Date.now() + Number(n.expires_in ?? 3600) * 1000 - 60000 }; save(provider, m); return m; } catch { return null; }
 }
