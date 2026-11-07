@@ -275,6 +275,22 @@ export function jiraClient(cfg, { dry, log }) {
       if (dry) return log(`JIRA (dry): labels ${key} ${JSON.stringify(ops)}`);
       await req("PUT", `/issue/${encodeURIComponent(key)}`, { update: { labels: ops } });
     },
+    async flag(key) {
+      if (dry) return log(`JIRA (dry): flag ${key}`);
+      this._flagField ??= (await req("GET", "/field")).find((f) => String(f.name ?? "").toLowerCase() === "flagged");
+      const id = this._flagField?.id; if (!id) throw new Error("Jira Flagged field is unavailable");
+      const em = await req("GET", `/issue/${encodeURIComponent(key)}/editmeta`);
+      const opts = em?.fields?.[id]?.allowedValues ?? [];
+      const option = opts.find((x) => /impediment|flag/i.test(String(x.value ?? x.name ?? ""))) ?? opts[0];
+      await req("PUT", `/issue/${encodeURIComponent(key)}`, { update: { [id]: [{ set: option?.id ? [{ id: option.id }] : [{ value: "Impediment" }] }] } });
+      log(`JIRA: flagged ${key}`);
+    },
+    async unflag(key) {
+      if (dry) return log(`JIRA (dry): unflag ${key}`);
+      this._flagField ??= (await req("GET", "/field")).find((f) => String(f.name ?? "").toLowerCase() === "flagged");
+      const id = this._flagField?.id; if (id) await req("PUT", `/issue/${encodeURIComponent(key)}`, { update: { [id]: [{ set: [] }] } });
+      log(`JIRA: unflagged ${key}`);
+    },
     async label(key, op) {
       if (dry) return log(`JIRA (dry): label ${key} ${op} ${WORK_LABEL}`);
       await req("PUT", `/issue/${encodeURIComponent(key)}`, labelBody(op));

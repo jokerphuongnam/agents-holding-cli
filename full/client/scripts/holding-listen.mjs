@@ -841,12 +841,12 @@ async function connect(company) {
         L.writeStatus(homedir(), { companies: { [company]: { needs: nd } } });
         if (sf.kind !== "ok") {
           log(`staffing ${k}: ${sf.kind} ${[...(sf.missing_roles ?? []), ...(sf.missing_skills ?? [])].join(",")}${sf.post ? "" : " (already asked)"}`);
-          if (jira) jira.labels(k, [sf.label], [...other, "ah-needs-fix"]).catch((e) => log("Jira label failed:", e.message))
+          if (jira) jira.flag(k).catch((e) => log("Jira flag failed:", e.message))
             .then(() => (p.say ? comms(k, p.say) : null)).then(() => (sf.post && sf.text ? comms(k, sf.text, sf.kind === "needs_hire" ? "hire" : "decision") : null)).catch((e) => log("Jira comment failed:", e.message));
           if (sf.post) L.notify?.(`Jira Listener: ${k} ${sf.kind === "needs_hire" ? "needs a hire" : "needs your decision"}`);
           return;
         }
-        if (sf.clear && jira) jira.labels(k, [], ["needs-hire", "needs-decision", "ah-needs-fix"]).catch((e) => log("Jira label failed:", e.message));
+        if (sf.clear && jira) jira.unflag(k).catch((e) => log("Jira unflag failed:", e.message));
       }
       if (p.say && (p.issue ?? p.task_id)) { // server-decided one-off reply (To Do comment / "who should take this?"): post as is, no run
         const k = p.issue ?? p.task_id;
