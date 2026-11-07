@@ -20,13 +20,15 @@ export function syncJiraConfig(tok, home = homedir()) {
   // Drop legacy keychain_service when on OAuth so status is unambiguous; keep email if user had API token for fallback.
   writeFileSync(path, JSON.stringify(next, null, 2) + "\n", { mode: 0o600 });
 }
-function oauthBases(t) {
-  const cloud = t.cloud_id;
+function oauthBases(t, resourceId = process.env.AH_JIRA_CLOUD_ID, resourceUrl = process.env.AH_JIRA_SITE) {
+  const resources = Array.isArray(t.resources) ? t.resources : [];
+  const selected = resources.find((r) => (resourceId && r.id === resourceId) || (resourceUrl && String(r.url).replace(/\/$/, "") === String(resourceUrl).replace(/\/$/, ""))) ?? resources[0] ?? t;
+  const cloud = selected.id ?? t.cloud_id;
   return {
     jira: `https://api.atlassian.com/ex/jira/${cloud}/rest/api/3`,
     agile: `https://api.atlassian.com/ex/jira/${cloud}/rest/agile/1.0`,
     wiki: `https://api.atlassian.com/ex/confluence/${cloud}/wiki/rest/api`,
-    site: t.site, cloud_id: cloud, kind: "oauth",
+    site: selected.url ?? t.site, cloud_id: cloud, account: t.account, kind: "oauth",
     auth: () => `Bearer ${t.access_token}`,
   };
 }
@@ -42,7 +44,7 @@ function apiTokenBases(cfg, tk) {
 export async function atlassianToken(home = homedir()) {
   const O = await import("./oauth.mjs");
   const t = await O.token("atlassian");
-  if (t?.cloud_id && t?.access_token) { syncJiraConfig(t, home); return oauthBases(t); }
+  if (t?.access_token && (t.cloud_id || t.resources?.length)) { syncJiraConfig(t, home); return oauthBases(t); }
   try {
     const cfg = JSON.parse(readFileSync(join(home, ".config/agents-holding/jira.json"), "utf8"));
     const tk = jiraToken(cfg);
