@@ -760,7 +760,7 @@ async function reconcile(company, sinceIso) {
     const st = L.stateDir(homedir(), company), seen = X.replaySeen(st), boards = registry.projects.flatMap((p) => p.boards).filter((b) => b.company === company);
     let n = 0;
     for (const b of boards) {
-      const res = await jira.search(X.jqlSince(b.project_key, since), ["status", "updated", "summary", "labels"]);
+      const res = await jira.search(sinceIso ? X.jqlSince(b.project_key, since) : X.jqlOpen(b.project_key), ["status", "updated", "summary", "labels"]);
       for (const x of X.replayTodo(res, seen)) {
         const f = res.find((i) => i.key === x.key)?.fields ?? {};
         const r = await mcp("reconcile_issue", { company, issue: x.key, status: x.status, updated: x.updated, project_key: b.project_key, summary: f.summary ?? "", labels: f.labels ?? [] });

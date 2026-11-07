@@ -126,3 +126,4 @@ export function replayMark(dir, keys) { const s = replaySeen(dir); keys.forEach(
 export function replayTodo(issues, seen) { return issues.map((i) => ({ key: i.key, status: i.fields?.status?.name ?? "", updated: i.fields?.updated ?? "" })).filter((x) => !seen.has(replayKey(x.key, x.status, x.updated))); }
 export const jqlSince = (project, iso) => { const d = new Date(new Date(iso).getTime() - 10 * 60000); const p = (n) => String(n).padStart(2, "0");
   return `project = "${project}" AND updated >= "${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}" ORDER BY updated ASC`; };
+export const jqlOpen = (project) => `project = "${project}" AND statusCategory != Done ORDER BY updated ASC`;
