@@ -759,10 +759,12 @@ async function reconcile(company, sinceIso) {
     const st = L.stateDir(homedir(), company), seen = X.replaySeen(st), boards = registry.projects.flatMap((p) => p.boards).filter((b) => b.company === company);
     let n = 0;
     for (const b of boards) {
-      const res = await jira.search(X.jqlSince(b.project_key, since), ["status", "updated", "summary", "labels"]);
+      const res = await jira.search(X.jqlSince(b.project_key, since), ["status", "updated", "summary", "description", "labels", "assignee", "comment"]);
       for (const x of X.replayTodo(res, seen)) {
         const f = res.find((i) => i.key === x.key)?.fields ?? {};
-        const r = await mcp("reconcile_issue", { company, issue: x.key, status: x.status, updated: x.updated, project_key: b.project_key, summary: f.summary ?? "", labels: f.labels ?? [] });
+        const latestComment = [...(f.comment?.comments ?? [])].sort((a, z) => String(z.created ?? "").localeCompare(String(a.created ?? ""))).at(-1);
+        const r = await mcp("reconcile_issue", { company, issue: x.key, status: x.status, updated: x.updated, project_key: b.project_key, summary: f.summary ?? "", description: f.description ?? "", labels: f.labels ?? [], assignee_account: f.assignee?.accountId ?? null,
+          comment: latestComment ? { id: latestComment.id, body: latestComment.body, author: latestComment.author } : null });
         X.replayMark(st, [X.replayKey(x.key, x.status, x.updated)]); n++;
         await applyJiraRules({ company, issue: x.key, event: x.status?.toLowerCase() === "done" ? "issue_transitioned" : "label_added" });
         log(`reconcile ${x.key} "${x.status}": ${r.duplicate ? "already applied" : r.replayed ? `replayed (${r.event ?? "?"}, ${r.stage_before ?? "new"} -> ${r.stage_after ?? "?"})` : `skipped (${r.reason ?? "?"})`}`);
@@ -772,6 +774,12 @@ async function reconcile(company, sinceIso) {
     L.writeStatus(homedir(), { companies: { [company]: { reconciled_at: new Date().toISOString(), reconciled: n } } });
   } finally { reconciling[company] = false; }
 }
+// Webhooks require Jira site-admin permission. Keep a bounded, read-only
+// reconcile fallback active even when realtime is healthy.
+const reconcileSec = Number(process.env.AH_JIRA_RECONCILE_SEC ?? 300);
+if (reconcileSec > 0) setInterval(() => {
+  for (const c of companyList) reconcile(c).catch((e) => log(`scheduled reconcile ${c} failed:`, e.message));
+}, Math.max(60, reconcileSec) * 1000).unref?.();
 // Company-defined Jira Listener rules: real events only; deterministic planning and Jira actions use zero model tokens.
 const RULE_EVENTS = { user_move: "issue_transitioned", agent_move: "issue_transitioned", issue_transitioned: "issue_transitioned", user_comment: "comment_created", comment_created: "comment_created", task_done: "issue_transitioned", subtask_done: "all_subtasks_done", assignee_changed: "assignee_changed", label_added: "label_added" };
 async function applyJiraRules(p) {
