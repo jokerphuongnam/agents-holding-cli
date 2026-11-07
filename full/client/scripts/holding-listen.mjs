@@ -273,6 +273,24 @@ async function clearWaitingSignal(issue, event) {
     log(`JIRA: cleared ${WAITING_LABEL} on ${issue} after ${event}`);
   } catch (e) { log(`Jira waiting flag clear failed for ${issue}:`, e.message); }
 }
+const ASSIGNMENT_LABEL = "ah-assignment-required", AGENT_OWNED_LABEL = "ah-agent-owned";
+async function ensureAgentOwnedAssignment(issue, na) {
+  if (!jira || !na?.stage_definition?.agent_owned || na.stage_definition.gate || na.waiting) return true;
+  const meta = await jira.meta(issue), current = meta.assignee?.accountId ?? null;
+  if (current) return true; // explicit assignment wins; never reassign a user-owned card.
+  try {
+    const account = await jira.assignSelf(issue);
+    if (!account) throw new Error("connected Jira account could not be resolved");
+    await jira.labels(issue, [AGENT_OWNED_LABEL], [ASSIGNMENT_LABEL]);
+    if (!(meta.labels ?? []).includes(AGENT_OWNED_LABEL)) await jira.comment(issue, `[agent-holding] [Jira Listener] Task picked up from ${na.stage_definition.name}; assigned to the connected listener account and resuming from the current Jira checkpoint.`);
+    await mcp("set_task_assignee", { company, task: issue, account });
+    log(`assignment: ${issue} -> connected Jira account at ${na.stage_definition.name}`); return true;
+  } catch (e) {
+    if (!(meta.labels ?? []).includes(ASSIGNMENT_LABEL)) await jira.labels(issue, [ASSIGNMENT_LABEL]);
+    await comms(issue, `[agent-holding] [Jira Listener] ASSIGNMENT REQUIRED\n${issue} is in agent-owned stage "${na.stage_definition.name}" but has no assignee. Automatic assignment to the connected listener account failed: ${e.message}. Reconnect Jira or grant Assign Issues permission, then reply in CEO/chat inbox; the listener will resume from this checkpoint.`, "assignment");
+    log(`assignment: ${issue} failed: ${e.message}`); return false;
+  }
+}
 async function announceWaiting(issue, na, p) {
   if (!jira || dryJira) return log(`JIRA (dry): waiting signal ${issue} (${na?.stage ?? "?"})`);
   try {
@@ -366,6 +384,7 @@ async function run(p, depth = 0) {
   if (depth === 0 && !(await useCtx(p))) return;
   await clearWaitingSignal(issue, p.event);
   let na = null; try { na = await mcp("next_action", { company, task: issue, listener_jira: listenerJira }); } catch (e) { log("next_action failed:", e.message); }
+  if (na && !(await ensureAgentOwnedAssignment(issue, na))) return;
   if ((na?.waiting || p.workflow_error) && p.event !== "manual") { await announceWaiting(issue, na, p); log(`waiting ${issue}: ${na?.stage ?? "workflow-invalid"}`); return; }
   if (lean && na) return leanRun(p, na, depth);
   const model = process.env.AH_MODEL || na?.model || null;

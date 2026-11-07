@@ -54,5 +54,6 @@ grep -q 'atlassianToken(homedir())' "$S/holding-listen.mjs" && grep -q 'const li
 grep -q 'routeForRepo' "$S/holding-listen.mjs" && grep -q 'export function routeForRepo' "$S/registry.mjs" && ok 'foreground replay routes parent and child repos explicitly' || no 'foreground replay routes parent and child repos explicitly'
 node "$S/release_listener_test.mjs" >/dev/null && ok 'OAuth transport and parent/child replay behavior' || no 'OAuth transport and parent/child replay behavior'
 node "$S/registry_registration_test.mjs" >/dev/null && ok 'generic project registration reconcile detects missing/stale/duplicate mappings' || no 'generic project registration reconcile detects missing/stale/duplicate mappings'
+node "$S/assignment_recovery_test.mjs" >/dev/null && ok 'generic unassigned agent-owned stage auto-assigns without native dialog' || no 'generic unassigned agent-owned stage auto-assigns without native dialog'
 printf '%s\n' "client_feature_test: $pass passed, $fail failed"
 [ "$fail" = 0 ]

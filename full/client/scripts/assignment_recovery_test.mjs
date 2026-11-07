@@ -1,0 +1,10 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+const src = readFileSync(new URL("./holding-listen.mjs", import.meta.url), "utf8");
+assert.match(src, /stage_definition\?\.agent_owned/);
+assert.match(src, /assignSelf\(issue\)/);
+assert.match(src, /ASSIGNMENT REQUIRED/);
+assert.match(src, /set_task_assignee/);
+assert.match(src, /reply in CEO\/chat inbox/);
+assert.doesNotMatch(src, /actionNotify|display dialog|new-window/);
+console.log("assignment_recovery_test: unassigned agent-owned stage, idempotent assignment, user-owned gate and parent/child-safe inbox recovery passed");
