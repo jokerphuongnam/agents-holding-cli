@@ -62,6 +62,7 @@ if (!registry) {
   R.save(homedir(), registry); log(`registry: migrated ${registry.projects[0].path} into ${R.registryPath(homedir())}`);
 }
 const registration = R.reconcile(registry);
+if (registration.repaired.length) { R.save(homedir(), registry); log(`registry: auto-repaired ${registration.repaired.length} canonical mapping issue(s)`); }
 for (const issue of registration.issues) log(`registry: ${issue.code}: ${issue.message}`);
 if (onlyRepo) {
   registry = { ...registry, projects: registry.projects.filter((p) => p.path === onlyRepo) };
@@ -252,7 +253,8 @@ async function comms(issue, text, kind = null) {
   if (kind) {
     try { const it = await mcp("inbox_post", { company, issue, kind, need: L.INBOX_NEED[kind] ?? "needs you", body: String(text).slice(0, 8000) });
       log(`inbox: ${issue} ${kind} -> ${it.short_id}${it.new ? "" : " (updated)"}`);
-      if (it.new) L.actionNotify(homedir(), { issue, need: L.INBOX_NEED[kind] ?? "needs you", how: it.how, id: it.id, company });
+      // User interaction is MCP/CEO inbox only. Never open a native dialog or
+      // local action prompt for workflow questions, gates, or registration.
     } catch (e) { log(`inbox_post failed: ${e.message}`); }
   }
   if (commMode[company] === "chat") return log(`chat mode: not commenting on ${issue}${kind ? ` (${kind} is in the CEO inbox)` : ""}`);

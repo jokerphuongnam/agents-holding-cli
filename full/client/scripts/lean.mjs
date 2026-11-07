@@ -554,20 +554,6 @@ export function desktopNotify(home, title, msg, exec = (c, a) => execFileSync(c,
 /** What the user must do, per CEO inbox kind (one line, shown in the 'Agents Holding' notification and `holding inbox`). */
 export const INBOX_NEED = { question: "a staff has a question for you", decision: "pick an option (1/2/3)", hire: "needs a hire (or pick an existing staff)", blocked: "an agent is blocked (e.g. needs a login)", failed: "a run failed: needs a look", gate: "approve or ask for changes", qc: "QC failed after fixes: needs a look", repo: "which repo should this task use?", staff: "staff decision needed" };
 export const HOLDING_BIN = join(dirname(fileURLToPath(import.meta.url)), "holding");
-/** 'Agents Holding' action notification: banner always; with dialogs on (default, `holding notify dialog off`), an "Open CEO" button
- *  opens a CEO session focused on the item (holding ceo --item <id>). Non-blocking: runs detached, the staff run already exited. */
-export function actionNotifyArgs({ issue, need, how, id, company }, bin = HOLDING_BIN) {
-  const msg = `${issue ?? ""} ${need}. Answer: ${how}`.trim(), safe = (x) => String(x ?? "").replace(/[^A-Za-z0-9_.-]/g, "");
-  const run = `'${bin.replace(/'/g, "")}' ceo --item ${safe(id)} --company ${safe(company)} --new-window >/dev/null 2>&1 &`;
-  return ["-e", `display notification "${asq(msg)}" with title "Agents Holding" subtitle "${asq(`${issue ?? ""} needs you`)}" sound name "Glass"`,
-    "-e", `set r to display dialog "${asq(msg)}" with title "Agents Holding" buttons {"Later", "Open CEO"} default button "Open CEO" giving up after 900`,
-    "-e", `if button returned of r is "Open CEO" then do shell script "${run.replace(/"/g, "")}"`];
-}
-export function dialogsOn(home) { try { return JSON.parse(readFileSync(notifyFile(home), "utf8")).dialog !== false; } catch { return true; } }
-export function actionNotify(home, item, spawnIt = (a) => { const c = spawn("osascript", a, { detached: true, stdio: "ignore" }); c.on("error", () => {}); c.unref(); }, platform = process.platform) {
-  if (!notifyOn(home) || platform !== "darwin") return false;
-  const a = actionNotifyArgs(item); spawnIt(dialogsOn(home) ? a : a.slice(0, 2)); return true;
-}
 export const statusPath = (home) => join(home, ".config/agents-holding/listener-status.json");
 export function readStatus(home) { try { return JSON.parse(readFileSync(statusPath(home), "utf8")); } catch { return null; } }
 export function writeStatus(home, patch) {

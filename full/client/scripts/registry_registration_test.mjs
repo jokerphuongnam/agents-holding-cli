@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import * as R from "./registry.mjs";
+import { readFileSync } from "node:fs";
 
 const reg = R.empty();
-R.addBoard(reg, { path: "/work/parent", site: "https://jira.example", project_key: "MAR", company: "parent" });
+const site = "https://jira.example";
+R.addBoard(reg, { path: "/work/parent", site, project_key: "MAR", company: "parent" });
 R.addBoard(reg, { path: "/work/child", site: "https://jira.example", project_key: "NAIL", company: "child" });
 R.addBoard(reg, { path: "/work/missing", site: "https://jira.example", project_key: "OPS", company: "ops" });
 let checked = R.reconcile(reg, { fileExists: (p) => p !== "/work/missing", readCompany: (p) => ({ "/work/parent": "parent", "/work/child": "child" }[p] ?? null) });
@@ -15,4 +17,15 @@ checked = R.reconcile(reg, { fileExists: () => true, readCompany: () => "parent"
 assert.ok(checked.issues.some((x) => x.code === "duplicate_mapping"));
 assert.match(R.registrationComment("OPS-1", checked.issues), /REGISTRATION ACTION REQUIRED/);
 assert.match(R.registrationComment("OPS-1", checked.issues), /holding project add/);
+const stale = R.empty();
+R.addBoard(stale, { path: "/work/parent", site, project_key: "MAR", company: "old-parent" });
+const repaired = R.reconcile(stale, { fileExists: () => true, readCompany: () => "parent" });
+assert.equal(repaired.issues.length, 0, "valid canonical repo identity must not remain an actionable error");
+assert.equal(repaired.repaired.length, 1);
+assert.equal(stale.projects[0].boards[0].company, "parent");
+assert.equal(R.route(stale, { company: "parent", issue: "MAR-1", site }).repos[0].path, "/work/parent");
+const listenerSource = readFileSync(new URL("./holding-listen.mjs", import.meta.url), "utf8");
+const leanSource = readFileSync(new URL("./lean.mjs", import.meta.url), "utf8");
+assert.doesNotMatch(listenerSource, /actionNotify|display dialog|new-window/);
+assert.doesNotMatch(leanSource, /actionNotify|display dialog|new-window/);
 console.log("registry_registration_test: new install, parent/child, missing and duplicate mappings passed");

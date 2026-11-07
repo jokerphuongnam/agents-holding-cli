@@ -63,13 +63,15 @@ export const companies = (reg) => [...new Set(reg.projects.flatMap((p) => p.boar
 export function reconcile(reg, { fileExists = existsSync, readCompany = (p) => {
   try { return JSON.parse(readFileSync(join(p, ".agents/company.json"), "utf8")).company ?? null; } catch { return null; }
 } } = {}) {
-  const issues = [], seen = new Map();
+  const issues = [], repaired = [], seen = new Map();
   for (const p of reg.projects ?? []) {
     p.path = resolve(p.path);
     if (!fileExists(p.path)) issues.push({ code: "missing_repo", path: p.path, message: `registered repo is missing: ${p.path}` });
     const configured = readCompany(p.path);
     if (!configured) issues.push({ code: "missing_company_config", path: p.path, message: `${p.path} has no readable .agents/company.json` });
-    else if (p.boards?.some((b) => b.company && b.company !== configured)) issues.push({ code: "company_mismatch", path: p.path, configured, message: `${p.path} maps to ${configured}, but registry contains another company` });
+    else {
+      for (const b of p.boards ?? []) if (b.company !== configured) { repaired.push({ code: "company_identity", path: p.path, from: b.company, to: configured, project_key: b.project_key }); b.company = configured; }
+    }
     for (const b of p.boards ?? []) {
       const key = `${b.site ?? ""}|${b.project_key}|${b.company}`;
       const prior = seen.get(key);
@@ -78,7 +80,14 @@ export function reconcile(reg, { fileExists = existsSync, readCompany = (p) => {
       if (!b.project_key || !b.company) issues.push({ code: "incomplete_mapping", path: p.path, message: `${p.path} contains a project mapping without project key/company` });
     }
   }
-  return { registry: reg, issues };
+  // Remove exact duplicate boards after identity repair. Different repos remain
+  // ambiguous and are intentionally left for repo:<name>/component selection.
+  for (const p of reg.projects ?? []) {
+    const before = p.boards?.length ?? 0;
+    p.boards = [...new Map((p.boards ?? []).map((b) => [`${b.site ?? ""}|${b.project_key}|${b.company}`, b])).values()];
+    if (p.boards.length !== before) repaired.push({ code: "duplicate_entry", path: p.path });
+  }
+  return { registry: reg, issues, repaired };
 }
 export function clearRegistrationIssue(reg, { path, project_key, company }) {
   const p = (reg.projects ?? []).find((x) => resolve(x.path) === resolve(path));
