@@ -205,6 +205,19 @@ export function runChecks(repo, checks, exec = (c, a) => execFileSync(c, a, { cw
   return checks.map((c) => { try { const o = exec(c.cmd, c.args); return { name: c.name, ok: true, out: clip(o, 300) }; }
     catch (e) { return { name: c.name, ok: false, out: clip(`${e.stdout ?? ""}\n${e.stderr ?? ""}\n${e.message ?? ""}`.split("\n").filter(Boolean).slice(-25).join("\n"), 1500) }; } });
 }
+/** Validate evidence returned by a user-bound terminal session. The listener
+ * never executes declared terminal commands itself and never accepts a model
+ * or comment as terminal evidence. */
+export function terminalSessionEvidence({ session, result, command, repo }) {
+  const required = ["session_id", "user_id", "device_id", "cwd"];
+  const missing = required.filter((k) => !session?.[k]);
+  if (missing.length) return { ok: false, reason: `terminal session is not bound: missing ${missing.join(", ")}` };
+  if (session.cwd !== repo || session.status !== "connected") return { ok: false, reason: "terminal session is disconnected or bound to a different repo/cwd" };
+  if (!result || result.session_id !== session.session_id || result.command !== command || result.status !== "completed") return { ok: false, reason: "terminal has not reported completion for the exact declared command" };
+  const fields = ["started_at", "ended_at", "exit_code", "stdout_digest", "stderr_digest", "toolchain_fingerprint", "artifact_digest", "commit", "tree"];
+  const absent = fields.filter((k) => result[k] === undefined || result[k] === null || result[k] === "");
+  return absent.length ? { ok: false, reason: `terminal evidence incomplete: missing ${absent.join(", ")}` } : { ok: result.exit_code === 0, reason: result.exit_code === 0 ? null : `terminal command exited ${result.exit_code}`, evidence: result };
+}
 /** QC verdict: a check fails QC only if it passed on the baseline (pre-existing failures are reported, not blamed on the change). */
 export function qcVerdict(baseline, after) {
   const was = Object.fromEntries((baseline ?? []).map((r) => [r.name, r.ok]));
