@@ -274,21 +274,26 @@ async function clearWaitingSignal(issue, event) {
   } catch (e) { log(`Jira waiting flag clear failed for ${issue}:`, e.message); }
 }
 const ASSIGNMENT_LABEL = "ah-assignment-required", AGENT_OWNED_LABEL = "ah-agent-owned";
+const claimInFlight = new Set();
 async function ensureAgentOwnedAssignment(issue, na) {
-  if (!jira || !na?.stage_definition?.agent_owned || na.stage_definition.gate || na.waiting) return true;
+  const qp = na?.queue_policy;
+  if (!jira || qp?.enabled === false || qp?.assignment !== "connected_account" || !Array.isArray(qp.claim_stages) || !qp.claim_stages.includes(na.stage) || na.stage_definition?.gate || na.waiting) return true;
+  if (claimInFlight.has(issue)) return false;
+  claimInFlight.add(issue);
   const meta = await jira.meta(issue), current = meta.assignee?.accountId ?? null;
-  if (current) return true; // explicit assignment wins; never reassign a user-owned card.
+  if (current) { claimInFlight.delete(issue); return true; } // explicit assignment wins; never reassign a user-owned card.
   try {
     const account = await jira.assignSelf(issue);
     if (!account) throw new Error("connected Jira account could not be resolved");
+    const after = await jira.meta(issue); if (after.assignee?.accountId && after.assignee.accountId !== account) { claimInFlight.delete(issue); log(`claim: ${issue} lost race to another assignee`); return false; }
     await jira.labels(issue, [AGENT_OWNED_LABEL], [ASSIGNMENT_LABEL]);
     if (!(meta.labels ?? []).includes(AGENT_OWNED_LABEL)) await jira.comment(issue, `[agent-holding] [Jira Listener] Task picked up from ${na.stage_definition.name}; assigned to the connected listener account and resuming from the current Jira checkpoint.`);
     await mcp("set_task_assignee", { company, task: issue, account });
-    log(`assignment: ${issue} -> connected Jira account at ${na.stage_definition.name}`); return true;
+    log(`claim: ${issue} -> connected Jira account at ${na.stage_definition?.name ?? na.stage}`); claimInFlight.delete(issue); return true;
   } catch (e) {
     if (!(meta.labels ?? []).includes(ASSIGNMENT_LABEL)) await jira.labels(issue, [ASSIGNMENT_LABEL]);
     await comms(issue, `[agent-holding] [Jira Listener] ASSIGNMENT REQUIRED\n${issue} is in agent-owned stage "${na.stage_definition.name}" but has no assignee. Automatic assignment to the connected listener account failed: ${e.message}. Reconnect Jira or grant Assign Issues permission, then reply in CEO/chat inbox; the listener will resume from this checkpoint.`, "assignment");
-    log(`assignment: ${issue} failed: ${e.message}`); return false;
+    log(`claim: ${issue} failed: ${e.message}`); claimInFlight.delete(issue); return false;
   }
 }
 async function announceWaiting(issue, na, p) {
@@ -318,20 +323,27 @@ function debounce(p) {
   timers.set(k, setTimeout(() => { timers.delete(k); wake(p); }, debounceMs));
 }
 let running = false, runningIssue = null;
-const pending = new Map(); // issue -> latest notice
+const pending = new Map(); // issue -> latest notice; unassigned start-stage cards remain queued here
+const queueKey = (p) => `${p.company ?? company}/${p.issue ?? p.task_id ?? "?"}`;
+const queueOrder = (p) => [Number.isFinite(Number(p.priority)) ? Number(p.priority) : 100000, Date.parse(p.created ?? p.updated ?? "") || Number.MAX_SAFE_INTEGER, queueKey(p)];
+function publishQueue() {
+  const items = [...pending.values()].sort((a, b) => { const aa = queueOrder(a), bb = queueOrder(b); return aa[0] - bb[0] || aa[1] - bb[1] || aa[2].localeCompare(bb[2]); });
+  L.writeStatus(homedir(), { queue: items.map((p) => ({ issue: p.issue ?? p.task_id, company: p.company ?? company, priority: p.priority ?? null, created: p.created ?? p.updated ?? null })) });
+  return items;
+}
 function wake(p) {
   if (credit.blocked) { log(`stopped (${credit.blocked.msg}); ignoring ${p.event} ${p.issue ?? p.task_id ?? "?"}`); return; }
-  const k = `${p.company ?? company}/${p.issue ?? p.task_id ?? "?"}`;
+  const k = queueKey(p);
   if (running) {
     if (p.event === "agent_move" && k === runningIssue) { log(`chain: ignoring agent_move ${k} -> ${p.stage} (the active run continues it)`); return; }
-    const had = pending.has(k); pending.delete(k); pending.set(k, p);
+    const had = pending.has(k); pending.delete(k); pending.set(k, p); publishQueue();
     log(`busy (run active for ${runningIssue}); ${had ? "replaced queued" : "queued"} ${p.event} ${k} stage ${p.stage}; pending: ${[...pending.keys()].join(",")}`);
     return;
   }
   running = true; runningIssue = k;
   run(p).catch((e) => log("run error", e.message)).finally(() => {
     running = false; runningIssue = null;
-    if (pending.size) { const [k0, n] = pending.entries().next().value; pending.delete(k0); log("running queued notice", n.event, k0, "stage", n.stage); wake(n); }
+    if (pending.size) { const n = publishQueue()[0]; const k0 = queueKey(n); pending.delete(k0); publishQueue(); log("running queued notice", n.event, k0, "stage", n.stage); wake(n); }
     else if (once || opt("--run")) process.exit(0);
   });
 }
