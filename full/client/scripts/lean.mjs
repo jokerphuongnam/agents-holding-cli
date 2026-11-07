@@ -172,6 +172,9 @@ export function fileSnippets(repo, files, { max = 1200, total = 6000 } = {}) {
 /** Check commands a repo offers: package.json scripts test/lint/typecheck/build (npm), pytest, go test, cargo test, make test. */
 export function detectChecks(repo, has = (f) => existsSync(join(repo, f)), read = (f) => readFileSync(join(repo, f), "utf8")) {
   const out = [];
+  // Company-specific QC entrypoint.  A repo-owned run_tests.sh is authoritative
+  // and must run as one required gate before QC can pass.
+  if (has("run_tests.sh")) out.push({ name: "./run_tests.sh", cmd: "./run_tests.sh", args: [], timeout_ms: 30 * 60 * 1000, required: true });
   if (has("package.json")) {
     let sc = {}; try { sc = JSON.parse(read("package.json")).scripts ?? {}; } catch {}
     for (const n of ["test", "lint", "typecheck", "build"]) if (sc[n] && !/no test specified/.test(sc[n])) out.push({ name: `npm run ${n}`, cmd: "npm", args: ["run", "-s", n] });
@@ -182,8 +185,8 @@ export function detectChecks(repo, has = (f) => existsSync(join(repo, f)), read 
   if (!out.length && has("Makefile") && /^test:/m.test((() => { try { return read("Makefile"); } catch { return ""; } })())) out.push({ name: "make test", cmd: "make", args: ["test"] });
   return out;
 }
-export function runChecks(repo, checks, exec = (c, a) => execFileSync(c, a, { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 5 * 60 * 1000, env: { ...process.env, CI: "1" } })) {
-  return checks.map((c) => { try { const o = exec(c.cmd, c.args); return { name: c.name, ok: true, out: clip(o, 300) }; }
+export function runChecks(repo, checks, exec = (c, a, opts = {}) => execFileSync(c, a, { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: opts.timeout_ms ?? 5 * 60 * 1000, env: { ...process.env, CI: "1" } })) {
+  return checks.map((c) => { try { const o = exec(c.cmd, c.args, c); return { name: c.name, ok: true, out: clip(o, 300) }; }
     catch (e) { return { name: c.name, ok: false, out: clip(`${e.stdout ?? ""}\n${e.stderr ?? ""}\n${e.message ?? ""}`.split("\n").filter(Boolean).slice(-25).join("\n"), 1500) }; } });
 }
 /** QC verdict: a check fails QC only if it passed on the baseline (pre-existing failures are reported, not blamed on the change). */
