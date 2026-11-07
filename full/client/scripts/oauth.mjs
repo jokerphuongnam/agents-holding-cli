@@ -56,7 +56,7 @@ export async function token(provider, f = fetch) {
   const t = load(provider); if (!t?.access_token) return null;
   if (Date.now() < (t.expires_at ?? 0)) return t;
   if (!t.refresh_token) return null;
-  try { const n = await post("/refresh", { provider, refresh_token: t.refresh_token }, f); const m = { ...t, ...n }; save(provider, m); return m; } catch { return null; }
+  try { const n = await post("/refresh", { provider, refresh_token: t.refresh_token }, f); const m = { ...t, ...n, expires_at: Date.now() + Number(n.expires_in ?? 3600) * 1000 - 60000 }; save(provider, m); return m; } catch { return null; }
 }
 /** Token, or start the browser connect flow (interactive terminal), or throw a clear hint (AI / non-interactive). */
 export async function ensure(provider) {
