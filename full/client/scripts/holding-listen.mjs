@@ -731,6 +731,12 @@ Jira: ${issue}` });
     }
     if (seg.kind === "qc") { // QC by script: the repo's checks vs the baseline; one cheap fix round through Coding on a new failure
       const who = L.stageStaff(na, s0, { kind: "qc" });
+      const checklistState = L.loadPlan(st, issue);
+      if (!checklistState.qc_checklist_posted) {
+        const checklist = L.qcChecklist(na.qc_policy ?? {}, { issue });
+        if (jira) { await jira.comment(issue, `[agent-holding] [QC]\n${checklist}`).catch((e) => log(`QC checklist comment failed: ${e.message}`)); }
+        L.savePlan(st, issue, { qc_checklist_posted: true, qc_checklist_marker: `<!-- agents-holding:qc-checklist:${issue} -->`, qc_checklist_fallback: "Jira comment edit API unavailable; marker is stable and checklist state is persisted in checkpoint." });
+      }
       const codingKey = (na.flow_stages ?? []).includes("coding") ? "coding" : null;
       const runQc = () => { const sv = L.loadPlan(st, issue); return runRepos.map((rp) => ({ rp, v: L.qcVerdict(sv.qc_baseline?.[rp] ?? null, L.runChecks(rp, L.detectChecks(rp))) })); };
       const qcText = (res) => res.map((x) => `${runRepos.length > 1 ? rname(x.rp) + ": " : ""}${x.v.text}`).join("\n");

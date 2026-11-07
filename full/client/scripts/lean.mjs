@@ -116,6 +116,12 @@ export function neededArtifact(from, to, onEnter = false) {
   if (from === "qc") return to === "in_review" ? "pr" : "qc_pass";
   return null;
 }
+export function qcChecklist(policy = {}, { issue = "TASK", evidence = {} } = {}) {
+  const marker = `<!-- agents-holding:qc-checklist:${issue} -->`, rows = (policy.checks ?? []).map((x) => {
+    const id = String(x.id), e = evidence[id]; return `- [${e?.ok ? "x" : " "}] ${x.required === false ? "Optional" : "Required"}: ${id} | owner=${x.owner ?? policy.owner ?? "QC"} | ${x.runner === "registered_terminal" ? `terminal: ${x.command ?? (x.commands ?? []).join(" && ")}` : `command/tool: ${x.command ?? x.tool ?? "configured runner"}`} | evidence=${x.evidence ?? "exit code + timestamp + artifact/tree"} | recovery=${x.failure_target ?? policy.recovery_stage ?? policy.retry_stage ?? "Blocked"}${e ? ` | ref=${e.ref ?? "local"} at=${e.at ?? "now"} exit=${e.exit_code ?? "?"}` : ""}`;
+  });
+  return `${marker}\nQC CHECKLIST (effective company/project policy)\n${rows.join("\n")}\nPass only when every required item is checked with validated fresh evidence.`;
+}
 /** Evidence gate for implementation -> the next quality/review stage.  A model
  * answer is not evidence: the worker must have produced a local commit and a
  * non-empty, successful verification report.  Flow definitions may relax the

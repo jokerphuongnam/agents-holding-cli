@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { implementationEvidence, terminalSessionEvidence, validatePtyExecutionEvidence } from "../full/client/scripts/lean.mjs";
+import { implementationEvidence, terminalSessionEvidence, validatePtyExecutionEvidence, qcChecklist } from "../full/client/scripts/lean.mjs";
 import { resolveAgent } from "../full/client/scripts/agents.mjs";
 
 const good = { summary: "Changed canonical cache routing", tests: "build: ok; install: ok; smoke: ok" };
@@ -33,4 +33,9 @@ assert.equal(validatePtyExecutionEvidence({ session: ptySession, result: { ...pt
 assert.equal(validatePtyExecutionEvidence({ session: ptySession, result: { ...pty, cwd: "/wrong" }, command: "make test", repo: "/repo" }).ok, false, "wrong cwd fails");
 assert.equal(validatePtyExecutionEvidence({ session: ptySession, result: { ...pty, ended_at: "2020-01-01T00:00:00Z" }, command: "make test", repo: "/repo" }).ok, false, "stale transcript fails");
 assert.equal(validatePtyExecutionEvidence({ session: ptySession, result: { ...pty, exit_code: 0, transcript_signature: "forged" }, command: "make test", repo: "/repo" }).ok, false, "forged transcript/exit evidence fails");
+const checklist = qcChecklist({ owner: "qc-lead", retry_stage: "coding", checks: [{ id: "static-check", required: true, tool: "lint" }, { id: "terminal-build", runner: "registered_terminal", command: "make test", required: true, evidence: "exit_code=0", failure_target: "reopened" }] }, { issue: "X-1" });
+assert.match(checklist, /qc-checklist:X-1/);
+assert.match(checklist, /terminal: make test/);
+assert.match(checklist, /recovery=reopened/);
+assert.equal((checklist.match(/QC CHECKLIST/g) ?? []).length, 1, "stable checklist marker avoids duplicate content");
 console.log("workflow_invariant_test: pass");
