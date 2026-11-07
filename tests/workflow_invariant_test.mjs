@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { implementationEvidence, terminalSessionEvidence, validatePtyExecutionEvidence, qcChecklist } from "../full/client/scripts/lean.mjs";
+import { implementationEvidence, terminalSessionEvidence, validatePtyExecutionEvidence, qcChecklist, workChecklist } from "../full/client/scripts/lean.mjs";
 import { resolveAgent } from "../full/client/scripts/agents.mjs";
 
 const good = { summary: "Changed canonical cache routing", tests: "build: ok; install: ok; smoke: ok" };
@@ -38,4 +38,10 @@ assert.match(checklist, /qc-checklist:X-1/);
 assert.match(checklist, /terminal: make test/);
 assert.match(checklist, /recovery=reopened/);
 assert.equal((checklist.match(/QC CHECKLIST/g) ?? []).length, 1, "stable checklist marker avoids duplicate content");
+const work = workChecklist({ stage: "product_work", owner_role: "ba-lead", steps: ["draft plan", "post handoff"] }, { issue: "X-2", stage: "product_work", plan: "scope" });
+assert.match(work, /work-checklist:X-2:product_work/);
+assert.match(work, /draft plan/);
+assert.match(work, /owner=ba-lead/);
+assert.match(work, /failure\/blocker/);
+assert.equal((work.match(/WORK CHECKLIST/g) ?? []).length, 1, "one stable work checklist marker");
 console.log("workflow_invariant_test: pass");

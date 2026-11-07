@@ -122,6 +122,12 @@ export function qcChecklist(policy = {}, { issue = "TASK", evidence = {} } = {})
   });
   return `${marker}\nQC CHECKLIST (effective company/project policy)\n${rows.join("\n")}\nPass only when every required item is checked with validated fresh evidence.`;
 }
+export function workChecklist(na = {}, { issue = "TASK", stage = na.stage, plan = null } = {}) {
+  const marker = `<!-- agents-holding:work-checklist:${issue}:${stage} -->`;
+  const steps = (na.steps ?? []).filter((s) => !/^CHAIN|^STOP|^wait/i.test(String(s))).map((s, i) => `- [ ] ${i + 1}. ${String(s).slice(0, 500)} | owner=${na.staff?.[stage]?.role ?? na.owner_role ?? "staff"} | evidence=artifact/comment/checkpoint`);
+  if (!steps.length) steps.push(`- [ ] 1. Execute the effective ${stage} stage actions | owner=${na.staff?.[stage]?.role ?? na.owner_role ?? "staff"} | evidence=artifact/comment/checkpoint`);
+  return `${marker}\nWORK CHECKLIST — ${stage}\n${plan ? `Plan reference: ${String(plan).slice(0, 800)}\n` : ""}${steps.join("\n")}\nStatus: started → in progress → completed/blocked\nUpdate this checklist at start, after each step, on failure/blocker, and handoff. Recovery: ${na.qc_policy?.recovery_stage ?? na.release_policy?.target ?? "effective workflow policy"}.`;
+}
 /** Evidence gate for implementation -> the next quality/review stage.  A model
  * answer is not evidence: the worker must have produced a local commit and a
  * non-empty, successful verification report.  Flow definitions may relax the

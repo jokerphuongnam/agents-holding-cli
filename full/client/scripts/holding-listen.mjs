@@ -611,6 +611,13 @@ async function leanRunInner(p, na, depth, vis) {
     if (jira && !vis.labeled) { vis.labeled = true; await jira.label(issue, "add").catch((e) => log("Jira label add failed:", e.message)); }
     if (jira && kind !== "script" && vis.staffRole !== role) { vis.staffRole = role; await jira.staffLabel(issue, role, L.loadAgentCfg(homedir(), company).staff?.[role]?.jira_user || null).then((acct) => acct ? mcp("set_task_assignee", { company, task: issue, account: acct }).catch((e) => log("persist assignee failed:", e.message)) : null).catch((e) => log("Jira staff label failed:", e.message)); }
     if (kind !== "script" && !(kind === "code" && na.review_feedback)) await say(false, L.startedComment(vis.staff, s0, L.staffWhy(na, s0, { kind, developer: dev0 }))); // review: the "back to Coding" comment says it
+    const ck = L.loadPlan(st, issue);
+    if (!ck[`work_checklist_${s0}`]) {
+      const checklist = L.workChecklist(na, { issue, stage: s0, plan: ck.plan ?? ck.tech_plan ?? null });
+      if (commMode[company] === "chat") await comms(issue, checklist, "gate");
+      else if (jira) await jira.comment(issue, `[agent-holding] [${L.stageTitle(s0)}]\n${checklist}`).catch((e) => log(`work checklist comment failed: ${e.message}`));
+      L.savePlan(st, issue, { [`work_checklist_${s0}`]: { marker: `<!-- agents-holding:work-checklist:${issue}:${s0} -->`, status: "started", at: new Date().toISOString(), fallback: commMode[company] === "chat" ? "CEO/chat inbox" : "Jira comment" } });
+    }
     L.desktopNotify(homedir(), `agents-holding: ${issue}`, `Started ${L.stageTitle(s0)}`);
   };
   for (const seg of L.segments(na)) {
