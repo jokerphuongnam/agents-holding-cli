@@ -8,7 +8,7 @@ import * as O from "./outbound.mjs";
 import { localMeta, crawlPublic } from "./skills.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { homedir, hostname } from "node:os";
 import { join, resolve } from "node:path";
 import * as L from "./lean.mjs";
@@ -754,6 +754,13 @@ Jira: ${issue}` });
       const where = [sv.where, ...h.msg].filter(Boolean).join("\n");
       await say(who, `QC PASS\n${txt}${where ? `\n${where}` : ""}`);
       if (h.msg.some((m) => /NOT done|failed/.test(m))) return;
+      const digest = (s) => `sha256:${createHash("sha256").update(String(s ?? "")).digest("hex")}`;
+      const configured = na.qc_policy?.checks ?? ["implementation_command", "build_install", "tests", "working_tree_artifact_policy", "local_commit"].map((id) => ({ id, required: true }));
+      const checksOut = res.flatMap((x) => [...x.v.passed, ...x.v.failed]);
+      const checkRows = configured.map((spec) => { const id = String(spec.id), match = checksOut.find((x) => (id.includes("static") && /lint|typecheck|analy/i.test(x.name)) || (id === "build" && /build|install/i.test(x.name)) || (id.includes("unit") && /test|unit/i.test(x.name)) || (id.includes("integration") && /integration|smoke/i.test(x.name))); const x = id === "implementation_command" ? { command: "coding worker result + local commit", ok: !!sv.implementation_evidence, out: sv.implementation_evidence?.summary ?? "missing" } : id === "artifact-check" || id === "working_tree_artifact_policy" ? { command: "git status / artifact policy", ok: !!sv.where, out: sv.where ?? "missing" } : id === "local_commit" ? { command: "git commit (local, no push)", ok: !!sv.commit, out: sv.commit ?? "missing" } : match ? { command: match.name, ok: !!match.ok, out: match.out } : { command: spec.commands?.join(" && ") || spec.tool || id, ok: false, out: "missing configured evidence" }; return { id, ...x, exit_code: x.ok ? 0 : 1, stdout_digest: digest(x.out), stderr_digest: digest(x.ok ? "" : x.out), commit: sv.commit ?? "", tree: digest(sv.where ?? ""), artifacts: [sv.where, sv.commit].filter(Boolean), timestamp: new Date().toISOString(), actor: "agents-holding-qc", model: "script", ok: !!x.ok }; });
+      const qcReport = { timestamp: new Date().toISOString(), actor: "agents-holding-qc", developer: sv.developer ?? null, model: "script", pass: checkRows.every((x) => x.ok), checks: checkRows };
+      if (!qcReport.pass) { await record("qc_fail", `QC evidence gate failed: ${checkRows.filter((x) => !x.ok).map((x) => x.id).join(", ")}`); return; }
+      await record("qc_report", JSON.stringify(qcReport));
       const art = (k) => ({ pr: `${sv.summary ?? ""}\n${where}`, qc_pass: txt, note: `${txt}\n${where}` }[k] ?? txt);
       const to = seg.moves[0];
       if (to) { const need = L.neededArtifact(s0, to); if (need) await record(need, art(need)); else await record("qc_pass", txt); if (!(await advance(s0, to, art))) return; }
