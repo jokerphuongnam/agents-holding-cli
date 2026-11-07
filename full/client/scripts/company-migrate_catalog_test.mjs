@@ -8,4 +8,6 @@ assert.match(source, /\.claude\/agents/);
 assert.match(source, /\.codex\/agents/);
 assert.match(source, /replace\(\/\\s\+\[23\]\$\//);
 assert.match(source, /catalog/);
+assert.match(source, /repoCompany/);
+assert.match(source, /repo_hint: repo/);
 console.log("company-migrate catalog contract: ok");

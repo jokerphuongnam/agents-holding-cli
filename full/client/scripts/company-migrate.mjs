@@ -49,7 +49,9 @@ export function parseLocal(dir) {
   let created = null; try { created = statSync(dir).birthtime.toISOString(); } catch {}
   return { name, roles: [...new Set(roles)], plans, parentLocal: parent, tech, created_at: created };
 }
-const L = parseLocal(dir); const catalog = roleCatalog(repo, dir); if (catalog.length) L.roles = catalog.map((x) => x.id); if (opt("--name")) L.name = opt("--name"); const slug = opt("--slug") || L.name, parent = opt("--parent") || (L.parentLocal ? L.parentLocal.replace(/-company$/, "") : null);
+const L = parseLocal(dir); const catalog = roleCatalog(repo, dir); if (catalog.length) L.roles = catalog.map((x) => x.id); if (opt("--name")) L.name = opt("--name");
+let repoCompany = null; try { repoCompany = JSON.parse(readFileSync(join(repo, ".agents/company.json"), "utf8")).company || null; } catch {}
+const slug = opt("--slug") || repoCompany || L.name, parent = opt("--parent") || (L.parentLocal ? L.parentLocal.replace(/-company$/, "") : null);
 say(`Local company ${L.name}: ${L.roles.length} staff files, ${L.plans} plans${parent ? `, parent ${parent}` : ""}`, `Công ty cục bộ ${L.name}: ${L.roles.length} file nhân sự, ${L.plans} kế hoạch${parent ? `, công ty mẹ ${parent}` : ""}`);
 if (argv.includes("--dry-run")) process.exit(0);
 const bk = join(homedir(), ".config/agents-holding/backups"); mkdirSync(bk, { recursive: true, mode: 0o700 });
@@ -65,7 +67,7 @@ async function mcp(name, args) {
   const j = await r.json(), t = j.result?.content?.[0]?.text ?? j.error?.message ?? "";
   if (j.error || j.result?.isError) { console.error(t); process.exit(1); } try { return JSON.parse(t); } catch { return t; }
 }
-const out = await mcp("company_import", { name: L.name, slug, roles: L.roles, catalog, plans: L.plans, tech: L.tech, ...(L.created_at ? { created_at: L.created_at } : {}), ...(parent ? { parent } : {}), ...(opt("--jira") ? { jira_project_key: opt("--jira") } : {}) });
+const out = await mcp("company_import", { name: L.name, slug, repo_hint: repo, roles: L.roles, catalog, plans: L.plans, tech: L.tech, ...(L.created_at ? { created_at: L.created_at } : {}), ...(parent ? { parent } : {}), ...(opt("--jira") ? { jira_project_key: opt("--jira") } : {}) });
 const d = out.data ?? out;
 const cj = join(repo, ".agents/company.json"); if (existsSync(cj)) writeFileSync(cj + ".bak", readFileSync(cj));
 writeFileSync(cj, JSON.stringify({ company: d.company }, null, 1) + "\n");
