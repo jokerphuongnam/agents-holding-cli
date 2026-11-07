@@ -1,0 +1,34 @@
+name: Release client distribution
+
+on:
+  push:
+    tags:
+      - '20[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify public payload
+        run: test -x full/client/scripts/holding && test -f full/install.sh && test -f full/SETUP.md
+      - name: Run client tests
+        run: bash scripts/test-all.sh
+      - name: Package public distribution
+        run: |
+          mkdir -p dist
+          tar --exclude=.git -czf "dist/agents-holding-cli-${GITHUB_REF_NAME}.tar.gz" .
+          git archive --format=zip --output="dist/agents-holding-cli-${GITHUB_REF_NAME}.zip" HEAD
+      - name: Publish release and attach artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes
