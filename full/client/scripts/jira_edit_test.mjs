@@ -1,0 +1,11 @@
+import assert from "node:assert/strict";
+import { edit } from "./jira.mjs";
+const calls = [];
+const req = async (method, path, body) => { calls.push({ method, path, body }); if (method === "GET") return { fields: { labels: ["keep", "ah-registration-required"], description: { type: "doc" } } }; return null; };
+assert.match(await edit(req, "GEN-1", { description: "Canonical requirements", labelAdd: ["workflow-ready"], labelRemove: ["ah-registration-required"], assignee: "acct-1", fieldsJson: JSON.stringify({ customfield_123: "checkpoint:in_progress" }) }), /updated GEN-1/);
+assert.equal(calls[1].method, "PUT");
+assert.deepEqual(calls[1].body.fields.labels, ["keep", "workflow-ready"]);
+assert.equal(calls[1].body.fields.assignee.accountId, "acct-1");
+assert.equal(calls[1].body.fields.customfield_123, "checkpoint:in_progress");
+const before = calls.length; assert.equal(await edit(req, "GEN-1", { labelAdd: [], labelRemove: [] }), "unchanged GEN-1"); assert.equal(calls.length, before + 1);
+console.log("jira_edit_test: generic idempotent issue update path passed");

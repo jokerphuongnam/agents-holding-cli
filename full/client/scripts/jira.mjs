@@ -6,7 +6,7 @@ import "./kc-guard.mjs"; // pin keychain calls to the real login keychain (never
 //   jira connect [--switch] | status | logout
 //   jira list [column] | show KEY | board | add "title" [desc] | move KEY <column> | comment KEY "text"
 //   --project KEY picks the board when this repo (or the registry) has several.
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -122,6 +122,20 @@ export async function comment(req, key, text) {
   await req("POST", `/issue/${encodeURIComponent(key)}/comment`, { body: adf(text) });
   return `commented on ${key} as you (counts as user feedback)`;
 }
+export async function edit(req, key, opts = {}) {
+  if (!key) throw new Error("usage: holding jira edit KEY [--description-file FILE|--description TEXT] [--label-add L] [--label-remove L] [--assignee ACCOUNT_ID] [--fields-json JSON]");
+  const old = await req("GET", `/issue/${encodeURIComponent(key)}?fields=summary,description,labels,assignee`), f = old.fields ?? {};
+  const fields = {}, add = opts.labelAdd ?? [], remove = new Set(opts.labelRemove ?? []);
+  if (opts.description != null) fields.description = adf(opts.description);
+  if (opts.summary != null) fields.summary = opts.summary;
+  if (opts.assignee != null) fields.assignee = opts.assignee === "" || opts.assignee === "null" ? null : { accountId: opts.assignee };
+  const labels = [...new Set([...(f.labels ?? []), ...add])].filter((x) => !remove.has(x));
+  if (JSON.stringify(labels) !== JSON.stringify(f.labels ?? [])) fields.labels = labels;
+  if (opts.fieldsJson) Object.assign(fields, JSON.parse(opts.fieldsJson));
+  if (!Object.keys(fields).length) return `unchanged ${key}`;
+  await req("PUT", `/issue/${encodeURIComponent(key)}`, { fields });
+  return `updated ${key}: ${Object.keys(fields).join(", ")}`;
+}
 
 async function serverUsage(company, issue) { // tokens per task from the server (/billing usage), best effort
   try {
@@ -159,7 +173,17 @@ export async function main(argv, { home = homedir(), cwd = process.cwd(), fetchF
     case "add": return out(await create(req, b().project_key, a[0], a.slice(1).join(" ")));
     case "move": return out(await move(req, keyOf(a[0]), a.slice(1).join(" ")));
     case "comment": return out(await comment(req, keyOf(a[0]), a.slice(1).join(" ")));
+    case "edit": case "update": { const k = keyOf(a.shift()); if (!k) throw new Error("usage: holding jira edit KEY ..."); const o = { labelAdd: [], labelRemove: [] };
+      for (let i = 0; i < a.length; i++) { const x = a[i]; if (x === "--description-file") { const p = a[++i]; if (!p || !existsSync(p)) throw new Error(`description file not found: ${p}`); o.description = readFileSync(p, "utf8"); }
+        else if (x === "--description") o.description = a[++i] ?? "";
+        else if (x === "--summary") o.summary = a[++i] ?? "";
+        else if (x === "--assignee") o.assignee = a[++i] ?? "";
+        else if (x === "--label-add") o.labelAdd.push(a[++i]);
+        else if (x === "--label-remove") o.labelRemove.push(a[++i]);
+        else if (x === "--fields-json") o.fieldsJson = a[++i];
+        else throw new Error(`unknown jira edit option: ${x}`); }
+      return out(await edit(req, k, o)); }
   }
-  throw new Error('usage: holding jira list [column] | show KEY | board | add "title" [desc] | move KEY <column> | comment KEY "text"  [--project KEY]');
+  throw new Error('usage: holding jira list [column] | show KEY | board | add "title" [desc] | move KEY <column> | comment KEY "text" | edit KEY [options]  [--project KEY]');
 }
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) main(process.argv.slice(2)).catch((e) => { console.error(e.message); process.exit(1); });
