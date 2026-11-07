@@ -57,6 +57,7 @@ if (cmd === "add") {
   if (!n) die("nothing matched"); R.save(home, r); console.log(`removed ${n} entr${n === 1 ? "y" : "ies"}; restart the listener: holding listener start`);
 } else if (cmd === "list") {
   const r = R.load(home) ?? R.empty();
+  const check = R.reconcile(r); for (const i of check.issues) console.error(`warning: ${i.message}`);
   if (args.includes("--json")) console.log(JSON.stringify(r, null, 1));
   else if (!r.projects.length) console.log("no projects (holding project add --jira-project KEY inside a repo)");
   else for (const p of r.projects) console.log(`${p.name}  ${p.path}\n  boards: ${p.boards.map((b) => `${b.project_key}@${b.company}`).join(", ")}\n  settings: ${JSON.stringify(p.settings)}`);

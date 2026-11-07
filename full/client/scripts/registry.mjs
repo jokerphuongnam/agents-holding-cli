@@ -55,6 +55,37 @@ export function removeBoard(reg, { path, project_key }) {
   return n - pr.boards.length;
 }
 export const companies = (reg) => [...new Set(reg.projects.flatMap((p) => p.boards.map((b) => b.company)).filter(Boolean))];
+
+// The local registry is a materialized view of canonical company/project config.
+// Reconcile it at every listener/install/migrate boundary so a stale machine
+// cannot silently drop a Jira project.  This is deliberately independent of
+// any product/company name (parent and child repos are ordinary registrations).
+export function reconcile(reg, { fileExists = existsSync, readCompany = (p) => {
+  try { return JSON.parse(readFileSync(join(p, ".agents/company.json"), "utf8")).company ?? null; } catch { return null; }
+} } = {}) {
+  const issues = [], seen = new Map();
+  for (const p of reg.projects ?? []) {
+    p.path = resolve(p.path);
+    if (!fileExists(p.path)) issues.push({ code: "missing_repo", path: p.path, message: `registered repo is missing: ${p.path}` });
+    const configured = readCompany(p.path);
+    if (!configured) issues.push({ code: "missing_company_config", path: p.path, message: `${p.path} has no readable .agents/company.json` });
+    else if (p.boards?.some((b) => b.company && b.company !== configured)) issues.push({ code: "company_mismatch", path: p.path, configured, message: `${p.path} maps to ${configured}, but registry contains another company` });
+    for (const b of p.boards ?? []) {
+      const key = `${b.site ?? ""}|${b.project_key}|${b.company}`;
+      const prior = seen.get(key);
+      if (prior && prior.path !== p.path) issues.push({ code: "duplicate_mapping", key, paths: [prior.path, p.path], message: `Jira ${b.project_key} has duplicate repo mappings: ${prior.path}, ${p.path}` });
+      else seen.set(key, p);
+      if (!b.project_key || !b.company) issues.push({ code: "incomplete_mapping", path: p.path, message: `${p.path} contains a project mapping without project key/company` });
+    }
+  }
+  return { registry: reg, issues };
+}
+export function clearRegistrationIssue(reg, { path, project_key, company }) {
+  const p = (reg.projects ?? []).find((x) => resolve(x.path) === resolve(path));
+  return !!p?.boards?.some((b) => b.project_key === project_key.toUpperCase() && b.company === company);
+}
+export const registrationComment = (issue, issues) => `[agent-holding] [Tech Lead] REGISTRATION ACTION REQUIRED\n${issue} was not routed because the company/project registration is invalid.\n` +
+  issues.map((x) => `- ${x.message}`).join("\n") + "\nFix the canonical company config or run `holding project add --repo <repo> --jira-project <KEY> --company <company>`, then restart the listener. The task was not run.";
 /** Repos fed by the board of this issue (company + project key prefix, optional site). */
 export function candidates(reg, { company, issue, site }) {
   const key = projectKeyOf(issue);

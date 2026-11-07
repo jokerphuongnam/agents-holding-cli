@@ -61,6 +61,8 @@ if (!registry) {
   if (!registry) throw new Error("no projects: run `holding project add --jira-project KEY` inside a repo");
   R.save(homedir(), registry); log(`registry: migrated ${registry.projects[0].path} into ${R.registryPath(homedir())}`);
 }
+const registration = R.reconcile(registry);
+for (const issue of registration.issues) log(`registry: ${issue.code}: ${issue.message}`);
 if (onlyRepo) {
   registry = { ...registry, projects: registry.projects.filter((p) => p.path === onlyRepo) };
   if (!registry.projects.length) { const m = R.migrate(homedir(), onlyRepo, { site: jiraSite }); if (!m) throw new Error(`${onlyRepo}: no .agents/company.json and not in projects.json`); registry = m; }
@@ -329,13 +331,30 @@ async function useCtx(p) {
   const cands = R.candidates(registry, { company, issue, site: jiraSite });
   if (cands.length > 1 && jira) { try { meta = await jira.meta(issue); } catch (e) { log(`route: Jira labels for ${issue} failed (${e.message})`); } }
   const r = scopedRoute ? R.routeForRepo(registry, { repo: onlyRepo, company, issue, site: jiraSite, ...meta }) : R.route(registry, { company, issue, site: jiraSite, ...meta });
-  if (r.none) { log(`route: ${issue} (${company}) matches no registered repo; skipped`); return false; }
+  if (r.none) {
+    const relevant = registration.issues.filter((x) => x.path && registry.projects.some((p) => p.path === x.path && p.boards?.some((b) => b.project_key === String(issue).split("-")[0])));
+    const why = relevant.length ? relevant : [{ message: `no valid registered repo for Jira project ${String(issue).split("-")[0]}` }];
+    const st = L.stateDir(homedir(), company), plan = L.loadPlan(st, issue);
+    if (!plan.registration_asked) {
+      if (jira) await jira.labels(issue, ["ah-registration-required"]).catch((e) => log(`route: ${issue} registration label failed: ${e.message}`));
+      try { await comms(issue, R.registrationComment(issue, why), "registration"); } catch (e) { log(`route: ${issue} registration comment failed: ${e.message}`); }
+      L.savePlan(st, issue, { registration_asked: true });
+    }
+    log(`route: ${issue} registration invalid; actionable Jira flag/comment emitted`); return false;
+  }
   if (r.ask) {
     const st = L.stateDir(homedir(), company);
     if (!L.loadPlan(st, issue).repo_asked) { const t = R.askComment(issue, r.ask); await comms(issue, t, "repo"); L.savePlan(st, issue, { repo_asked: r.ask }); }
     log(`route: ${issue} feeds ${r.ask.join(",")}; no repo:<name> label/component -> asked on Jira, waiting`); return false;
   }
   runRepos = r.repos.map((x) => x.path); repo = runRepos[0]; runSettings = r.repos[0].settings ?? {};
+  if (jira) {
+    try {
+      const fixed = await jira.meta(issue);
+      if ((fixed.labels ?? []).includes("ah-registration-required")) await jira.labels(issue, [], ["ah-registration-required"]);
+      const st = L.stateDir(homedir(), company); if (L.loadPlan(st, issue).registration_asked) L.savePlan(st, issue, { registration_asked: null });
+    } catch (e) { log(`route: ${issue} registration recovery check failed: ${e.message}`); }
+  }
   log(`route: ${issue} (${company}) -> ${r.repos.map((x) => x.name).join(", ")}`); return true;
 }
 let runSettings = {};

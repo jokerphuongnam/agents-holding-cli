@@ -71,7 +71,9 @@ const out = await mcp("company_import", { name: L.name, slug, repo_hint: repo, r
 const d = out.data ?? out;
 const cj = join(repo, ".agents/company.json"); if (existsSync(cj)) writeFileSync(cj + ".bak", readFileSync(cj));
 writeFileSync(cj, JSON.stringify({ company: d.company }, null, 1) + "\n");
-const reg = R.load(homedir()); if (!reg.projects.some((p) => p.path === repo)) { reg.projects.push({ path: repo, name: basename(repo), boards: [] }); R.save(homedir(), reg); }
+const reg = R.load(homedir()) ?? R.empty(); if (!reg.projects.some((p) => p.path === repo)) reg.projects.push({ path: repo, name: basename(repo), boards: [] });
+const check = R.reconcile(reg); if (check.issues.some((i) => i.code === "missing_company_config" || i.code === "missing_repo")) throw new Error(check.issues.map((i) => i.message).join("; "));
+R.save(homedir(), reg);
 say(`Migrated -> ${d.company}${d.parent ? ` (under ${d.parent})` : ""}: ${d.roster.length} staff connected, ${d.local_only_roles} custom roles kept locally, ${d.skipped_over_limit} over plan limit.`,
     `Đã chuyển -> ${d.company}${d.parent ? ` (thuộc ${d.parent})` : ""}: ${d.roster.length} nhân sự đã kết nối, ${d.local_only_roles} vai trò riêng giữ ở máy, ${d.skipped_over_limit} vượt giới hạn gói.`);
 say("Originals kept on disk. Check: holding company show " + d.company, "Bản gốc vẫn giữ nguyên trên máy. Kiểm tra: holding company show " + d.company);

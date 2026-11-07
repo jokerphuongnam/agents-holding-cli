@@ -42,6 +42,12 @@ After migrating, only `.agents/company.json` is read. The old `.agents/<x>-compa
 Suggested layout for what you keep: `.agents/cache/` and `.agents/plans/` (personal, keep untracked) and `.agents/custom-skills/<id>/` (private repo skills, never published). Holding does not require a specific location for cache or plans.
 Migrate child companies (`children/<child>` pointing to another repo) separately before removing the parent's old folder.
 
+## Jira project/repository registration invariant
+
+The canonical mapping is the company config in each repository (`.agents/company.json`) plus the explicit Jira project mapping created by `holding project add`. The listener reconciles this mapping on startup and after migration; `holding project list` also reports invalid mappings. Parent and child companies are independent registrations and may route issues across teams through their registered project keys. A valid mapping is never skipped because the listener happened to start from another repository.
+
+Duplicate project/company mappings, missing repositories, missing or mismatched `.agents/company.json`, and incomplete entries are registration errors. The listener posts one actionable Jira comment, adds `ah-registration-required`, records the pending marker, and does not run the task until the mapping is fixed. Once the canonical config and registry agree, the marker is cleared and routing resumes. Local cache, an old listener process, or a stale `projects.json` is not evidence of a valid registration.
+
 ## Staff limits per plan
 
 Each company's roster can hold at most this many staff (CEO included). Applies to `/staff add`, `holding company staff move|assign`, `holding company migrate` and new companies. Full pricing (credits, devices, action costs): [PRICING.md](PRICING.md).
