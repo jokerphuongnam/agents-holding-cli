@@ -65,7 +65,11 @@ export async function connect(provider, { log = console.log, timeoutMs = 300000,
     if (timeoutHandle) clearTimeout(timeoutHandle);
     while (!tok && Date.now() - t0 < timeoutMs) { const j = await post("/claim", { provider, state: b.state, verifier }); if (!j.pending) tok = j; else await new Promise((r) => setTimeout(r, 2000)); }
     if (!tok) throw new Error("timed out waiting for approval");
-    tok = await enrichAccount(provider, tok); save(provider, tok); return `${provider} connected as ${accountOf(tok)}`;
+    tok = await enrichAccount(provider, tok);
+    if (provider === "atlassian" && sw && loadPool(provider).some((x) => accountKey(x) === accountKey(tok))) {
+      throw new Error(`same Atlassian account returned (${accountOf(tok)}); account add/switch requires a different account. Log out in the browser or use a separate private window, then retry.`);
+    }
+    save(provider, tok); return `${provider} connected as ${accountOf(tok)}`;
   } finally { srv.closeAllConnections?.(); srv.closeIdleConnections?.(); srv.close(); srv.unref?.(); }
 }
 /** Valid access token (refreshing through our server when expired), or null when not connected. */
