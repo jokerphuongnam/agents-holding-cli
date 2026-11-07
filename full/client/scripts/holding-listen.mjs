@@ -821,7 +821,9 @@ async function startupRecovery(company) {
   startupRecovered.add(company);
   const boards = registry.projects.flatMap((p) => p.boards).filter((b) => b.company === company);
   for (const b of boards) {
-    const res = await jira.search(`project = "${b.project_key}" AND statusCategory = "In Progress" ORDER BY updated ASC`, ["status", "updated", "summary", "labels"]);
+    const aiStatuses = ["In Progress", "Pre Coding", "Coding", "QC", "In Review"];
+    const quoted = aiStatuses.map((s) => `"${s.replaceAll('"', '\\"')}"`).join(", ");
+    const res = await jira.search(`project = "${b.project_key}" AND status in (${quoted}) ORDER BY updated ASC`, ["status", "updated", "summary", "labels"]);
     for (const x of res ?? []) {
       if (!x.key) continue;
       const stage = x.fields?.status?.name ?? "In Progress";
