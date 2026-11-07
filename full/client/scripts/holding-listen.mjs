@@ -702,8 +702,9 @@ async function learnHabits(issue, readKey, staff) {
   const r = await leanModel("habits", issue, "done", L.habitsPrompt(iss, cm, old));
   const { all, added } = L.mergeHabits(old, Array.isArray(r?.habits) ? r.habits : []);
   if (!added.length) return log(`habits: ${issue}: nothing new (${old.length} kept)`);
-  L.saveHabits(homedir(), company, all); log(`habits: ${issue}: +${added.length} (${all.length} total)`);
-  await comms(issue, L.learnedComment(staff, added));
+  // Habits are private user preferences: persist locally only. Never post the
+  // distilled values back to Jira/server or include them in MCP artifacts.
+  L.saveHabits(homedir(), company, all); log(`habits: ${issue}: +${added.length} (${all.length} total, local-only)`);
 }
 
 // Deterministic Jira card moves (no AI): transition by target STATUS NAME, fallback stage comment. Dry: print only.
