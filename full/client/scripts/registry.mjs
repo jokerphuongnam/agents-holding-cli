@@ -16,7 +16,8 @@ export const projectKeyOf = (issue) => (String(issue ?? "").match(/^([A-Z][A-Z0-
 const siteKey = (site) => {
   if (!site) return null;
   try {
-    const u = new URL(String(site));
+    const raw = String(site).trim();
+    const u = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `https://${raw}`);
     const m = u.pathname.match(/^\/ex\/jira\/([^/]+)/i);
     return m ? `cloud:${m[1].toLowerCase()}` : `host:${u.hostname.toLowerCase()}`;
   } catch { return String(site).replace(/\/$/, "").toLowerCase(); }

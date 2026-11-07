@@ -123,10 +123,11 @@ const autostartPlist = join(homedir(), "Library/LaunchAgents/com.agentsholding.j
 // comment once on every card that changed meanwhile (text from the server, task language), then reconcile replays the change.
 const myJira = {}; // enterprise: this key's Jira account; work starts only on cards assigned to it
 let lastBeat = 0;
+let heartbeatChain = Promise.resolve();
 const joined = new Set();
 const readiness = () => listenerJira && joined.size === companyList.length && companyList.length > 0;
 const heartbeatIfStale = () => { if (Date.now() - lastBeat > 300000) heartbeat(); };
-const heartbeat = (requested = "online") => { const state = requested === "stopped" ? "stopped" : (readiness() ? "online" : "starting"); if (state === "online") log("readiness online", companyList.join(",")); return (lastBeat = Date.now(), Promise.all(companyList.map((company) => mcp("listener_heartbeat", { company, host: hostname(), pid: process.pid, autostart: existsSync(autostartPlist), version: AH_CLIENT_VERSION, state, meta: { ...localMeta(), jira_ready: listenerJira, process_ready: true, realtime_ready: readiness() } })
+const heartbeat = (requested = "online") => { heartbeatChain = heartbeatChain.catch(() => {}).then(() => { const state = requested === "stopped" ? "stopped" : (readiness() ? "online" : "starting"); if (state === "online") log("readiness online", companyList.join(",")); return (lastBeat = Date.now(), Promise.all(companyList.map((company) => mcp("listener_heartbeat", { company, host: hostname(), pid: process.pid, autostart: existsSync(autostartPlist), version: AH_CLIENT_VERSION, state, meta: { ...localMeta(), jira_ready: listenerJira, process_ready: true, realtime_ready: readiness() } })
   .then(async (r) => { if (r?.communication) commMode[company] = r.communication; if (r?.enterprise) myJira[company] = r.jira_account ?? null; L.writeStatus(homedir(), { companies: { [company]: { heartbeat_at: new Date().toISOString(), heartbeat_ok: true } } });
     if (state !== "online" || !(r?.was_offline || r?.missed?.length)) return;
     log(`Jira Listener back online for ${company} (server saw it offline since ${r.offline_since ?? "?"}); ${r.missed?.length ?? 0} card(s) changed meanwhile`);
@@ -136,7 +137,7 @@ const heartbeat = (requested = "online") => { const state = requested === "stopp
     const ok = results.every(Boolean);
     L.writeStatus(homedir(), { listener_state: state, ...(ok && state === "online" ? { heartbeat_ok_at: new Date().toISOString() } : {}) });
     return ok;
-  }); };
+  }); }); return heartbeatChain; };
 L.writeStatus(homedir(), { pid: process.pid, started_at: new Date().toISOString(), notify: L.notifyOn(homedir()), running: null, listener_state: "starting", companies: {} });
 // Keep the server heartbeat comfortably below the watchdog's 150s stale window.
 // This is also the Rust listener contract: heartbeat is liveness, not event polling.

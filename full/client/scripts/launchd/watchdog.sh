@@ -25,7 +25,8 @@ heartbeat_ok() {
   "$NODE_BIN" - "$HOME/.config/agents-holding/listener-status.json" "$STALE" <<'NODE'
 const fs = require("fs");
 try { const [file, max] = process.argv.slice(2); const s = JSON.parse(fs.readFileSync(file, "utf8"));
-  const t = Date.parse(s.heartbeat_ok_at || "");
+  const times = [s.heartbeat_ok_at, ...Object.values(s.companies || {}).map(v => v.heartbeat_at)].map(x => Date.parse(x || "")).filter(Number.isFinite);
+  const t = times.length ? Math.max(...times) : NaN;
   process.exit(s.listener_state === "online" && Number.isFinite(t) && Date.now() - t <= Number(max) * 1000 ? 0 : 1);
 } catch { process.exit(1); }
 NODE
