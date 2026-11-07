@@ -293,15 +293,18 @@ export function ensureBranch(repo, branch) {
 }
 export function commitAll(repo, msg) {
   try {
-    // Do not pass `.` plus an exclude pathspec: Git treats an ignored .agents
-    // directory as an explicit add failure on some versions/platforms. Stage
-    // tracked changes, then add only untracked paths Git itself reports as
-    // eligible. The legacy company catalog is always excluded by exact path.
+    // .agents/ is holding-managed in every company repo and must never enter a
+    // product commit. Stage tracked changes, then add only Git-reported
+    // eligible untracked paths; this is equivalent to a directory pathspec
+    // exclude while avoiding shell/pathspec differences across platforms.
     git(repo, "add", "-u", "--");
     const raw = execFileSync("git", ["ls-files", "--others", "--exclude-standard", "-z"], { cwd: repo, encoding: "utf8" });
-    const paths = raw.split("\0").filter(Boolean).filter((p) => p !== ".agents/company.json");
+    const paths = raw.split("\0").filter(Boolean).filter((p) => !(/^\.agents(?:\/|$)/).test(p));
     if (paths.length) execFileSync("git", ["add", "--", ...paths], { cwd: repo, stdio: ["ignore", "pipe", "pipe"] });
-    if (!git(repo, "diff", "--cached", "--name-only")) return null;
+    const staged = git(repo, "diff", "--cached", "--name-only").split("\n").filter(Boolean);
+    const forbidden = staged.filter((p) => /^\.agents(?:\/|$)/.test(p));
+    if (forbidden.length) throw new Error(`refusing to commit holding-managed .agents/ paths: ${forbidden.join(", ")}`);
+    if (!staged.length) return null;
     git(repo, "commit", "-q", "-m", msg); return git(repo, "rev-parse", "--short", "HEAD"); } catch (e) { return "failed: " + e.message.split("\n")[0]; }
 }
 export const stateDir = (home, company) => { const d = join(home, ".config/agents-holding/state", company); mkdirSync(d, { recursive: true, mode: 0o700 }); return d; };

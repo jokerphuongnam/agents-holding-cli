@@ -245,6 +245,7 @@ if (!jira) log("Jira client: not ready (holding jira connect or Atlassian OAuth 
 // notification; Jira comments only in jira+chat mode. Labels/status/assignee update in both modes. Runs never wait for input:
 // they post the item and exit; the answer (Jira comment, /ceo or holding inbox reply) re-triggers the task from its checkpoint.
 const commMode = {};
+const WORKFLOW_FAILURE_LABEL = "ah-workflow-failed";
 async function comms(issue, text, kind = null) {
   if (kind) {
     try { const it = await mcp("inbox_post", { company, issue, kind, need: L.INBOX_NEED[kind] ?? "needs you", body: String(text).slice(0, 8000) });
@@ -474,7 +475,7 @@ async function leanModelOnce(kind, issue, stage, prompt, role, context, rsv, { s
 async function leanRun(p, na, depth = 0) {
   const issue = na.issue ?? p.issue ?? p.task_id; const vis = { labeled: false, started: new Set(), stage: na.stage, staff: L.stageStaff(na, na.stage), worked: false };
   try { const r = await leanRunInner(p, na, depth, vis);
-    { const stp = L.stateDir(homedir(), company), ck = X.ckptLoad(stp, issue); if (ck?.blocked || ck?.failed) { X.ckptSave(stp, issue, { blocked: null, failed: null }); if (jira && ck.blocked) await jira.labels(issue, [], [X.BLOCKED_LABEL]).catch(() => {}); } }
+    { const stp = L.stateDir(homedir(), company), ck = X.ckptLoad(stp, issue); if (ck?.blocked || ck?.failed) { X.ckptSave(stp, issue, { blocked: null, failed: null }); if (jira) await jira.labels(issue, [], [X.BLOCKED_LABEL, WORKFLOW_FAILURE_LABEL]).catch(() => {}); } }
     if (vis.worked && depth === 0) { L.desktopNotify(homedir(), `agents-holding: ${issue}`, `Finished ${L.stageTitle(vis.stage)}`); L.writeStatus(homedir(), { last_run: { issue, result: `ok (${vis.stage})`, at: new Date().toISOString() } }); }
     return r; }
   catch (e) {
@@ -489,6 +490,7 @@ async function leanRun(p, na, depth = 0) {
       L.writeStatus(homedir(), { last_run: { issue, result: `BLOCKED ${vis.stage}: ${e.agent.kind} ${e.agent.cause}`, at: new Date().toISOString() } });
       return;
     }
+    if (jira && /git staging|commit failed|\.agents\//i.test(String(e.message))) await jira.labels(issue, [WORKFLOW_FAILURE_LABEL]).catch((x) => log("workflow failure label failed:", x.message));
     await comms(issue, L.failedComment(vis.staff, vis.stage, e.message), "failed");
     L.desktopNotify(homedir(), `agents-holding: ${issue} FAILED`, `${L.stageTitle(vis.stage)}: ${e.message}`);
     L.writeStatus(homedir(), { last_run: { issue, result: `FAILED ${vis.stage}: ${String(e.message).slice(0, 120)}`, at: new Date().toISOString() } });
@@ -615,6 +617,7 @@ Jira: ${issue}` });
         const r1 = await leanModel("code", issue, stage, L.codePrompt(iss, {  plan: (plan ?? "") + multi, techPlan: o.techPlan, approval, feedback: o.feedback, hints: L.fileHints(files, `${iss.summary} ${iss.description} ${plan ?? ""}`), qc: !!o.selfCheck?.[rp], preexisting: L.preexistingFails(L.loadPlan(st, issue).qc_baseline?.[rp] ?? o.baselines?.[rp]), review: !!o.review, branch }), o.dev, L.contextOf({ brief: await brief(o.dev), habits }));
         if (r1.question && !r1.summary) { await record("question", r1.question); await say(o.who, `QUESTION (${rname(rp)})\n${r1.question}`, "question"); repo = runRepos[0]; return null; }
         const sha = L.commitAll(rp, `${o.wip ? `WIP(${issue}) ${o.wip}: ` : `${issue}: `}${r1.commit_message || iss.summary || "agent change"}`);
+        if (typeof sha === "string" && sha.startsWith("failed:")) throw new Error(`git staging/commit failed: ${sha}. Task remains in Coding; fix the command and rerun from the Coding checkpoint.`);
         const h = o.host ? host(r1) : { msg: [] };
         wheres.push(`${runRepos.length > 1 ? rname(rp) + ": " : ""}Branch ${branch}${sha ? ` @ ${sha}` : " (no changes)"}${h.url ? ` PR ${h.url}${h.merged ? " (merged)" : ""}` : " (local, not pushed)"}${h.msg.length && !h.url ? ` - ${h.msg.join("; ")}` : ""}`);
         if (!r) r = { ...r1, commit: sha }; else r = { ...r, summary: `${r.summary ?? ""}\n${r1.summary ?? ""}`, tests: [r.tests, r1.tests].filter(Boolean).join("\n"), tech_plan: [r.tech_plan, r1.tech_plan].filter(Boolean).join("\n") };
