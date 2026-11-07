@@ -773,6 +773,15 @@ async function reconcile(company, sinceIso) {
     L.writeStatus(homedir(), { companies: { [company]: { reconciled_at: new Date().toISOString(), reconciled: n } } });
   } finally { reconciling[company] = false; }
 }
+// Webhooks/realtime are the fast path; direct Jira reconciliation is the recovery path.
+// This catches missed Jira webhooks and replays only idempotent, unseen changes.
+const reconcileEverySec = Math.max(60, Number(process.env.AH_RECONCILE_SEC ?? 300));
+setInterval(() => {
+  for (const c of companyList) {
+    reconcile(c).catch((e) => log(`scheduled reconcile ${c} failed:`, e.message));
+  }
+  log(`scheduled Jira reconcile started (every ${reconcileEverySec}s)`);
+}, reconcileEverySec * 1000).unref?.();
 // Company-defined Jira Listener rules: real events only; deterministic planning and Jira actions use zero model tokens.
 const RULE_EVENTS = { user_move: "issue_transitioned", agent_move: "issue_transitioned", issue_transitioned: "issue_transitioned", user_comment: "comment_created", comment_created: "comment_created", task_done: "issue_transitioned", subtask_done: "all_subtasks_done", assignee_changed: "assignee_changed", label_added: "label_added" };
 async function applyJiraRules(p) {
@@ -825,19 +834,19 @@ async function connect(company) {
       if (p.rules_only) { applyJiraRules(p).catch((e) => log("rules failed:", e.message)); return; }
       L.writeStatus(homedir(), { companies: { [company]: { last_event_at: new Date().toISOString(), last_event: `${p.event} ${p.issue ?? ""}`.trim() } } });
       log("next_action", company, p.event, p.issue ?? p.task_id ?? "", "stage", p.stage, p.waiting ? "(waiting on user)" : "");
-      const sf = p.staffing; // staffing gate (needs-hire / needs-decision): post ONE rich comment + label, no run; cleared -> remove labels
+      const sf = p.staffing; // staffing gate: durable Jira flag; config-fix flags auto-clear after roster/skill repair
       if (sf && (p.issue ?? p.task_id)) {
         const k = p.issue ?? p.task_id, other = ["needs-hire", "needs-decision"].filter((l) => l !== sf.label);
         const nd = { ...(L.readStatus(homedir())?.companies?.[company]?.needs ?? {}) }; if (sf.kind === "ok") delete nd[k]; else nd[k] = sf.label;
         L.writeStatus(homedir(), { companies: { [company]: { needs: nd } } });
         if (sf.kind !== "ok") {
           log(`staffing ${k}: ${sf.kind} ${[...(sf.missing_roles ?? []), ...(sf.missing_skills ?? [])].join(",")}${sf.post ? "" : " (already asked)"}`);
-          if (jira) jira.labels(k, [sf.label], other).catch((e) => log("Jira label failed:", e.message))
+          if (jira) jira.labels(k, [sf.label], [...other, "ah-needs-fix"]).catch((e) => log("Jira label failed:", e.message))
             .then(() => (p.say ? comms(k, p.say) : null)).then(() => (sf.post && sf.text ? comms(k, sf.text, sf.kind === "needs_hire" ? "hire" : "decision") : null)).catch((e) => log("Jira comment failed:", e.message));
           if (sf.post) L.notify?.(`Jira Listener: ${k} ${sf.kind === "needs_hire" ? "needs a hire" : "needs your decision"}`);
           return;
         }
-        if (sf.clear && jira) jira.labels(k, [], ["needs-hire", "needs-decision"]).catch((e) => log("Jira label failed:", e.message));
+        if (sf.clear && jira) jira.labels(k, [], ["needs-hire", "needs-decision", "ah-needs-fix"]).catch((e) => log("Jira label failed:", e.message));
       }
       if (p.say && (p.issue ?? p.task_id)) { // server-decided one-off reply (To Do comment / "who should take this?"): post as is, no run
         const k = p.issue ?? p.task_id;
