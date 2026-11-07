@@ -292,7 +292,16 @@ export function ensureBranch(repo, branch) {
   catch (e) { return "failed: " + e.message.split("\n")[0]; }
 }
 export function commitAll(repo, msg) {
-  try { git(repo, "add", "-A", "--", ".", ":!.agents/company.json"); if (!git(repo, "diff", "--cached", "--name-only")) return null;
+  try {
+    // Do not pass `.` plus an exclude pathspec: Git treats an ignored .agents
+    // directory as an explicit add failure on some versions/platforms. Stage
+    // tracked changes, then add only untracked paths Git itself reports as
+    // eligible. The legacy company catalog is always excluded by exact path.
+    git(repo, "add", "-u", "--");
+    const raw = execFileSync("git", ["ls-files", "--others", "--exclude-standard", "-z"], { cwd: repo, encoding: "utf8" });
+    const paths = raw.split("\0").filter(Boolean).filter((p) => p !== ".agents/company.json");
+    if (paths.length) execFileSync("git", ["add", "--", ...paths], { cwd: repo, stdio: ["ignore", "pipe", "pipe"] });
+    if (!git(repo, "diff", "--cached", "--name-only")) return null;
     git(repo, "commit", "-q", "-m", msg); return git(repo, "rev-parse", "--short", "HEAD"); } catch (e) { return "failed: " + e.message.split("\n")[0]; }
 }
 export const stateDir = (home, company) => { const d = join(home, ".config/agents-holding/state", company); mkdirSync(d, { recursive: true, mode: 0o700 }); return d; };
