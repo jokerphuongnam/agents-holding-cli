@@ -55,6 +55,16 @@ usage: holding <noun> <verb> [args]   (chat: /<noun> <verb> ...; no verb = list/
 USAGE
 exit 2; }
 noun="${1:-}"; verb="${2:-}"; [ $# -gt 0 ] && shift; [ $# -gt 0 ] && shift
+config_change=0
+case "$noun $verb" in
+  "staff add"|"staff remove"|"staff policy"|"skill add"|"skill remove"|"company staff"|"process add"|"process remove") config_change=1 ;;
+esac
+mark_config_change() {
+  [ "$config_change" = 1 ] || return 0
+  local co="${AH_COMPANY:-unknown}"; mkdir -p "$HOME/.config/agents-holding/state/$co"
+  touch "$HOME/.config/agents-holding/state/$co/config-changed"
+}
+trap mark_config_change EXIT
 # deny add|remove|list <scope> [path] [--replace FILE]: scope * = company-wide, else one staff. Replacement files are scanned for real secrets first.
 denycmd() { local v="$1" sc="$2"; shift 2; local a=() rep="" force=""; while [ $# -gt 0 ]; do case "$1" in --replace) rep="$2"; a+=("--replace" "$2"); shift 2 ;; --force) force=1; shift ;; *) a+=("$1"); shift ;; esac; done
   [ "$v" = list ] && exec bash "$here/ah-cli.sh" staff policy deny list "$sc" "${a[@]+"${a[@]}"}"
