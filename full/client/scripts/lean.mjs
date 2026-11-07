@@ -342,7 +342,8 @@ export function prSteps(na, seg) {
   const touched = [...seg.stages, ...seg.moves.filter(Boolean)];
   const acts = touched.flatMap((k) => na.on_enter?.[k] ?? []);
   const op = acts.find((a) => a.action === "open_pr"), mg = acts.find((a) => a.action === "merge");
-  const open = op || seg.moves.includes("in_review") || (seg.stages[0] === "in_review" && seg.kind === "script") || !!mg;
+  const releaseGate = seg.stages.some((s) => /verified|release/i.test(s));
+  const open = op || releaseGate || !!mg;
   return { open, openBase: op?.base ?? null, merge: !!mg, mergeBase: mg?.base ?? null };
 }
 /** Push + PR + merge with the user's own git/gh login, only when the company opted in (auto_pr). Never forces. exec(cmd,args)->stdout|throws. */
