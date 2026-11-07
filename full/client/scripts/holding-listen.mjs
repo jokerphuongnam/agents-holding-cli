@@ -362,7 +362,15 @@ async function useCtx(p) {
   if (scopedRoute?.company) company = scopedRoute.company;
   const cands = R.candidates(registry, { company, issue, site: jiraSite });
   if (cands.length > 1 && jira) { try { meta = await jira.meta(issue); } catch (e) { log(`route: Jira labels for ${issue} failed (${e.message})`); } }
-  const r = scopedRoute ? R.routeForRepo(registry, { repo: onlyRepo, company, issue, site: jiraSite, ...meta }) : R.route(registry, { company, issue, site: jiraSite, ...meta });
+  let r = scopedRoute ? R.routeForRepo(registry, { repo: onlyRepo, company, issue, site: jiraSite, ...meta }) : R.route(registry, { company, issue, site: jiraSite, ...meta });
+  // OAuth may report an API cloud endpoint while the persisted board has its
+  // human site hostname. If canonical company+project mapping is unique and
+  // the repo/config are valid, repair the site mismatch silently; never do
+  // this for missing or ambiguous registrations.
+  if (r.none && !registration.issues.some((x) => x.path && registry.projects.some((p) => p.path === x.path && p.boards?.some((b) => b.project_key === String(issue).split("-")[0])))) {
+    const canonical = R.candidates(registry, { company, issue, site: null });
+    if (canonical.length === 1) r = R.route(registry, { company, issue, site: null, ...meta });
+  }
   if (r.none) {
     const relevant = registration.issues.filter((x) => x.path && registry.projects.some((p) => p.path === x.path && p.boards?.some((b) => b.project_key === String(issue).split("-")[0])));
     const why = relevant.length ? relevant : [{ message: `no valid registered repo for Jira project ${String(issue).split("-")[0]}` }];
