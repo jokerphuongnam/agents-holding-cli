@@ -14,8 +14,9 @@ import "./kc-guard.mjs"; // pin keychain calls to the real login keychain (never
 // with a short saved plan (state dir) + the user's approval/feedback instead of the old conversation.
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, realpathSync, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { homedir } from "node:os";
 
 export const AGENT_MARK = "[agent-holding]";
 export const AGENT_MARKS = [AGENT_MARK, "[agents-holding]"]; // legacy prefix still recognized as an agent comment
@@ -180,7 +181,7 @@ export function detectChecks(repo, has = (f) => existsSync(join(repo, f)), read 
     if (Array.isArray(checks) && checks.length) return checks.map((x, i) => {
       const command = String(x.command ?? "").trim();
       const parts = command ? command.split(/\s+/) : [];
-      return { name: x.id || `qc-check-${i + 1}`, cmd: parts[0], args: [...parts.slice(1), ...(Array.isArray(x.args) ? x.args.map(String) : [])], timeout_ms: Number(x.timeout_sec ?? 300) * 1000, required: x.required !== false, evidence: x.evidence };
+      return { name: x.id || `qc-check-${i + 1}`, cmd: parts[0], args: [...parts.slice(1), ...(Array.isArray(x.args) ? x.args.map(String) : [])], runner: x.runner ?? "script", repo: x.repo, cwd: x.cwd, timeout_ms: Number(x.timeout_sec ?? 300) * 1000, required: x.required !== false, evidence: x.evidence };
     }).filter((x) => x.cmd);
   } catch {}
   if (has("package.json")) {
@@ -194,7 +195,17 @@ export function detectChecks(repo, has = (f) => existsSync(join(repo, f)), read 
   return out;
 }
 export function runChecks(repo, checks, exec = (c, a, opts = {}) => execFileSync(c, a, { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: opts.timeout_ms ?? 5 * 60 * 1000, env: { ...process.env, CI: "1" } })) {
-  return checks.map((c) => { try { const o = exec(c.cmd, c.args, c); return { name: c.name, ok: true, out: clip(o, 300) }; }
+  return checks.map((c) => { try { let o;
+    if (["registered_terminal", "terminal_session"].includes(c.runner)) {
+      const sessionsFile = join(homedir(), ".config/agents-holding/terminal-sessions/sessions.json");
+      const sessions = JSON.parse(readFileSync(sessionsFile, "utf8"));
+      const targetRepo = realpathSync(resolve(c.repo || repo));
+      const s = Object.values(sessions).find((x) => x?.status === "connected" && x?.repo === targetRepo && x?.heartbeat_at && Date.now() - new Date(x.heartbeat_at).getTime() < 90000);
+      if (!s) throw new Error(`no connected registered terminal for ${targetRepo}`);
+      const script = join(homedir(), ".agents-holding/scripts/terminal.mjs");
+      o = execFileSync(process.execPath, [script, "dispatch", s.session_id, [c.cmd, ...(c.args ?? [])].join(" ")], { cwd: c.cwd ? resolve(repo, c.cwd) : repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: c.timeout_ms || 0, env: { ...process.env, CI: "1" } });
+    } else o = exec(c.cmd, c.args, c);
+    return { name: c.name, ok: true, out: clip(o, 300) }; }
     catch (e) { return { name: c.name, ok: false, out: clip(`${e.stdout ?? ""}\n${e.stderr ?? ""}\n${e.message ?? ""}`.split("\n").filter(Boolean).slice(-25).join("\n"), 1500) }; } });
 }
 /** QC verdict: a check fails QC only if it passed on the baseline (pre-existing failures are reported, not blamed on the change). */
