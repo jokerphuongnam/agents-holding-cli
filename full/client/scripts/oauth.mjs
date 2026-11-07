@@ -6,11 +6,23 @@ import { randomBytes, createHash } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
 const BASE = () => (process.env.AH_MCP_URL ?? "https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp").replace(/\/mcp$/, "/oauth-connect");
 const svc = (p) => `agents-holding-oauth-${p}`;
+const poolSvc = (p) => `agents-holding-oauth-${p}-pool`;
+const activeSvc = (p) => `agents-holding-oauth-${p}-active`;
 const kc = (s) => { try { return execFileSync("security", ["find-generic-password", "-s", s, "-a", process.env.USER, "-w"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() || null; } catch { return null; } };
 const kcDel = (s) => { try { execFileSync("security", ["delete-generic-password", "-s", s, "-a", process.env.USER], { stdio: "ignore" }); } catch {} };
-export const load = (p) => { try { return JSON.parse(kc(svc(p)) ?? "null"); } catch { return null; } };
-export const save = (p, t) => execFileSync("security", ["add-generic-password", "-U", "-s", svc(p), "-a", process.env.USER, "-w", JSON.stringify(t)], { stdio: "ignore" });
-export const clear = (p) => kcDel(svc(p));
+const accountKey = (t) => String(t?.account || t?.cloud_id || t?.email || t?.site || "account").replace(/[^a-z0-9_.@:-]/gi, "_");
+export const loadPool = (p) => { try { const v = JSON.parse(kc(poolSvc(p)) ?? "{}"); return Array.isArray(v) ? v : []; } catch { return []; } };
+export const savePool = (p, xs) => execFileSync("security", ["add-generic-password", "-U", "-s", poolSvc(p), "-a", process.env.USER, "-w", JSON.stringify(xs)], { stdio: "ignore" });
+export const load = (p) => {
+  if (p === "atlassian") { const xs = loadPool(p); const active = kc(activeSvc(p)); const hit = xs.find((x) => accountKey(x) === active) ?? xs[0]; if (hit) return hit; }
+  try { return JSON.parse(kc(svc(p)) ?? "null"); } catch { return null; }
+};
+export const save = (p, t) => {
+  if (p === "atlassian") { const xs = loadPool(p).filter((x) => accountKey(x) !== accountKey(t)); savePool(p, [...xs, t]); execFileSync("security", ["add-generic-password", "-U", "-s", activeSvc(p), "-a", process.env.USER, "-w", accountKey(t)], { stdio: "ignore" }); }
+  else execFileSync("security", ["add-generic-password", "-U", "-s", svc(p), "-a", process.env.USER, "-w", JSON.stringify(t)], { stdio: "ignore" });
+};
+export const clear = (p) => { if (p === "atlassian") { kcDel(activeSvc(p)); return; } kcDel(svc(p)); };
+export const accounts = (p = "atlassian") => loadPool(p).map((x) => ({ account: accountKey(x), resources: x.resources ?? [], active: accountKey(load(p)) === accountKey(x) }));
 const key = () => process.env.AGENTS_HOLDING_KEY || kc("agents-holding-license");
 async function post(path, body, f = fetch) { const k = key(); if (!k) throw new Error("no agents-holding key (run setup first)");
   const r = await f(BASE() + path, { method: "POST", headers: { Authorization: `Bearer ${k}`, "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -38,7 +50,7 @@ async function enrichAccount(provider, tok, f = fetch) {
   } catch {} return tok;
 }
 export async function connect(provider, { log = console.log, timeoutMs = 300000, switch: sw = false } = {}) {
-  if (sw && load(provider)) { log(logout(provider)); }
+  if (sw && load(provider)) log(`${provider}: switching account; existing account remains in the pool`);
   else if (!sw && load(provider)?.access_token) return `${provider}: already connected as ${accountOf(load(provider))} (use: holding ${provider} connect --switch)`;
   const verifier = randomBytes(32).toString("hex"), challenge = createHash("sha256").update(verifier).digest("hex");
   let done; const got = new Promise((r) => (done = r));

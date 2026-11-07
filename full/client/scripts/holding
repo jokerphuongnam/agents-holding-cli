@@ -161,6 +161,7 @@ case "$noun" in
       if [ $# -ge 2 ] && [[ "$1" == http* ]]; then exec bash "$here/jira-keychain-setup.sh" "$@"; fi
       exec node "$here/attach.mjs" jira-connect "$@" ;;
     status) exec node "$here/attach.mjs" jira-status ;;
+    account) exec node "$here/jira-account.mjs" "${1:-list}" ;;
     logout) exec node "$here/attach.mjs" jira-logout ;;
     setup-workflow) exec bash "$here/jira-setup-workflow.sh" "$@" ;;
     connect-events) exec bash "$here/jira-register-webhook.sh" "$@" ;;
