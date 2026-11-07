@@ -252,7 +252,12 @@ async function comms(issue, text, kind = null) {
   if (kind) {
     try { const it = await mcp("inbox_post", { company, issue, kind, need: L.INBOX_NEED[kind] ?? "needs you", body: String(text).slice(0, 8000) });
       log(`inbox: ${issue} ${kind} -> ${it.short_id}${it.new ? "" : " (updated)"}`);
-      if (it.new) L.actionNotify(homedir(), { issue, need: L.INBOX_NEED[kind] ?? "needs you", how: it.how, id: it.id, company });
+      if (it.new) {
+        const q = join(homedir(), ".config/agents-holding/state", company, "pending-chat-notices.jsonl");
+        mkdirSync(dirname(q), { recursive: true });
+        appendFileSync(q, JSON.stringify({ at: new Date().toISOString(), issue, kind, need: L.INBOX_NEED[kind] ?? "needs you", id: it.id, company }) + "\n", { mode: 0o600 });
+        log(`pending chat notice: ${issue} ${kind} (no dialog)`);
+      }
     } catch (e) { log(`inbox_post failed: ${e.message}`); }
   }
   if (commMode[company] === "chat") return log(`chat mode: not commenting on ${issue}${kind ? ` (${kind} is in the CEO inbox)` : ""}`);
