@@ -31,7 +31,10 @@ async function enrichAccount(provider, tok, f = fetch) {
   try {
     if (provider === "figma") { const r = await f("https://api.figma.com/v1/me", { headers: { Authorization: `Bearer ${tok.access_token}` } }); const j = await r.json(); tok.account = j.handle || j.email || j.id || "figma"; tok.handle = j.handle; tok.email = j.email; }
     else if (provider === "atlassian") { const r = await f("https://api.atlassian.com/oauth/token/accessible-resources", { headers: { Authorization: `Bearer ${tok.access_token}`, Accept: "application/json" } });
-      const sites = await r.json(); const pick = (Array.isArray(sites) ? sites : [])[0]; if (pick) { tok.cloud_id = pick.id; tok.site = pick.url; tok.account = pick.name || String(pick.url || "").replace(/^https?:\/\//, ""); } }
+      const sites = await r.json();
+      const resources = (Array.isArray(sites) ? sites : []).map((x) => ({ id: x.id, url: x.url, name: x.name, scopes: x.scopes ?? [] })).filter((x) => x.id && x.url);
+      tok.resources = resources;
+      const pick = resources[0]; if (pick) { tok.cloud_id = pick.id; tok.site = pick.url; tok.account = tok.account || pick.name || String(pick.url || "").replace(/^https?:\/\//, ""); } }
   } catch {} return tok;
 }
 export async function connect(provider, { log = console.log, timeoutMs = 300000, switch: sw = false } = {}) {

@@ -16,6 +16,7 @@ export function syncJiraConfig(tok, home = homedir()) {
   const next = { ...cur, site: String(tok.site).replace(/\/$/, ""), oauth: true };
   if (tok.account) next.account = tok.account;
   if (tok.email) next.email = tok.email;
+  if (Array.isArray(tok.resources)) next.resources = tok.resources.map((r) => ({ id: r.id, url: r.url, name: r.name, scopes: r.scopes ?? [] }));
   // Drop legacy keychain_service when on OAuth so status is unambiguous; keep email if user had API token for fallback.
   writeFileSync(path, JSON.stringify(next, null, 2) + "\n", { mode: 0o600 });
 }
