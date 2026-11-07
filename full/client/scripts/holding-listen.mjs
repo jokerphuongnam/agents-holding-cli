@@ -933,6 +933,10 @@ if (opt("--run")) { log("manual run", opt("--run")); wake({ company: opt("--comp
 else {
 log("holding listener run:", registry.projects.length, "project(s),", companyList.length, "company subscription(s)", lean ? "LEAN" : "legacy", dryJira ? "DRY-JIRA" : listenerJira ? "jira-by-listener" : "jira-by-agent", "mcp", mcpServers().join(","), "timeout", runTimeoutMs / 60000, "min");
 for (const c of companyList) connect(c).catch(fail(c));
+// Always perform one direct Jira state scan after the realtime connection has
+// had time to join. This is intentionally separate from reconcile(): a task
+// can be stale without having a new webhook/replay event.
+for (const c of companyList) setTimeout(() => startupRecovery(c).catch((e) => log(`startup recovery ${c} failed:`, e.message)), 5000).unref?.();
 }
 
 // Cross-team linked propagation (generic; rules: holding company link add <SRC> --to P1,P2). Real Jira links only; per-target isolation.
