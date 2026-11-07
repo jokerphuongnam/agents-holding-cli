@@ -256,6 +256,31 @@ async function comms(issue, text, kind = null) {
   if (!jira) return log(`JIRA (no client): ${String(text).slice(0, 160).replace(/\n/g, " ")}`);
   await jira.comment(issue, text).catch((e) => log("Jira comment failed:", e.message));
 }
+const WAITING_LABEL = "ah-awaiting-user";
+const USER_RECOVERY_EVENTS = new Set(["user_move", "user_comment", "review_feedback", "work_started", "user_approved", "staff_chosen", "staffing_choice", "staffing_retry"]);
+async function clearWaitingSignal(issue, event) {
+  if (!jira || !USER_RECOVERY_EVENTS.has(event)) return;
+  try {
+    const meta = await jira.meta(issue);
+    if (!(meta.labels ?? []).includes(WAITING_LABEL)) return;
+    await jira.labels(issue, [], [WAITING_LABEL]);
+    await jira.comment(issue, `${L.staffTag("ceo")} WAITING CLEARED\nUser action received (${event}); resuming from the saved workflow checkpoint.`);
+    log(`JIRA: cleared ${WAITING_LABEL} on ${issue} after ${event}`);
+  } catch (e) { log(`Jira waiting flag clear failed for ${issue}:`, e.message); }
+}
+async function announceWaiting(issue, na, p) {
+  if (!jira || dryJira) return log(`JIRA (dry): waiting signal ${issue} (${na?.stage ?? "?"})`);
+  try {
+    const meta = await jira.meta(issue);
+    if ((meta.labels ?? []).includes(WAITING_LABEL)) return;
+    const reason = p.workflow_error ?? (na?.steps ?? []).filter(Boolean).join("\n") ?? `Waiting at ${na?.stage ?? "the current checkpoint"}.`;
+    const text = `${L.staffTag("ceo")} WORKFLOW WAITING\n${reason}\n\nCorrect the requested Jira action, then the listener will resume automatically from the checkpoint.`;
+    await jira.labels(issue, [WAITING_LABEL]);
+    await jira.comment(issue, text);
+    try { await mcp("inbox_post", { company, issue, kind: p.workflow_error ? "blocked" : "gate", need: "Jira workflow action required", body: text }); } catch (e) { log(`waiting inbox failed for ${issue}:`, e.message); }
+    log(`JIRA: waiting signal ${issue} (${na?.stage ?? "?"})`);
+  } catch (e) { log(`Jira waiting signal failed for ${issue}:`, e.message); }
+}
 const leanHome = lean ? L.leanGrokHome(homedir()) : null;
 const listenerJira = dryJira || !!jiraCfg; // readiness is established before the listener advertises online
 const sessDir = (sid, home = join(homedir(), ".grok")) => join(home, "sessions", encodeURIComponent(repo), sid);
@@ -317,8 +342,9 @@ let runSettings = {};
 async function run(p, depth = 0) {
   const issue = p.issue ?? p.task_id ?? "";
   if (depth === 0 && !(await useCtx(p))) return;
+  await clearWaitingSignal(issue, p.event);
   let na = null; try { na = await mcp("next_action", { company, task: issue, listener_jira: listenerJira }); } catch (e) { log("next_action failed:", e.message); }
-  if (na?.waiting && p.event !== "manual") { log(`skip ${issue}: waiting (${na.stage})`); return; }
+  if ((na?.waiting || p.workflow_error) && p.event !== "manual") { await announceWaiting(issue, na, p); log(`waiting ${issue}: ${na?.stage ?? "workflow-invalid"}`); return; }
   if (lean && na) return leanRun(p, na, depth);
   const model = process.env.AH_MODEL || na?.model || null;
   const chainTxt = na?.chain?.length ? ` Chain these stages in this run: ${na.chain.map((c) => c.name).join(" -> ")}.` : "";
