@@ -1,0 +1,13 @@
+import assert from "node:assert/strict";
+import { accessDecision } from "../full/client/scripts/policy-core.mjs";
+const policy = { files: { deny: ["secrets/**"], exceptions: [{ id: "e1", path: "secrets/**", company: "acme", repo: "/repo", agent_id: "agent-1", device_id: "dev-1", session_id: "s1", consent: true, reason: "rotate key", expires_at: "2099-01-01T00:00:00Z", operations: ["read"] }] } };
+const id = { company: "acme", repo: "/repo", agent_id: "agent-1", device_id: "dev-1", session_id: "s1" };
+assert.equal(accessDecision(policy, "secrets/key.txt", "read", id).allowed, true, "exact local exception allows read");
+assert.equal(accessDecision(policy, "secrets/key.txt", "write", id).allowed, false, "least privilege denies write");
+assert.equal(accessDecision(policy, "secrets/key.txt", "read", { ...id, agent_id: "agent-2" }).allowed, false, "wrong agent denied");
+assert.equal(accessDecision(policy, "secrets/key.txt", "read", { ...id, device_id: "dev-2" }).allowed, false, "wrong device denied");
+assert.equal(accessDecision(policy, "secrets/key.txt", "read", { ...id, repo: "/other" }).allowed, false, "wrong repo denied");
+assert.equal(accessDecision(policy, "secrets/key.txt", "read", { ...id, remote: true }).allowed, false, "remote/server agent denied");
+assert.equal(accessDecision(policy, "secrets/key.txt", "read", id, Date.parse("2100-01-01T00:00:00Z")).allowed, false, "expired exception denied");
+assert.equal(accessDecision({ files: { ...policy.files, exceptions: [{ ...policy.files.exceptions[0], revoked: true }] } }, "secrets/key.txt", "read", id).allowed, false, "revoked exception denied");
+console.log("access_exception_test: pass");

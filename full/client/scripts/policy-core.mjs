@@ -96,6 +96,15 @@ export function denyMatch(policy, path, home = "") { const p = String(path), bas
     if (!gg.includes("/") && !/[*?]/.test(gg) && (p === gg || p.endsWith("/" + gg) || p.includes("/" + gg + "/") || p.startsWith(gg + "/"))) return true;
     return gg.includes("/") ? globMatch(gg, p) || globMatch("**/" + gg, p) || globMatch(gg + "/**", p) || globMatch("**/" + gg + "/**", p) : globMatch(gg, base); }) ?? null; }
 export const fileDenied = (policy, path, home = "") => denyMatch(policy, path, home) !== null;
+/** Explicit local exception: deny wins unless every identity/scope/consent
+ * field matches. Exceptions are never server/remote grants. */
+export function accessDecision(policy, path, op, identity = {}, now = Date.now()) {
+  const denied = denyMatch(policy, path, identity.home ?? "");
+  if (!denied) return { allowed: true, reason: "not-denied", audit: { decision: "allow", operation: op, path_class: "allowed" } };
+  const hit = (policy?.files?.exceptions ?? []).find((x) => { const xp = String(x.path ?? denied).replace(/\/$/, ""); return x.company === identity.company && x.repo === identity.repo && x.agent_id === identity.agent_id && x.device_id === identity.device_id && (!x.session_id || x.session_id === identity.session_id) && x.consent === true && x.revoked !== true && Date.parse(x.expires_at ?? 0) > now && (x.operations ?? []).includes(op) && (x.path === denied || globMatch(x.path, path) || path === xp || path.startsWith(xp + "/")); });
+  if (!hit || identity.remote === true) return { allowed: false, reason: "company-deny", audit: { decision: "deny", operation: op, path_class: denied, company: identity.company ?? null, repo: identity.repo ?? null } };
+  return { allowed: true, exception: hit.id, reason: "exact-local-exception", audit: { decision: "allow-exception", operation: op, path_class: denied, exception_id: hit.id } };
+}
 export const substituteHeader = (path, file) => `[holding] Nội dung dưới đây là FILE THAY THẾ (${file}) cho ${path}, không phải nội dung thật; giá trị là giả/placeholder.\n(Substitute file for a path blocked by the company security policy; values are placeholders.)\n`;
 /** What a staff gets instead of a denied file (null = allowed): the replacement file (header + content) when one is set and readable,
  *  else the warning stub. readFile(relOrAbs) -> string|null is supplied by the caller (client side). Never the real content. */

@@ -6,6 +6,8 @@ The runner and listener do not read user files by default, crawl the home direct
 
 Terminal commands require a registered real terminal and consent. The user sees every command in that terminal; agents-holding performs no hidden execution elsewhere.
 
+Company deny paths remain denied to all staff and terminal sessions unless a local exception exactly matches company, canonical repo, agent identity, device/session, operation, consent, reason, expiry and revocation state. Exceptions are read/write/execute-specific, never apply to remote/server agents, and never upload the protected content. Audit records are redacted metadata only; QC verifies no leakage.
+
 Languages: **English** · [Tiếng Việt](localized/README.vi.md) · [日本語](localized/README.ja.md) · [한국어](localized/README.ko.md) · [简体中文](localized/README.zh-CN.md) · [Español](localized/README.es.md) · [Français](localized/README.fr.md) · [Deutsch](localized/README.de.md)
 
 Set up a small company and ship with it. A CEO talks to you. An engineer builds the plan. Plans live in `cache/plans/`.
