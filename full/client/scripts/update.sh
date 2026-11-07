@@ -39,22 +39,22 @@ behind_label() {
 }
 
 ah_refresh_package() {
-  local dest="${AH_INSTALL_DIR:-$HOME/.agents-holding}" url tag tmp tags
+  local dest="${AH_INSTALL_DIR:-$HOME/.agents-holding}" url tag tmp endpoint asset_url
   url="${AH_FREE_REPO:-https://github.com/jokerphuongnam/agents-holding-cli.git}"
   if [ -n "${AH_VERSION:-}" ]; then
     tag="${AH_VERSION#v}"
     [[ "$tag" =~ ^[0-9]{10}$ ]] || { echo "   invalid AH_VERSION: $AH_VERSION (expected YYYYMMDDNN)" >&2; return 2; }
   else
-    tags="$(git ls-remote --tags --refs "$url" 2>/dev/null | awk '{t=$2; sub("refs/tags/", "", t); if (t ~ /^v?[0-9]{10}$/) { if (substr(t,1,1)=="v") print substr(t,2) "\t" t; else print t "\t" t; }}' | sort -k1,1V)"
-    tag="$(printf '%s\n' "$tags" | tail -n 1 | cut -f2)"
-    [ -n "$tag" ] || { echo "   no release tags found in $url (expected YYYYMMDDNN)" >&2; return 1; }
+    tag="latest"
   fi
-  echo "   resolved release tag: $tag"
+  echo "   resolved published release: $tag"
   tmp="$(mktemp -d "${TMPDIR:-/tmp}/ah-update.XXXXXX")"
-  if ! git clone -q --depth 1 --branch "$tag" "$url" "$tmp/src" 2>/dev/null; then
-    echo "   package download failed (network?); keeping current scripts" >&2
-    rm -rf "$tmp"; return 1
-  fi
+  endpoint="https://api.github.com/repos/jokerphuongnam/agents-holding-cli/releases/latest"
+  [ "$tag" != latest ] && endpoint="https://api.github.com/repos/jokerphuongnam/agents-holding-cli/releases/tags/$tag"
+  asset_url="$(curl -fsSL -H 'Accept: application/vnd.github+json' "$endpoint" | awk -F'"' '$2=="browser_download_url" && $4 ~ /agents-holding-cli-.*\.tar\.gz$/ {print $4; exit}')" || true
+  [ -n "$asset_url" ] || { echo "   no published client artifact found; keeping current scripts" >&2; rm -rf "$tmp"; return 1; }
+  curl -fsSL "$asset_url" -o "$tmp/client.tar.gz" || { echo "   package download failed; keeping current scripts" >&2; rm -rf "$tmp"; return 1; }
+  mkdir -p "$tmp/src" && tar xzf "$tmp/client.tar.gz" -C "$tmp/src"
   mkdir -p "$dest"
   rm -rf "$tmp/stage"; mkdir -p "$tmp/stage"
   cp -R "$tmp/src/full/client/scripts/." "$tmp/stage/"
@@ -111,15 +111,8 @@ if [ "$listener_was_active" = 1 ]; then
 fi
 root="$(git -C "$here" rev-parse --show-toplevel 2>/dev/null || true)"
 echo "1/4 client scripts ($before_raw)"
-if [ -n "$root" ] && [ -d "$root/.git" ] && git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
-   && [ "$(cd "$here/.." && pwd 2>/dev/null)" != "$(cd "${AH_INSTALL_DIR:-$HOME/.agents-holding}" && pwd 2>/dev/null)" ]; then
-  # Dev checkout only (not the ~/.agents-holding package install)
-  if [ -n "$(git -C "$root" status --porcelain -- "$here" 2>/dev/null)" ]; then echo "   local edits in $here: not pulling (commit or stash them, then rerun)";
-  else git -C "$root" pull --ff-only -q 2>&1 | sed 's/^/   /' || echo "   pull failed (network?); continuing with the current scripts"; fi
-else
-  echo "   package install: downloading latest agents-holding-free (tag ${AH_VERSION:-latest})"
-  ah_refresh_package || true
-fi
+echo "   package install: downloading latest published agents-holding-cli release (${AH_VERSION:-latest})"
+ah_refresh_package || true
 echo "   now $(ver_raw)"
 
 echo "2/4 native agent configs + sandbox profiles"

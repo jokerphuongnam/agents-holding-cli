@@ -102,9 +102,17 @@ say "Installing the client into $DEST"
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 if [ -n "${AH_SRC:-}" ]; then cp -R "$AH_SRC/full/client" "$tmp/client"
 else
-  curl -fsSL "https://codeload.github.com/$REPO/tar.gz/refs/heads/$BRANCH" | tar xz -C "$tmp"
-  package_client="$(find "$tmp" -type d -path '*/full/client' -print -quit)"
-  [ -n "$package_client" ] && [ -d "$package_client" ] || { warn "public artifact has no full/client payload"; exit 1; }
+  # Install only the signed/published distribution artifact. Never codeload a
+  # branch: branches may contain unpublished source or private implementation.
+  api="https://api.github.com/repos/$REPO/releases"
+  if [ "$BRANCH" = main ] || [ "$BRANCH" = master ]; then endpoint="$api/latest"
+  else endpoint="$api/tags/$BRANCH"; fi
+  asset_url="$(curl -fsSL -H 'Accept: application/vnd.github+json' "$endpoint" | awk -v n='agents-holding-cli-' -F'"' '$2=="browser_download_url" && $4 ~ n && $4 ~ /\.tar\.gz$/ {print $4; exit}')"
+  [ -n "$asset_url" ] || { warn "no published client artifact found in GitHub Release ($REPO $BRANCH)"; exit 1; }
+  curl -fsSL "$asset_url" -o "$tmp/client.tar.gz"
+  mkdir -p "$tmp/unpack" && tar xzf "$tmp/client.tar.gz" -C "$tmp/unpack"
+  package_client="$tmp/unpack/full/client"
+  [ -d "$package_client" ] || { warn "published artifact has no full/client payload"; exit 1; }
   cp -R "$package_client" "$tmp/client"
 fi
 mkdir -p "$DEST" && rm -rf "$DEST/scripts" && cp -R "$tmp/client/scripts" "$DEST/scripts"
