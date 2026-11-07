@@ -663,7 +663,8 @@ Jira: ${issue}` });
       let res = runQc(), fixes = 0;
       while (res.some((x) => !x.v.pass) && fixes < 1 && codingKey) {
         const txt = qcText(res); await record("qc_fail", txt); await say(who, `QC FAIL\n${txt}\nBack to Coding for one fix.`);
-        if (!(await advance(s0, codingKey))) return;
+        const recoveryKey = (na.flow_stages ?? []).includes("reopened") ? "reopened" : codingKey;
+        if (!(await advance(s0, recoveryKey))) return;
         const sv = L.loadPlan(st, issue), dev = sv.developer ?? "tech-lead", dwho = L.stageStaff(na, codingKey, { kind: "code", developer: dev });
         const r = await codeOnce(codingKey, { techPlan: sv.tech_plan, dev, feedback: `QC failed, fix it:\n${res.filter((x) => !x.v.pass).map((x) => x.v.failed.map((f) => `${f.name}: ${f.out}`).join("\n")).join("\n")}`, who: dwho });
         if (!r) return;
