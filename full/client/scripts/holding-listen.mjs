@@ -738,7 +738,14 @@ async function jiraOps(issue) {
       const hit = o.to_names.map((n) => tr.find((t) => t.to?.name?.toLowerCase() === n.toLowerCase())).find(Boolean);
       if (hit) { const r = await api("POST", "/transitions", { transition: { id: hit.id } }); log(`JIRA: moved ${o.issue} -> ${hit.to.name} (${r.status})`); }
       else { await api("POST", "/comment", adf(o.fallback_comment)); log(`JIRA: no transition to ${o.to_names.join("|")} for ${o.issue}; commented stage. Manual move needed.`); }
-    } catch (e) { log(`JIRA op failed for ${o.issue}:`, e.message); }
+    } catch (e) {
+      log(`JIRA op failed for ${o.issue}:`, e.message);
+      if (/JIRA_AUTH_EXPIRED/.test(String(e?.message))) {
+        const guidance = `Jira authorization expired or was rejected. Run \`holding jira connect --switch\` to refresh OAuth, then \`holding listener restart\`. The task is paused safely until Jira access is restored.`;
+        try { await mcp("inbox_post", { company, issue: o.issue, kind: "blocked", need: "refresh Jira authorization", body: guidance }); } catch (notify) { log("JIRA auth guidance inbox failed:", notify.message); }
+        L.writeStatus(homedir(), { jira_auth: { state: "expired", issue: o.issue, guidance, at: new Date().toISOString() } });
+      }
+    }
   }
 }
 
