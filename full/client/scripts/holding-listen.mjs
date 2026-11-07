@@ -788,6 +788,7 @@ async function reconcile(company, sinceIso) {
     }
     log(`Jira task sync ${company}: ${n} change(s) since ${since}`);
     L.writeStatus(homedir(), { companies: { [company]: { reconciled_at: new Date().toISOString(), reconciled: n } } });
+    if (!sinceIso) await startupRecovery(company);
   } finally { reconciling[company] = false; }
 }
 // Webhooks/realtime are the fast path; direct Jira reconciliation is the recovery path.
@@ -799,6 +800,17 @@ setInterval(() => {
   }
   log(`scheduled Jira task sync started (every ${reconcileEverySec}s)`);
 }, reconcileEverySec * 1000).unref?.();
+// Startup recovery is a state scan, not event replay: Jira may have changed while this process was off.
+const startupRecovered = new Set();
+async function startupRecovery(company) {
+  if (!jira || startupRecovered.has(company)) return;
+  startupRecovered.add(company);
+  const boards = registry.projects.flatMap((p) => p.boards).filter((b) => b.company === company);
+  for (const b of boards) {
+    const res = await jira.search(`project = "${b.project_key}" AND statusCategory = "In Progress" ORDER BY updated ASC`, ["status", "updated", "summary", "labels"]);
+    for (const x of res ?? []) { if (!x.key) continue; log(`startup recovery: checking ${x.key} (${x.fields?.status?.name ?? "In Progress"})`); wake({ company, issue: x.key, event: "startup_recovery", stage: x.fields?.status?.name }); }
+  }
+}
 // Company-defined Jira Listener rules: real events only; deterministic planning and Jira actions use zero model tokens.
 const RULE_EVENTS = { user_move: "issue_transitioned", agent_move: "issue_transitioned", issue_transitioned: "issue_transitioned", user_comment: "comment_created", comment_created: "comment_created", task_done: "issue_transitioned", subtask_done: "all_subtasks_done", assignee_changed: "assignee_changed", label_added: "label_added" };
 async function applyJiraRules(p) {

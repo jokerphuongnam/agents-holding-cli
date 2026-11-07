@@ -154,6 +154,19 @@ case "$noun" in
     ""|start|stop|logs|autostart) exec bash "$here/launchd/listener.sh" ${verb:-status} "$@" ;;
     *) usage ;; esac ;;
   jira) case "$verb" in
+    listener)
+      sub="${1:-log}"; [ $# -gt 0 ] && shift
+      [ "$sub" = log ] || { echo "usage: holding jira listener log [--repo DIR]" >&2; exit 2; }
+      rdir="${PWD}"; while [ $# -gt 0 ]; do case "$1" in --repo) rdir="$2"; shift 2;; *) echo "unknown option $1" >&2; exit 2;; esac; done
+      [ -f "$rdir/.agents/company.json" ] || { echo "error: not a company repo: $rdir (pass --repo to a repo containing .agents/company.json)" >&2; exit 2; }
+      co="$(node -e 'const fs=require("fs");const j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));process.stdout.write(j.company||j.slug||"")' "$rdir/.agents/company.json")"
+      [ -n "$co" ] || { echo "error: company id missing in $rdir/.agents/company.json" >&2; exit 2; }
+      log="$HOME/Library/Logs/agents-holding/jira-listener.log"; [ -f "$log" ] || { echo "error: Jira Listener log not found: $log" >&2; exit 1; }
+      realtime=0; [ "${1:-}" = --realtime ] && realtime=1
+      echo "Jira Listener log: $co ($rdir)"
+      if [ "$realtime" = 1 ]; then exec tail -f "$log" | grep --line-buffered -E "(^|[ ,])$co([ ,]|$)|project .*${rdir##*/}|MARLIN-|NAIL-"; fi
+      exec tail -n 100 "$log" | grep -E "(^|[ ,])$co([ ,]|$)|project .*${rdir##*/}|MARLIN-|NAIL-"
+      ;;
     attach) exec node "$here/attach.mjs" jira-attach "$@" ;;
     connect)
       # Lazy OAuth (browser). Legacy API-token: holding jira connect <site> <email>
