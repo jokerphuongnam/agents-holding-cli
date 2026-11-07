@@ -101,7 +101,12 @@ command -v node >/dev/null && [ "$(node -p 'typeof WebSocket' 2>/dev/null)" = fu
 say "Installing the client into $DEST"
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 if [ -n "${AH_SRC:-}" ]; then cp -R "$AH_SRC/full/client" "$tmp/client"
-else curl -fsSL "https://codeload.github.com/$REPO/tar.gz/refs/heads/$BRANCH" | tar xz -C "$tmp" && mv "$tmp"/agents-holding-free-*/full/client "$tmp/client"; fi
+else
+  curl -fsSL "https://codeload.github.com/$REPO/tar.gz/refs/heads/$BRANCH" | tar xz -C "$tmp"
+  package_client="$(find "$tmp" -type d -path '*/full/client' -print -quit)"
+  [ -n "$package_client" ] && [ -d "$package_client" ] || { warn "public artifact has no full/client payload"; exit 1; }
+  cp -R "$package_client" "$tmp/client"
+fi
 mkdir -p "$DEST" && rm -rf "$DEST/scripts" && cp -R "$tmp/client/scripts" "$DEST/scripts"
 chmod +x "$DEST"/scripts/holding "$DEST"/scripts/*.sh "$DEST"/scripts/launchd/*.sh
 mkdir -p "$BIN" && ln -sfn "$DEST/scripts/holding" "$BIN/holding"
