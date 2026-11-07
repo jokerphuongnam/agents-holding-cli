@@ -138,8 +138,9 @@ const heartbeat = (requested = "online") => { const state = requested === "stopp
     return ok;
   }); };
 L.writeStatus(homedir(), { pid: process.pid, started_at: new Date().toISOString(), notify: L.notifyOn(homedir()), running: null, listener_state: "starting", companies: {} });
-// keep-alive every 10 min (was 60s); joins re-announce only if the last beat is > 5 min old
-setInterval(heartbeat, Number(process.env.AH_HEARTBEAT_SEC ?? 600) * 1000);
+// Keep the server heartbeat comfortably below the watchdog's 150s stale window.
+// This is also the Rust listener contract: heartbeat is liveness, not event polling.
+setInterval(heartbeat, Number(process.env.AH_HEARTBEAT_SEC ?? 60) * 1000);
 
 // Auto-Done / Verified on Develop: poll gh for real merged PRs linked to issue keys (never forge Jira events).
 const mergedPrSeen = new Set();
