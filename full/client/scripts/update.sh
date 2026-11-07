@@ -40,7 +40,7 @@ behind_label() {
 
 ah_refresh_package() {
   local dest="${AH_INSTALL_DIR:-$HOME/.agents-holding}" url tag tmp tags
-  url="${AH_FREE_REPO:-https://github.com/jokerphuongnam/agents-holding-free.git}"
+  url="${AH_FREE_REPO:-https://github.com/jokerphuongnam/agents-holding-cli.git}"
   if [ -n "${AH_VERSION:-}" ]; then
     tag="${AH_VERSION#v}"
     [[ "$tag" =~ ^[0-9]{10}$ ]] || { echo "   invalid AH_VERSION: $AH_VERSION (expected YYYYMMDDNN)" >&2; return 2; }

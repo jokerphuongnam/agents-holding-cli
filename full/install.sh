@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # agents-holding (full version) OPTIONAL client installer for macOS: only needed for the background Jira listener/runner.
 # For chat use you don't need it: add the MCP URL to your agent and sign in with your license key (see full/SETUP.md).
-#   curl -fsSL https://raw.githubusercontent.com/jokerphuongnam/agents-holding-free/main/full/install.sh | bash -s -- [--agent grok,claude,codex]
+#   curl -fsSL https://raw.githubusercontent.com/jokerphuongnam/agents-holding-cli/main/full/install.sh | bash -s -- [--agent grok,claude,codex]
 # Installs the client into ~/.agents-holding, links `holding` into ~/.local/bin, stores your license key in the macOS Keychain
 # (service agents-holding-license; typed at a hidden prompt, never written to a file) and configures MCP clients with a
 # Keychain-backed bearer header (Codex, Claude Code, and Grok).
@@ -20,7 +20,7 @@ security() {
   command security "$@"
 }
 # <<< ah_kc_guard
-REPO="jokerphuongnam/agents-holding-free"; BRANCH="${AH_BRANCH:-main}"
+REPO="jokerphuongnam/agents-holding-cli"; BRANCH="${AH_BRANCH:-main}"
 MCP_URL="${AH_MCP_URL:-https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp}"
 DEST="${AH_INSTALL_DIR:-$HOME/.agents-holding}"; BIN="$HOME/.local/bin"; SVC="agents-holding-license"
 say() { printf '\033[1;32m==>\033[0m %s\n' "$*"; }; warn() { printf '\033[1;33m!!\033[0m %s\n' "$*" >&2; }

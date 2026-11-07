@@ -137,7 +137,7 @@ En tu equipo: `holding billing` · `holding usage`.
 Solo si el agente no puede ejecutar la instalación (entornos especiales). No es el flujo habitual.
 
 ```bash
-git clone --depth 1 https://github.com/jokerphuongnam/agents-holding-free.git ~/.agents-holding-src
+git clone --depth 1 https://github.com/jokerphuongnam/agents-holding-cli.git ~/.agents-holding-src
 bash ~/.agents-holding-src/full/client/scripts/bootstrap-local.sh
 holding key import
 ```

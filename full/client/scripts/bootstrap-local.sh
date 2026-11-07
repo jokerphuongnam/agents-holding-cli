@@ -17,7 +17,7 @@ security() {
 }
 # <<< ah_kc_guard
 DEST="${AH_INSTALL_DIR:-$HOME/.agents-holding}"
-REPO_URL="${AH_FREE_REPO:-https://github.com/jokerphuongnam/agents-holding-free.git}"
+REPO_URL="${AH_FREE_REPO:-https://github.com/jokerphuongnam/agents-holding-cli.git}"
 SRC="${AH_FREE_SRC:-$HOME/.agents-holding-src}"
 progress() { printf '[bootstrap %s] %s\n' "$1" "$2"; }
 

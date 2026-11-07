@@ -5,7 +5,7 @@ Languages: **English** · [Tiếng Việt](localized/README.vi.md) · [日本語
 Set up a small company and ship with it. A CEO talks to you. An engineer builds the plan. Plans live in `cache/plans/`.
 
 ```bash
-git clone https://github.com/jokerphuongnam/agents-holding-free.git
+git clone https://github.com/jokerphuongnam/agents-holding-cli.git
 cd agents-holding-free
 ./setup.sh my-product
 ```
@@ -24,7 +24,7 @@ No key yet? `full/install.sh` offers **Generate key** (a Free key for this Mac, 
 
 Got a license key (`ah_live_...`)? Add the server to your agent and sign in with the key when the browser opens. Works with Claude Code, Codex, Cursor and the default AI agent CLI:
 
-`$AH_MCP_URL` is the server URL; set it once with `export AH_MCP_URL="$(curl -fsSL https://raw.githubusercontent.com/jokerphuongnam/agents-holding-free/main/full/connect.sh | bash -s -- --print-url)"`.
+`$AH_MCP_URL` is the server URL; set it once with `export AH_MCP_URL="$(curl -fsSL https://raw.githubusercontent.com/jokerphuongnam/agents-holding-cli/main/full/connect.sh | bash -s -- --print-url)"`.
 
 ```bash
 claude mcp add --transport http --scope user agents-holding $AH_MCP_URL   # Claude Code, then /mcp

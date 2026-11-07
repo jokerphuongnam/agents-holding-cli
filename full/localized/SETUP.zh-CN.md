@@ -137,7 +137,7 @@ First time per key+device the agent asks once to install. Yes → install and re
 仅在 agent 无法执行安装（特殊环境）时使用。这不是默认的安装流程。
 
 ```bash
-git clone --depth 1 https://github.com/jokerphuongnam/agents-holding-free.git ~/.agents-holding-src
+git clone --depth 1 https://github.com/jokerphuongnam/agents-holding-cli.git ~/.agents-holding-src
 bash ~/.agents-holding-src/full/client/scripts/bootstrap-local.sh
 holding key import
 ```

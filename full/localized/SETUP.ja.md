@@ -137,7 +137,7 @@ MCP のインストール、会社の作成、Jira 以外のコマンドで Jira
 エージェントがインストールを実行できない特殊な環境でのみ使ってください。通常の手順ではありません。
 
 ```bash
-git clone --depth 1 https://github.com/jokerphuongnam/agents-holding-free.git ~/.agents-holding-src
+git clone --depth 1 https://github.com/jokerphuongnam/agents-holding-cli.git ~/.agents-holding-src
 bash ~/.agents-holding-src/full/client/scripts/bootstrap-local.sh
 holding key import
 ```

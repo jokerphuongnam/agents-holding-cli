@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # agents-holding: connect THIS Mac in one command (no Node needed):
-#   curl -fsSL https://raw.githubusercontent.com/jokerphuongnam/agents-holding-free/main/full/connect.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/jokerphuongnam/agents-holding-cli/main/full/connect.sh | bash
 # 1) creates this machine's device id in the Keychain  2) Generate key (new Free key) or Import key (hidden prompt; never
 # echoed, never in a file)  3) adds agents-holding to Grok (~/.grok/config.toml), Claude Code and Codex if installed,
 # reading the key/device from env vars  4) adds the Keychain loader to ~/.zshrc (idempotent)  5) health check.
@@ -152,7 +152,7 @@ for a in "${LIST[@]}"; do case "$a" in
     CC="$HOME/.codex/config.toml"; mkdir -p "$HOME/.codex"; touch "$CC"
     HELPER_DIR="$HOME/.agents-holding"; mkdir -p "$HELPER_DIR"
     HELPER="$HELPER_DIR/codex-mcp-headers.sh"
-    curl -fsSL "https://raw.githubusercontent.com/jokerphuongnam/agents-holding-free/${AH_BRANCH:-main}/full/client/scripts/codex-mcp-headers.sh" -o "$HELPER" || { warn "could not download Codex Keychain header helper"; continue; }
+    curl -fsSL "https://raw.githubusercontent.com/jokerphuongnam/agents-holding-cli/${AH_BRANCH:-main}/full/client/scripts/codex-mcp-headers.sh" -o "$HELPER" || { warn "could not download Codex Keychain header helper"; continue; }
     chmod 700 "$HELPER"
     TMP="$CC.ah-tmp"; awk 'BEGIN{s=0} /^\[/{if(s) s=0} !s {if($0=="[mcp_servers.agents-holding]"){s=1;next} print}' "$CC" > "$TMP"
     printf '\n[mcp_servers.agents-holding]\nurl = "%s"\nhttp_headers_helper = "bash %s"\n' "$MCP_URL" "$HELPER" >> "$TMP"
@@ -171,7 +171,7 @@ say "Shell profile: $PROFILE loads the key and device id from the Keychain"
 # 6. Grok slash commands: Grok does not list MCP prompts, it loads ~/.grok/commands/*.md -> sync them (refreshed on every run)
 if [[ ",$AGENTS," == *",grok,"* ]]; then
   SYNC="${AH_SRC:+$AH_SRC/full/client/scripts/sync-commands.sh}"
-  if [ -z "$SYNC" ]; then SYNC="$(mktemp)"; curl -fsSL "https://raw.githubusercontent.com/jokerphuongnam/agents-holding-free/${AH_BRANCH:-main}/full/client/scripts/sync-commands.sh" -o "$SYNC"; fi
+  if [ -z "$SYNC" ]; then SYNC="$(mktemp)"; curl -fsSL "https://raw.githubusercontent.com/jokerphuongnam/agents-holding-cli/${AH_BRANCH:-main}/full/client/scripts/sync-commands.sh" -o "$SYNC"; fi
   bash "$SYNC" ${AH_OWNER:+--owner} && say "Grok slash commands synced into ~/.grok/commands (refresh: rerun this, or holding setup sync)" || warn "could not sync slash commands"
 fi
 

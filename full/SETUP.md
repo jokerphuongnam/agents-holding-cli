@@ -8,7 +8,7 @@ URL MCP:
 https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp
 ```
 
-Tài liệu này: https://github.com/jokerphuongnam/agents-holding-free/blob/main/full/SETUP.md
+Tài liệu này: https://github.com/jokerphuongnam/agents-holding-cli/blob/main/full/SETUP.md
 
 ---
 
@@ -23,7 +23,7 @@ claude mcp add --transport http --scope user agents-holding https://mznrffnvmhmi
 **Codex CLI** (setup installs a tiny Keychain header helper; no shell environment is needed)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jokerphuongnam/agents-holding-free/main/full/connect.sh | bash
+curl -fsSL https://raw.githubusercontent.com/jokerphuongnam/agents-holding-cli/main/full/connect.sh | bash
 ```
 
 **CLI agent mặc định (lệnh `grok`)**
@@ -120,7 +120,7 @@ Trong chat: `/holding update` (hoặc bảo agent chạy `holding update`). An t
 
 ## 7. Gói và giá (credit)
 
-Bảng giá khách hàng (tiếng Việt): **[docs/PRICING.md](https://github.com/jokerphuongnam/agents-holding-free/blob/main/docs/PRICING.md)** — credit/tháng, giá, giới hạn staff & thiết bị, chi phí thao tác, cách nâng gói (liên hệ owner với key id).
+Bảng giá khách hàng (tiếng Việt): **[docs/PRICING.md](https://github.com/jokerphuongnam/agents-holding-cli/blob/main/docs/PRICING.md)** — credit/tháng, giá, giới hạn staff & thiết bị, chi phí thao tác, cách nâng gói (liên hệ owner với key id).
 
 Trên máy: `holding billing` · `holding usage`.
 
@@ -131,7 +131,7 @@ Trên máy: `holding billing` · `holding usage`.
 Chỉ dùng khi agent không thể chạy bootstrap (môi trường đặc biệt). Không phải luồng khách hàng mặc định.
 
 ```bash
-git clone --depth 1 https://github.com/jokerphuongnam/agents-holding-free.git ~/.agents-holding-src
+git clone --depth 1 https://github.com/jokerphuongnam/agents-holding-cli.git ~/.agents-holding-src
 bash ~/.agents-holding-src/full/client/scripts/bootstrap-local.sh
 ```
 

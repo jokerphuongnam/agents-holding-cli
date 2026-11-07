@@ -137,7 +137,7 @@ Trên máy: `holding billing` · `holding usage`.
 Chỉ dùng khi agent không chạy được bước cài (môi trường đặc biệt). Đây không phải luồng mặc định.
 
 ```bash
-git clone --depth 1 https://github.com/jokerphuongnam/agents-holding-free.git ~/.agents-holding-src
+git clone --depth 1 https://github.com/jokerphuongnam/agents-holding-cli.git ~/.agents-holding-src
 bash ~/.agents-holding-src/full/client/scripts/bootstrap-local.sh
 holding key import
 ```

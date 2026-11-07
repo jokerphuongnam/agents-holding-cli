@@ -137,7 +137,7 @@ MCP 설치, 회사 생성, Jira와 무관한 명령은 Jira 로그인을 **절�
 에이전트가 설치를 실행할 수 없는 특수한 환경에서만 사용하세요. 기본 설치 방법이 아닙니다.
 
 ```bash
-git clone --depth 1 https://github.com/jokerphuongnam/agents-holding-free.git ~/.agents-holding-src
+git clone --depth 1 https://github.com/jokerphuongnam/agents-holding-cli.git ~/.agents-holding-src
 bash ~/.agents-holding-src/full/client/scripts/bootstrap-local.sh
 holding key import
 ```

@@ -59,7 +59,7 @@ for d in "${DIRS[@]}"; do for f in "$d"/*.md; do [ -e "$f" ] || continue; b="$(b
 if [ -n "$HOOK" ]; then # zero-model path: Grok UserPromptSubmit hook (global; Grok runs it after folder trust)
   SD="$(cd "$(dirname "$0")" && pwd)"
   if [ ! -f "$SD/ah-hook.sh" ] || [ ! -f "$SD/ah-cli.sh" ]; then SD="$HOME/.agents-holding/lite"; mkdir -p "$SD"
-    for f in ah-hook.sh ah-cli.sh; do curl -fsSL --retry 3 "https://raw.githubusercontent.com/jokerphuongnam/agents-holding-free/${AH_BRANCH:-main}/full/client/scripts/$f" -o "$SD/$f"; chmod +x "$SD/$f"; done; fi
+    for f in ah-hook.sh ah-cli.sh; do curl -fsSL --retry 3 "https://raw.githubusercontent.com/jokerphuongnam/agents-holding-cli/${AH_BRANCH:-main}/full/client/scripts/$f" -o "$SD/$f"; chmod +x "$SD/$f"; done; fi
   mkdir -p "$HOME/.grok/hooks"
   # Guard: missing script after uninstall must be silent (exit 0), never bash: No such file / 127
   HOOKCMD="[ -x $SD/ah-hook.sh ] && bash $SD/ah-hook.sh || exit 0"
