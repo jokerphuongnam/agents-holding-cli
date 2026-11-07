@@ -22,7 +22,9 @@ The Jira Listener handles three kinds of failure without losing work. It never i
   - You get a macOS notification, and `holding status` shows the block.
   - The label is removed on the next successful run.
 
-## 3. MCP server problems (down, quota, overload, timeout) → warning + reconcile
+## 3. MCP server problems (down, quota, overload, timeout) → warning + status sync
+
+The Jira status sync fallback runs every 60 seconds by default. Ask the CEO in natural language, for example “cập nhật status task Jira mỗi 1 phút”, or use `holding company set jira-status-sync 60`. The company setting is persisted server-side and picked up by the listener heartbeat. For local diagnostics only, `AH_JIRA_RECONCILE_SEC` overrides the company value; the listener enforces a 60-second minimum and 24-hour maximum.
 - The Jira Listener detects a lost connection, 5xx/overload responses, timeouts and quota errors. It logs a red warning, sends one notification, and `holding status` shows it. Work pauses and the checkpoint is kept.
 - When the connection comes back (and each time the listener starts), the listener reads Jira for issues updated since the last event it saw. It replays each real status once, deduplicated by issue + status + update time both locally and on the MCP server. Replay only reads Jira and never writes events.
 - Read-only commands (`holding status`, `board`, `tasks`, `usage`, …) show the last good answer, marked **STALE** with its time. Write commands fail clearly instead.

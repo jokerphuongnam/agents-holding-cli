@@ -67,6 +67,9 @@ if (onlyRepo) {
 }
 const companyList = R.companies(registry);
 let company = companyList[0];
+const envStatusSyncSec = process.env.AH_JIRA_RECONCILE_SEC === undefined ? null : Math.min(86400, Math.max(60, Number(process.env.AH_JIRA_RECONCILE_SEC) || 60));
+const statusSyncSec = Object.fromEntries(companyList.map((c) => [c, 60]));
+const statusSyncAt = Object.fromEntries(companyList.map((c) => [c, 0]));
 for (const p of registry.projects) log(`project ${p.name} ${p.path} boards ${p.boards.map((b) => `${b.project_key}@${b.company}`).join(",")} settings ${JSON.stringify(p.settings ?? {})}`);
 
 // Server health: down / 5xx / timeout / quota -> red warning + one notification; recovery -> reconcile missed Jira changes.
@@ -127,7 +130,7 @@ const joined = new Set();
 const readiness = () => listenerJira && joined.size === companyList.length && companyList.length > 0;
 const heartbeatIfStale = () => { if (Date.now() - lastBeat > 300000) heartbeat(); };
 const heartbeat = (requested = "online") => { const state = requested === "stopped" ? "stopped" : (readiness() ? "online" : "starting"); if (state === "online") log("readiness online", companyList.join(",")); return (lastBeat = Date.now(), Promise.all(companyList.map((company) => mcp("listener_heartbeat", { company, host: hostname(), pid: process.pid, autostart: existsSync(autostartPlist), version: AH_CLIENT_VERSION, state, meta: { ...localMeta(), jira_ready: listenerJira, process_ready: true, realtime_ready: readiness() } })
-  .then(async (r) => { if (r?.communication) commMode[company] = r.communication; if (r?.enterprise) myJira[company] = r.jira_account ?? null; L.writeStatus(homedir(), { companies: { [company]: { heartbeat_at: new Date().toISOString(), heartbeat_ok: true } } });
+  .then(async (r) => { if (r?.communication) commMode[company] = r.communication; if (r?.enterprise) myJira[company] = r.jira_account ?? null; if (envStatusSyncSec === null && Number.isInteger(r?.jira_status_sync_sec)) statusSyncSec[company] = Math.min(86400, Math.max(60, r.jira_status_sync_sec)); L.writeStatus(homedir(), { companies: { [company]: { heartbeat_at: new Date().toISOString(), heartbeat_ok: true, jira_status_sync_sec: envStatusSyncSec ?? statusSyncSec[company] } } });
     if (state !== "online" || !(r?.was_offline || r?.missed?.length)) return;
     log(`Jira Listener back online for ${company} (server saw it offline since ${r.offline_since ?? "?"}); ${r.missed?.length ?? 0} card(s) changed meanwhile`);
     for (const m of r.missed ?? []) if (m.issue && m.comment) await comms(m.issue, m.comment);
@@ -776,10 +779,15 @@ async function reconcile(company, sinceIso) {
 }
 // Webhooks require Jira site-admin permission. Keep a bounded, read-only
 // reconcile fallback active even when realtime is healthy.
-const reconcileSec = Number(process.env.AH_JIRA_RECONCILE_SEC ?? 300);
-if (reconcileSec > 0) setInterval(() => {
-  for (const c of companyList) reconcile(c).catch((e) => log(`scheduled reconcile ${c} failed:`, e.message));
-}, Math.max(60, reconcileSec) * 1000).unref?.();
+// Company setting: Jira status sync interval. AH_JIRA_RECONCILE_SEC remains a
+// local diagnostic override; never poll faster than once per minute.
+setInterval(() => {
+  const now = Date.now();
+  for (const c of companyList) if (now - statusSyncAt[c] >= (envStatusSyncSec ?? statusSyncSec[c]) * 1000) {
+    statusSyncAt[c] = now;
+    reconcile(c).catch((e) => log(`scheduled reconcile ${c} failed:`, e.message));
+  }
+}, 10000).unref?.();
 // Company-defined Jira Listener rules: real events only; deterministic planning and Jira actions use zero model tokens.
 const RULE_EVENTS = { user_move: "issue_transitioned", agent_move: "issue_transitioned", issue_transitioned: "issue_transitioned", user_comment: "comment_created", comment_created: "comment_created", task_done: "issue_transitioned", subtask_done: "all_subtasks_done", assignee_changed: "assignee_changed", label_added: "label_added" };
 async function applyJiraRules(p) {
