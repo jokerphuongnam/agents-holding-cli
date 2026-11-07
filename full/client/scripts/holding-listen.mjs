@@ -821,9 +821,10 @@ async function startupRecovery(company) {
   startupRecovered.add(company);
   const boards = registry.projects.flatMap((p) => p.boards).filter((b) => b.company === company);
   for (const b of boards) {
-    const aiStatuses = ["In Progress", "Pre Coding", "Coding", "QC", "In Review"];
-    const quoted = aiStatuses.map((s) => `"${s.replaceAll('"', '\\"')}"`).join(", ");
-    const res = await jira.search(`project = "${b.project_key}" AND status in (${quoted}) ORDER BY updated ASC`, ["status", "updated", "summary", "labels"]);
+    // Do not hardcode template column names. Scan every non-terminal issue;
+    // next_action/process config decides whether it is an AI stage, waiting
+    // gate, or a script-only stage for this company.
+    const res = await jira.search(`project = "${b.project_key}" AND statusCategory != "Done" ORDER BY updated ASC`, ["status", "updated", "summary", "labels"]);
     for (const x of res ?? []) {
       if (!x.key) continue;
       const stage = x.fields?.status?.name ?? "In Progress";
