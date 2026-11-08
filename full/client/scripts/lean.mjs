@@ -499,7 +499,7 @@ export const T = (key, vars = {}, lang = LANG) => String((STR[lang] ?? STR.en)[k
 export const langInstruction = (lang = LANG) => `Language: write every human-readable field (plan, questions, summaries, notes) in ${LANG_NAMES[lang] ?? lang}, the language of the task. Keep code, identifiers, file paths and commit messages in the repo's own conventions.`;
 // ---------- visibility: Jira "working" label + start/fail comments, macOS notifications, local listener status ----------
 export const WORK_LABEL = "agent-working";
-const STAGE_TITLES = { todo: "To Do", in_progress: "In Progress", product_work: "Product Work", ba_question: "BA Question", planned: "Planned", pre_coding: "Pre Coding", coding: "Coding", qc: "QC", in_review: "In Review", done: "Done" };
+const STAGE_TITLES = { todo: "To Do", in_progress: "In Progress", product_work: "Product Work", ba_question: "BA Question", planned: "Planned", pre_coding: "Pre Code", coding: "Coding", qc: "QC", in_review: "In Review", done: "Done" };
 export const stageTitle = (k) => STAGE_TITLES[k] ?? String(k ?? "?").replace(/_/g, " ");
 export const startedComment = (staff, stage, why) => `${staffTag(staff)} ${T("started", { stage: stageTitle(stage) })}${why ? `\n${T("why", { staff, why })}` : ""}`;
 export const failedComment = (staff, stage, reason) => `${staffTag(staff)} ${T("failed", { stage: stageTitle(stage), reason: clip(String(reason ?? "error").split("\n")[0], 200) })}`;

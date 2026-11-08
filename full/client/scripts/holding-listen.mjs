@@ -599,7 +599,7 @@ Jira: ${issue}` });
     }
     const segs = L.segments(na), qcAhead = segs.some((x) => x.kind === "qc");
     const codeOnce = async (stage, o) => { // one coding call per repo (multi-repo task = feature/<KEY> in each), commit by script
-      let r = null; const wheres = [];
+      let r = null; const wheres = []; let changed = false;
       for (const rp of runRepos) {
         repo = rp;
         log(`lean: ${rp} branch ${branch}: ${L.ensureBranch(rp, branch)}`);
@@ -608,11 +608,12 @@ Jira: ${issue}` });
         const r1 = await leanModel("code", issue, stage, L.codePrompt(iss, {  plan: (plan ?? "") + multi, techPlan: o.techPlan, approval, feedback: o.feedback, hints: L.fileHints(files, `${iss.summary} ${iss.description} ${plan ?? ""}`), qc: !!o.selfCheck?.[rp], preexisting: L.preexistingFails(L.loadPlan(st, issue).qc_baseline?.[rp] ?? o.baselines?.[rp]), review: !!o.review, branch }), o.dev, L.contextOf({ brief: await brief(o.dev), habits }));
         if (r1.question && !r1.summary) { await record("question", r1.question); await say(o.who, `QUESTION (${rname(rp)})\n${r1.question}`, "question"); repo = runRepos[0]; return null; }
         const sha = L.commitAll(rp, `${o.wip ? `WIP(${issue}) ${o.wip}: ` : `${issue}: `}${r1.commit_message || iss.summary || "agent change"}`);
+        changed ||= !!sha;
         const h = o.host ? host(r1) : { msg: [] };
         wheres.push(`${runRepos.length > 1 ? rname(rp) + ": " : ""}Branch ${branch}${sha ? ` @ ${sha}` : " (no changes)"}${h.url ? ` PR ${h.url}${h.merged ? " (merged)" : ""}` : " (local, not pushed)"}${h.msg.length && !h.url ? ` - ${h.msg.join("; ")}` : ""}`);
         if (!r) r = { ...r1, commit: sha }; else r = { ...r, summary: `${r.summary ?? ""}\n${r1.summary ?? ""}`, tests: [r.tests, r1.tests].filter(Boolean).join("\n"), tech_plan: [r.tech_plan, r1.tech_plan].filter(Boolean).join("\n") };
       }
-      repo = runRepos[0]; return { ...r, where: wheres.join("\n") };
+      repo = runRepos[0]; return { ...r, changed, where: wheres.join("\n") };
     };
     if (seg.kind === "code") { // Coding: the card is already in Coding (moved by advance), now the developer codes
       const sv = L.loadPlan(st, issue);
@@ -644,9 +645,15 @@ Jira: ${issue}` });
           parts.push(ri); done.push(i); X.ckptSave(st, issue, { stage: s0, code_done: done, last_commit: ri.commit ?? null });
           if (!last) await say(who, X.progressNote(L.getLang(), L.stageTitle(s0), steps, done));
         }
-        r = parts.length ? { ...parts.at(-1), summary: parts.map((x) => x.summary).filter(Boolean).join("\n"), tests: parts.map((x) => x.tests).filter(Boolean).join("\n") } : { summary: sv.summary ?? "resumed: all sub-steps were already committed", where: sv.where ?? `Branch ${branch}` };
+        r = parts.length ? { ...parts.at(-1), changed: parts.some((x) => x.changed), summary: parts.map((x) => x.summary).filter(Boolean).join("\n"), tests: parts.map((x) => x.tests).filter(Boolean).join("\n") } : { changed: false, summary: sv.summary ?? "resumed: all sub-steps were already committed", where: sv.where ?? `Branch ${branch}` };
       }
       if (!r) return;
+      if (!r.changed) {
+        const msg = "Coding produced no committed change; staying in Coding. QC will not start.";
+        await record("note", msg); await say(who, `BLOCKED\n${msg}`);
+        log(`lean: ${issue} coding produced no committed change; refusing advance to QC`);
+        return;
+      }
       L.savePlan(st, issue, { tech_plan: sv.tech_plan ?? r.tech_plan, summary: r.summary, tests: r.tests, commit: r.commit, branch, repos: runRepos, developer: dev, qc_baseline: baselines, where: r.where });
       await say(who, [review ? "CODE (review feedback)" : "CODE", !sv.tech_plan && r.tech_plan && `Tech plan:\n${r.tech_plan}`, `Summary: ${r.summary ?? ""}`, r.tests && `Checks: ${r.tests}`, r.where].filter(Boolean).join("\n"));
       const art = (k) => ({ tech_plan: r.tech_plan, pr: `${r.summary}\n${r.where}`, qc_pass: r.tests || r.summary, note: `${r.summary}\n${r.tests ?? ""}\n${r.where}` }[k] ?? r.summary);
