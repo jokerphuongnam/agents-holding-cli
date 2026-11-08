@@ -635,7 +635,16 @@ Jira: ${issue}` });
       let r = null;
       if (steps.length === 1) r = await codeOnce(s0, { techPlan: sv.tech_plan, feedback: review ? na.review_feedback : fb, review, baselines, selfCheck, who, dev, host: host1 });
       else { // sub-steps: one WIP commit each on feature/<KEY>, checkpoint + progress note after each; a rerun skips finished steps
-        const ck = X.ckptLoad(st, issue) ?? {}, done = ck.stage === s0 && (ck.running || ck.failed) ? [...(ck.code_done ?? [])] : [];
+        const ck = X.ckptLoad(st, issue) ?? {};
+        let done = ck.stage === s0 && (ck.running || ck.failed) ? [...(ck.code_done ?? [])] : [];
+        // A checkpoint is only resumable when it has real implementation
+        // evidence. Old clients could record code_done without a commit after
+        // a sandbox/git failure; never skip Coding in that state.
+        if (done.length >= steps.length && !sv.commit) {
+          log(`lean: ${issue} coding checkpoint has no commit; resetting stale sub-steps`);
+          done = [];
+          X.ckptSave(st, issue, { stage: s0, code_done: [], last_commit: null, failed: null });
+        }
         if (done.length) log(`lean: ${issue} coding: resume at sub-step ${done.length + 1}/${steps.length}`);
         const parts = [];
         for (let i = 0; i < steps.length; i++) {
