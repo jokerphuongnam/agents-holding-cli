@@ -427,7 +427,30 @@ async function run(p, depth = 0) {
   if (depth === 0 && !(await useCtx(p))) return;
   await refreshJiraRoute();
   await clearWaitingSignal(issue, p.event);
-  let na = null; try { na = await mcp("next_action", { company, task: issue, listener_jira: listenerJira }); } catch (e) { log("next_action failed:", e.message); }
+  let na = null;
+  try {
+    na = await mcp("next_action", { company, task: issue, listener_jira: listenerJira });
+  } catch (e) {
+    // Jira can transition before its webhook creates the server task. Bootstrap
+    // from the card and retry; never launch an agent without a next_action.
+    const msg = String(e?.message ?? e);
+    if (/task not found/i.test(msg) && jira && issue) {
+      try {
+        const card = await jira.issue(issue);
+        const title = String(card?.fields?.summary ?? card?.summary ?? issue).slice(0, 300);
+        const body = String(card?.fields?.description ?? card?.description ?? "").slice(0, 4000);
+        await mcp("start_task", { company, title, body, issue_key: issue });
+        na = await mcp("next_action", { company, task: issue, listener_jira: listenerJira });
+        log(`next_action: bootstrapped missing task ${issue} for company ${company}`);
+      } catch (boot) {
+        log(`next_action failed for ${issue}: ${msg}; bootstrap failed: ${boot.message}`);
+        return;
+      }
+    } else {
+      log("next_action failed:", msg);
+      return;
+    }
+  }
   if (na && !(await ensureAgentOwnedAssignment(issue, na))) return;
   if ((na?.waiting || p.workflow_error) && p.event !== "manual") { await announceWaiting(issue, na, p); log(`waiting ${issue}: ${na?.stage ?? "workflow-invalid"}`); return; }
   if (lean && na) return leanRun(p, na, depth);
