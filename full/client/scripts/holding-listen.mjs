@@ -468,7 +468,7 @@ async function leanRun(p, na, depth = 0) {
   const issue = na.issue ?? p.issue ?? p.task_id; const vis = { labeled: false, started: new Set(), stage: na.stage, staff: L.stageStaff(na, na.stage), worked: false };
   try { const r = await leanRunInner(p, na, depth, vis);
     { const stp = L.stateDir(homedir(), company), ck = X.ckptLoad(stp, issue); if (ck?.blocked || ck?.failed) { X.ckptSave(stp, issue, { blocked: null, failed: null }); if (jira && ck.blocked) await jira.labels(issue, [], [X.BLOCKED_LABEL]).catch(() => {}); } }
-    if (vis.worked && depth === 0) { L.desktopNotify(homedir(), `agents-holding: ${issue}`, `Finished ${L.stageTitle(vis.stage)}`); L.writeStatus(homedir(), { last_run: { issue, result: `ok (${vis.stage})`, at: new Date().toISOString() } }); }
+    if (vis.worked && depth === 0) { L.desktopNotify(homedir(), `agents-holding: ${issue}`, `Finished ${L.stageTitle(vis.stage)}`, undefined, undefined, L.issueUrl(homedir(), issue)); L.writeStatus(homedir(), { last_run: { issue, result: `ok (${vis.stage})`, at: new Date().toISOString() } }); }
     return r; }
   catch (e) {
     log(`lean run ${issue} FAILED in ${vis.stage}: ${e.message}`);
@@ -478,12 +478,12 @@ async function leanRun(p, na, depth = 0) {
     if (e.agent) {
       if (jira) { await jira.labels(issue, [X.BLOCKED_LABEL]).catch((x) => log("Jira label failed:", x.message));
         await comms(issue, `${L.staffTag(vis.staff)} ${X.blockedComment(L.getLang(), e.agent, { cmd: e.cmd, stage: L.stageTitle(vis.stage), tried: e.tried ?? [] })}`, "blocked"); }
-      L.desktopNotify(homedir(), `agents-holding: ${issue} agent blocked`, `${e.agent.kind} ${e.agent.cause}${e.agent.fix ? ` - fix: ${e.agent.fix}` : ""}`);
+    L.desktopNotify(homedir(), `agents-holding: ${issue} agent blocked`, `${e.agent.kind} ${e.agent.cause}${e.agent.fix ? ` - fix: ${e.agent.fix}` : ""}`, undefined, undefined, L.issueUrl(homedir(), issue));
       L.writeStatus(homedir(), { last_run: { issue, result: `BLOCKED ${vis.stage}: ${e.agent.kind} ${e.agent.cause}`, at: new Date().toISOString() } });
       return;
     }
     await comms(issue, L.failedComment(vis.staff, vis.stage, e.message), "failed");
-    L.desktopNotify(homedir(), `agents-holding: ${issue} FAILED`, `${L.stageTitle(vis.stage)}: ${e.message}`);
+    L.desktopNotify(homedir(), `agents-holding: ${issue} FAILED`, `${L.stageTitle(vis.stage)}: ${e.message}`, undefined, undefined, L.issueUrl(homedir(), issue));
     L.writeStatus(homedir(), { last_run: { issue, result: `FAILED ${vis.stage}: ${String(e.message).slice(0, 120)}`, at: new Date().toISOString() } });
   } finally {
     if (vis.labeled && jira) await jira.label(issue, "remove").catch((x) => log("Jira label remove failed:", x.message));
@@ -552,7 +552,7 @@ async function leanRunInner(p, na, depth, vis) {
     if (jira && !vis.labeled) { vis.labeled = true; await jira.label(issue, "add").catch((e) => log("Jira label add failed:", e.message)); }
     if (jira && kind !== "script" && vis.staffRole !== role) { vis.staffRole = role; await jira.staffLabel(issue, role, L.loadAgentCfg(homedir(), company).staff?.[role]?.jira_user || null).then((acct) => acct ? mcp("set_task_assignee", { company, task: issue, account: acct }).catch((e) => log("persist assignee failed:", e.message)) : null).catch((e) => log("Jira staff label failed:", e.message)); }
     if (kind !== "script" && !(kind === "code" && na.review_feedback)) await say(false, L.startedComment(vis.staff, s0, L.staffWhy(na, s0, { kind, developer: dev0 }))); // review: the "back to Coding" comment says it
-    L.desktopNotify(homedir(), `agents-holding: ${issue}`, `Started ${L.stageTitle(s0)}`);
+    L.desktopNotify(homedir(), `agents-holding: ${issue}`, `Started ${L.stageTitle(s0)}`, undefined, undefined, L.issueUrl(homedir(), issue));
   };
   for (const seg of L.segments(na)) {
     const s0 = seg.stages[0];

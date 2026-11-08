@@ -82,7 +82,7 @@ fi
 cmd_status() {
   local pid repo last
   repo="$(plist_repo "$MASTER")"; [ -z "$repo" ] && repo="$(plist_repo "$AUTO")"
-  pid="$(running_pid)"; if process_ok "$pid" && heartbeat_fresh; then echo "Jira Listener: ON  (running and heartbeat fresh, PID $pid)"; elif loaded; then echo "Jira Listener: DEGRADED (launchd loaded but listener process/heartbeat is not healthy${pid:+, PID $pid})"; else printf '\033[1;31m🔴 Jira Listener is off — all Jira automation is stopped until you start it:\n   %s\033[0m\n   (Jira Listener keeps all Jira automation running.)\n' "$START_CMD"; fi
+  pid="$(running_pid)"; if loaded && heartbeat_fresh; then echo "Jira Listener: ON  (launchd loaded and heartbeat fresh, PID $pid)"; elif loaded; then echo "Jira Listener: DEGRADED (launchd loaded but listener process/heartbeat is not healthy${pid:+, PID $pid})"; else printf '\033[1;31m🔴 Jira Listener is off — all Jira automation is stopped until you start it:\n   %s\033[0m\n   (Jira Listener keeps all Jira automation running.)\n' "$START_CMD"; fi
   if launchctl print "$DOMAIN/$WD_LABEL" >/dev/null 2>&1; then echo "watchdog     : ON  (notifies at once if the Jira Listener stops)"; else echo "watchdog     : OFF (holding listener start installs it)"; fi
   if [ -f "$AUTO" ]; then echo "autostart    : ON  (starts at login: $AUTO)"; else echo "autostart    : OFF"; fi
   echo "repo         : ${repo:-<not installed; run: holding listener start --repo DIR>}"
@@ -121,7 +121,7 @@ cmd_on() {
   local start start_ms; start=$(date -u +%Y-%m-%dT%H:%M:%S); start_ms=$(date +%s000)
   for _ in $(seq 1 45); do
     sleep 1
-    if process_ok "$(running_pid)" && awk -v s="$start" '$1>=s && / readiness online /' "$LOG" 2>/dev/null | grep -q . && ready_for_start "$start_ms"; then echo "listener readiness online ✔"; cmd_status; return 0; fi
+    if loaded && heartbeat_fresh && awk -v s="$start" '$1>=s && / readiness online /' "$LOG" 2>/dev/null | grep -q . && ready_for_start "$start_ms"; then echo "listener readiness online ✔"; cmd_status; return 0; fi
   done
   echo "listener failed readiness within 45s (process/realtime/server heartbeat not all ready) — check: holding listener logs" >&2; cmd_status; return 1
 }

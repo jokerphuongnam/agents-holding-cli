@@ -595,14 +595,21 @@ export function toAdf(text) {
 /** Jira labels update body (add/remove the working label). */
 export const labelBody = (op, label = WORK_LABEL) => ({ update: { labels: [{ [op === "remove" ? "remove" : "add"]: label }] } });
 const notifyFile = (home) => join(home, ".config/agents-holding/notify.json");
+export function issueUrl(home, issue) {
+  try { const j = JSON.parse(readFileSync(join(home, ".config/agents-holding/jira.json"), "utf8")); if (j.site && issue) return `${String(j.site).replace(/\/$/, "")}/browse/${encodeURIComponent(issue)}`; } catch {}
+  return null;
+}
 export function notifyOn(home, env = process.env) { if (env.AH_NOTIFY === "0") return false; try { return JSON.parse(readFileSync(notifyFile(home), "utf8")).on !== false; } catch { return true; } }
 export function setNotify(home, on) { mkdirSync(join(home, ".config/agents-holding"), { recursive: true }); writeFileSync(notifyFile(home), JSON.stringify({ on: !!on }), { mode: 0o600 }); }
 const asq = (t) => String(t ?? "").replace(/[\\"]/g, "").replace(/\s+/g, " ").slice(0, 180);
 /** osascript args for a macOS notification (quotes/backslashes stripped: no AppleScript injection from Jira text). */
 export const notifyArgs = (title, msg) => ["-e", `display notification "${asq(msg)}" with title "${asq(title)}"`];
-export function desktopNotify(home, title, msg, exec = (c, a) => execFileSync(c, a, { stdio: "ignore", timeout: 5000 }), platform = process.platform) {
+export function desktopNotify(home, title, msg, exec = (c, a) => execFileSync(c, a, { stdio: "ignore", timeout: 5000 }), platform = process.platform, url = null) {
   if (!notifyOn(home) || platform !== "darwin") return false;
-  try { exec("osascript", notifyArgs(title, msg)); return true; } catch { return false; }
+  try {
+    if (url) { try { exec("terminal-notifier", ["-title", title, "-message", msg, "-open", url]); return true; } catch {} }
+    exec("osascript", notifyArgs(title, msg)); return true;
+  } catch { return false; }
 }
 /** What the user must do, per CEO inbox kind (one line, shown in the 'Agents Holding' notification and `holding inbox`). */
 export const INBOX_NEED = { question: "a staff has a question for you", decision: "pick an option (1/2/3)", hire: "needs a hire (or pick an existing staff)", blocked: "an agent is blocked (e.g. needs a login)", failed: "a run failed: needs a look", gate: "approve or ask for changes", qc: "QC failed after fixes: needs a look", repo: "which repo should this task use?", staff: "staff decision needed" };
