@@ -91,7 +91,9 @@ if command -v launchctl >/dev/null 2>&1; then
   if [ "$listener_was_active" = 1 ] || [ "$listener_was_autostart" = 1 ]; then
     listener_repo="$(/usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:AH_REPO_DIR' "$HOME/Library/Application Support/agents-holding/$lbl.plist" 2>/dev/null || true)"
     echo "   listener active before update; stopping it for an atomic replace"
-    bash "$here/launchd/listener.sh" stop >/dev/null 2>&1 || { echo "ERROR: could not stop the Jira Listener safely; update aborted" >&2; exit 1; }
+    # The update owns the stop/start window. Preserve the login plist so an
+    # interrupted update cannot silently turn a previously enabled autostart off.
+    bash "$here/launchd/listener.sh" stop --preserve-autostart >/dev/null 2>&1 || { echo "ERROR: could not stop the Jira Listener safely; update aborted" >&2; exit 1; }
   fi
 fi
 restore_listener() {

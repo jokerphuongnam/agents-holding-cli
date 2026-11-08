@@ -116,11 +116,17 @@ cmd_on() {
 }
 
 cmd_off() {
-  rm -f "$AUTO"
+  local preserve=0
+  [ "${2:-}" = "--preserve-autostart" ] && preserve=1
+  [ "$preserve" = 0 ] && rm -f "$AUTO"
   launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
   sleep 1
   if loaded; then echo "error: still loaded"; exit 1; fi
-  echo "Jira Listener OFF and autostart OFF."
+  if [ "$preserve" = 1 ]; then
+    echo "Jira Listener stopped (autostart preserved)."
+  else
+    echo "Jira Listener OFF and autostart OFF."
+  fi
 }
 
 poke() { local pid; pid="$(running_pid)"; [ -n "$pid" ] && kill -USR1 "$pid" 2>/dev/null || true; } # Jira Listener re-sends its heartbeat
@@ -138,7 +144,7 @@ cmd_autostart() {
 case "${1:-status}" in
   status) cmd_status ;;
   start) shift; cmd_on "$@" ;;
-  stop) cmd_off ;;
+  stop) shift; cmd_off "$@" ;;
   autostart) shift; cmd_autostart "${1:-}" ;;
   logs) shift; log="$(scoped_log)"; err="$(scoped_err)"; mkdir -p "$(dirname "$log")"; [ -f "$log" ] || { echo "no listener logs for this repo yet ($log); start it with: holding listener start"; exit 0; }; if [ "${1:-}" = "-f" ]; then tail -f "$log"; else tail -n 30 "$log"; echo "--- $(basename "$err")"; tail -n 10 "$err" 2>/dev/null || true; fi ;;
   *) echo "usage: holding listener start [--repo DIR] | stop | autostart on|off | status | logs [-f]"; exit 2 ;;
