@@ -4,6 +4,7 @@ set -euo pipefail
 export PATH="$HOME/.grok/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 export GROK_BIN="${GROK_BIN:-$HOME/.grok/bin/grok}"
 export AH_MCP_URL="${AH_MCP_URL:-https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp}"
+export AH_RUNNER_SCRIPT="${AH_RUNNER_SCRIPT:-$HOME/.agents-holding/scripts/holding-listen.mjs}"
 if [ -z "${AGENTS_HOLDING_KEY:-}" ]; then
   for svc in agents-holding-license agents-holding-test-license; do
     AGENTS_HOLDING_KEY="$(security find-generic-password -s "$svc" -a "${USER:-$(id -un)}" -w 2>/dev/null || true)"
