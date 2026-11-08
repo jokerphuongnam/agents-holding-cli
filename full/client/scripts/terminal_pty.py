@@ -69,6 +69,7 @@ def main():
                     if active_job:
                         active = jobs.get(active_job, {})
                         error = 'terminal already running this command' if active.get('command') == command else 'terminal is busy'
+                        print(f"[terminal] rejected command={command!r} reason={error} active_command={active.get('command')!r}", flush=True)
                         c.sendall((json.dumps({'ok': False, 'error': error, 'active_job': active_job,
                                                'active_command': active.get('command'),
                                                'active_started_at': active.get('started_at')}) + '\n').encode()); c.close(); continue
@@ -77,6 +78,7 @@ def main():
                     job_id = 'job-' + secrets.token_hex(10); marker = '__AH_DONE_' + secrets.token_hex(8) + '__'
                     jobs[job_id] = {'marker': marker.encode(), 'client': c, 'command': command, 'started_at': time.time(), 'buf': b''}
                     active_job = job_id; meta['active_job'] = {'job_id': job_id, 'command': command, 'started_at': jobs[job_id]['started_at']}; state.write_text(json.dumps(meta)); c.setblocking(False)
+                    print(f"[terminal] started job_id={job_id} command={command!r} cwd={repo}", flush=True)
                     os.write(master, (command + f"\nprintf '{marker}:%s\\n' $?\n" ).encode())
                 else: c.close()
             if active_job and active_job in jobs and re.search(re.escape(jobs[active_job]['marker'].decode()) + r':-?\d+', jobs[active_job]['buf'].decode(errors='replace')):
