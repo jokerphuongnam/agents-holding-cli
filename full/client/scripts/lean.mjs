@@ -83,7 +83,7 @@ export const codeMaxTurns = (env = process.env) => Math.max(5, Number(env.AH_COD
 export const CODE_TOOLS = "Bash,read_file,search_replace,write,grep,list_dir";
 export const TECH_TOOLS = "read_file,grep,list_dir"; // Pre Coding: read-only, a few turns max, cheap model
 export const TEXT_SCHEMA = { type: "object", properties: { plan: { type: "string" }, question: { type: "string" } } };
-export const CODE_SCHEMA = { type: "object", properties: { tech_plan: { type: "string" }, summary: { type: "string" }, tests: { type: "string" }, commit_message: { type: "string" }, question: { type: "string" } }, required: ["summary"] };
+export const CODE_SCHEMA = { type: "object", properties: { tech_plan: { type: "string" }, summary: { type: "string" }, why: { type: "string" }, how: { type: "string" }, tests: { type: "string" }, commit_message: { type: "string" }, question: { type: "string" } }, required: ["summary", "why", "how"] };
 export const TECH_SCHEMA = { type: "object", properties: { tech_plan: { type: "string" }, developer: { type: "string" }, question: { type: "string" } } };
 
 // ---------- pure helpers (unit-tested in tests/lean_test.mjs) ----------
