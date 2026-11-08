@@ -7,7 +7,7 @@ import "./kc-guard.mjs"; // pin keychain calls to the real login keychain (never
 import * as O from "./outbound.mjs";
 import { localMeta, crawlPublic } from "./skills.mjs";
 import { execFileSync, spawn } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync, openSync, closeSync, unlinkSync } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { homedir, hostname } from "node:os";
 import { join, resolve } from "node:path";
@@ -350,6 +350,18 @@ function debounce(p) {
 }
 let running = false, runningIssue = null;
 const pending = new Map(); // issue -> latest notice; unassigned start-stage cards remain queued here
+const issueLockDir = join(homedir(), ".config/agents-holding/active-runs");
+mkdirSync(issueLockDir, { recursive: true, mode: 0o700 });
+const issueLockKey = (k) => Buffer.from(String(k)).toString("hex").slice(0, 180);
+function acquireIssueLock(k) {
+  const path = join(issueLockDir, `${issueLockKey(k)}.lock`);
+  try { const fd = openSync(path, "wx", 0o600); writeFileSync(fd, JSON.stringify({ pid: process.pid, key: k, at: new Date().toISOString() })); closeSync(fd); return path; }
+  catch {
+    try { const old = JSON.parse(readFileSync(path, "utf8")); if (old.pid) { process.kill(old.pid, 0); return null; } } catch {}
+    try { unlinkSync(path); const fd = openSync(path, "wx", 0o600); writeFileSync(fd, JSON.stringify({ pid: process.pid, key: k, at: new Date().toISOString() })); closeSync(fd); return path; } catch { return null; }
+  }
+}
+function releaseIssueLock(path) { try { if (path) unlinkSync(path); } catch {} }
 const queueKey = (p) => `${p.company ?? company}/${p.issue ?? p.task_id ?? "?"}`;
 const queueOrder = (p) => [Number.isFinite(Number(p.priority)) ? Number(p.priority) : 100000, Date.parse(p.created ?? p.updated ?? "") || Number.MAX_SAFE_INTEGER, queueKey(p)];
 function publishQueue() {
@@ -367,7 +379,10 @@ function wake(p) {
     return;
   }
   running = true; runningIssue = k;
+  const lock = acquireIssueLock(k);
+  if (!lock) { running = false; runningIssue = null; log(`skip duplicate active run for ${k}`); return; }
   run(p).catch((e) => log("run error", e.message)).finally(() => {
+    releaseIssueLock(lock);
     running = false; runningIssue = null;
     if (pending.size) { const n = publishQueue()[0]; const k0 = queueKey(n); pending.delete(k0); publishQueue(); log("running queued notice", n.event, k0, "stage", n.stage); wake(n); }
     else if (once || opt("--run")) process.exit(0);
