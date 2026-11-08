@@ -2,7 +2,7 @@
 // Small local terminal bridge used by registered_terminal QC checks.
 // The session is local-only; commands are dispatched through a Unix socket.
 import { createServer, createConnection } from "node:net";
-import { exec } from "node:child_process";
+import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync, existsSync, unlinkSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { homedir, hostname } from "node:os";
@@ -29,9 +29,15 @@ if (verb === "register") {
         const line = buf.slice(0, n); buf = buf.slice(n + 1);
         let req; try { req = JSON.parse(line); } catch { continue; }
         if (req.token !== token) { conn.end(JSON.stringify({ ok: false, error: "unauthorized" }) + "\n"); continue; }
-        exec(String(req.command || ""), { cwd: req.cwd ? resolve(repo, req.cwd) : repo, timeout: Number(req.timeout_ms) || 0, maxBuffer: 8 * 1024 * 1024, env: { ...process.env, CI: "1" } }, (error, stdout, stderr) => {
-          conn.end(JSON.stringify({ ok: !error, code: error?.code ?? 0, stdout, stderr, error: error?.message ?? "" }) + "\n");
-        });
+        const child = spawn(String(req.command || ""), { cwd: req.cwd ? resolve(repo, req.cwd) : repo, shell: true, env: { ...process.env, CI: "1" } });
+        let stdout = "", stderr = "", timer = null, finished = false;
+        const finish = (code, error = "") => { if (finished) return; finished = true; if (timer) clearTimeout(timer); conn.end(JSON.stringify({ ok: code === 0, code: code ?? 1, stdout, stderr, error }) + "\n"); };
+        child.stdout.on("data", (d) => { const s = d.toString(); stdout += s; process.stdout.write(s); });
+        child.stderr.on("data", (d) => { const s = d.toString(); stderr += s; process.stderr.write(s); });
+        child.on("error", (e) => finish(1, e.message));
+        child.on("close", (code, signal) => finish(code, signal ? `terminated by ${signal}` : ""));
+        const timeout = Number(req.timeout_ms) || 0;
+        if (timeout > 0) timer = setTimeout(() => { try { child.kill("SIGTERM"); } catch {} }, timeout);
       }
     });
   });
