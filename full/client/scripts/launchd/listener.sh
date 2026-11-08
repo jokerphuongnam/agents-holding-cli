@@ -29,7 +29,7 @@ install_watchdog() { # always on (also at login), independent of the listener jo
 }
 running_pid() { launchctl print "$DOMAIN/$LABEL" 2>/dev/null | awk '/^\tpid = /{print $3; exit}'; }
 loaded() { launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; }
-process_ok() { local p="${1:-}"; [ -n "$p" ] && kill -0 "$p" 2>/dev/null && ps -p "$p" -o command= 2>/dev/null | grep -Eq 'run-listener|holding-listen|node'; }
+process_ok() { local p="${1:-}" cmd=""; [ -n "$p" ] && kill -0 "$p" 2>/dev/null || return 1; cmd="$(ps -p "$p" -o command= 2>/dev/null || true)"; printf '%s' "$cmd" | grep -Eq 'run-listener|holding-listen|node|^Jira Listener$'; }
 heartbeat_fresh() {
   local n; n="$(command -v node || true)"; [ -n "$n" ] || return 1
   "$n" - "$HOME/.config/agents-holding/listener-status.json" "${AH_STALE_HEARTBEAT_SEC:-150}" <<'NODE'
