@@ -23,6 +23,20 @@ if [ -z "$AH_COMPANY" ]; then
   echo "ERROR: no company scope in $AH_REPO_DIR/.agents/company.json" >&2
   exit 1
 fi
+# Resolve the Jira project from the local repo registration. This keeps the
+# native listener scoped to the project registered for this repo instead of
+# relying on a global/default project.
+if [ -z "${AH_JIRA_PROJECT:-}" ] && [ -f "$HOME/.config/agents-holding/projects.json" ]; then
+  AH_JIRA_PROJECT="$(node -e '
+    try {
+      const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));
+      const repo=process.argv[2];
+      const p=(j.projects||[]).find(x=>require("path").resolve(x.path||"")===require("path").resolve(repo));
+      process.stdout.write(String(p?.jira?.project_key||p?.project_key||p?.boards?.[0]?.project_key||""));
+    } catch {}
+  ' "$HOME/.config/agents-holding/projects.json" "$AH_REPO_DIR")"
+fi
+export AH_JIRA_PROJECT
 # Prefer the native listener when the update package installed it.
 AH_RUST_BIN="${AH_RUST_LISTENER_BIN:-$HOME/.agents-holding/bin/agents-holding-listener}"
 if [ ! -x "$AH_RUST_BIN" ] && [ -x "$HOME/.agents-holding/scripts/install-rust-listener.sh" ]; then
