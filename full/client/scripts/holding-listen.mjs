@@ -526,7 +526,16 @@ async function leanRunInner(p, na, depth, vis) {
         vis.gates ??= new Set();
         if (r.stage === to && L.GATE_HINTS[to] && !vis.gates.has(to)) { vis.gates.add(to); await say(false, L.gateComment(L.stageStaff(na, to), to), "gate"); } // explicit gate: how to approve / revise
         return true; }
-      catch (e) { const m = e.message.match(/kind=(\w+)/); if (i || !m) { log(`lean: advance ${from} -> ${to} failed: ${e.message}`); return false; } await record(m[1], art?.(m[1])); }
+      catch (e) {
+        const m = e.message.match(/kind=(\w+)/);
+        if (i || !m) {
+          const detail = `Flow advance ${from} -> ${to} was rejected. ${e.message}\n\nNext action: review the gate, add the missing evidence or user decision, then reply via the CEO inbox (holding ceo / holding inbox reply) or update the Jira ticket.`;
+          log(`lean: advance ${from} -> ${to} failed: ${e.message}`);
+          await say(false, detail, "failed");
+          return false;
+        }
+        await record(m[1], art?.(m[1]));
+      }
     }
   };
   log(`lean run ${issue} (${p.event}) segments ${L.segments(na).map((s) => `${s.kind}:${s.stages.join(">")}`).join(" | ") || "none"}`);
