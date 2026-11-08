@@ -51,7 +51,18 @@ ah_refresh_package() {
   tmp="$(mktemp -d "${TMPDIR:-/tmp}/ah-update.XXXXXX")"
   endpoint="https://api.github.com/repos/jokerphuongnam/agents-holding-cli/releases/latest"
   [ "$tag" != latest ] && endpoint="https://api.github.com/repos/jokerphuongnam/agents-holding-cli/releases/tags/$tag"
-  asset_url="$(curl -fsSL -H 'Accept: application/vnd.github+json' "$endpoint" | awk -F'"' '$2=="browser_download_url" && $4 ~ /agents-holding-cli-.*\.tar\.gz$/ {print $4; exit}')" || true
+  asset_url="$(curl -fsSL -H 'Accept: application/vnd.github+json' "$endpoint" 2>/dev/null | awk -F'"' '$2=="browser_download_url" && $4 ~ /agents-holding-cli-.*\.tar\.gz$/ {print $4; exit}')" || true
+  # GitHub's unauthenticated API is rate-limited. Resolve a published tag
+  # directly instead of treating a 403 as "no release". Ignore future-dated
+  # tags so a clock/build mistake cannot make clients jump into the future.
+  if [ -z "$asset_url" ] && command -v git >/dev/null 2>&1; then
+    today="$(date -u +%Y%m%d)"
+    if [ "$tag" = latest ]; then
+      tag="$(git ls-remote --tags --refs "$url" 2>/dev/null | awk -F/ -v today="$today" '$NF ~ /^v[0-9]{10}$/ {v=substr($NF,2); if (substr(v,1,8) <= today) print v}' | sort -n | tail -1)"
+      [ -n "$tag" ] && echo "   API unavailable; resolved tag directly: $tag"
+    fi
+    [ -n "$tag" ] && asset_url="https://github.com/jokerphuongnam/agents-holding-cli/releases/download/v$tag/agents-holding-cli-v$tag.tar.gz"
+  fi
   [ -n "$asset_url" ] || { echo "   no published client artifact found; keeping current scripts" >&2; rm -rf "$tmp"; return 1; }
   curl -fsSL "$asset_url" -o "$tmp/client.tar.gz" || { echo "   package download failed; keeping current scripts" >&2; rm -rf "$tmp"; return 1; }
   mkdir -p "$tmp/src" && tar xzf "$tmp/client.tar.gz" -C "$tmp/src"
