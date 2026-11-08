@@ -78,7 +78,9 @@ for (const p of registry.projects) log(`project ${p.name} ${p.path} boards ${p.b
 // Server health: down / 5xx / timeout / quota -> red warning + one notification; recovery -> reconcile missed Jira changes.
 const server = { down: null };
 function serverDown(c) {
-  if (server.down?.cause === c.cause) return; const first = !server.down; server.down = { cause: c.cause, since: server.down?.since ?? new Date().toISOString() };
+  const first = !server.down || server.down.cause !== c.cause;
+  server.down = { cause: c.cause, msg: c.msg, since: server.down?.since ?? new Date().toISOString(), until: c.cause === "quota" ? Date.now() + 60000 : 0 };
+  if (!first && c.cause === "quota") return;
   log(`\x1b[31mSERVER ${c.cause.toUpperCase()}: ${c.msg}\x1b[0m`);
   L.writeStatus(homedir(), { server: { state: c.cause, msg: c.msg, since: server.down.since } });
   if (first || c.cause === "quota") L.desktopNotify(homedir(), "agents-holding", c.cause === "quota" ? X.QUOTA_MSG : `Server problem: ${c.msg}. Work pauses; missed Jira changes are replayed on recovery.`);
@@ -106,6 +108,7 @@ function creditOk() {
   for (const c of companyList) reconcile(c).catch((e) => log("reconcile failed:", e.message));
 }
 async function mcp(name, a) {
+  if (server.down?.cause === "quota" && Date.now() < (server.down.until ?? 0)) throw new X.ServerError(server.down);
   if (O.governed(name)) a = O.outbound(name, a); // single outbound allowlist (telemetry / crawl / billing)
   let r, body;
   try { r = await fetch(`${base}/functions/v1/mcp`, { method: "POST", signal: AbortSignal.timeout(Number(process.env.AH_MCP_TIMEOUT_MS ?? 60000)), headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", "X-AH-Version": AH_CLIENT_VERSION, Authorization: `Bearer ${key}`, ...deviceHeaders },
@@ -113,11 +116,11 @@ async function mcp(name, a) {
   catch (e) { const c = X.classifyServer({ err: e }); serverDown(c); throw new X.ServerError(c); }
   const c = X.classifyServer({ status: r.status, body });
   if (c.cause !== "ok" && c.cause !== "auth") { serverDown(c); throw new X.ServerError(c); }
-  if (r.ok) serverUp();
   let j; try { j = JSON.parse(body); } catch { throw new Error(`${name} failed: HTTP ${r.status}`); } const t = j.result?.content?.[0]?.text;
   if (j.result?.isError && /quota|limit (reached|exceeded)/i.test(t ?? "")) { const q = { cause: "quota", msg: X.QUOTA_MSG }; serverDown(q); throw new X.ServerError(q); }
   if (j.result?.isError && /AH_NO_CREDIT/.test(t ?? "")) { creditBlock(t); throw new Error(`${name} stopped: ${t}`); }
   if (!t || j.result.isError) throw new Error(`${name} failed: ${t ?? JSON.stringify(j.error)}`);
+  if (r.ok) serverUp();
   const v = JSON.parse(t);
   if (name === "listener_heartbeat") { if (v?.credit_blocked) creditBlock(v.credit_message); else creditOk(); }
   return v;
@@ -434,6 +437,10 @@ async function run(p, depth = 0) {
     // Jira can transition before its webhook creates the server task. Bootstrap
     // from the card and retry; never launch an agent without a next_action.
     const msg = String(e?.message ?? e);
+    if (/quota|limit (reached|exceeded)/i.test(msg) || server.down?.cause === "quota") {
+      log(`paused ${issue}: MCP quota active; no agent dispatch`);
+      return;
+    }
     if (/task not found/i.test(msg) && jira && issue) {
       try {
         const card = await jira.issue(issue);
