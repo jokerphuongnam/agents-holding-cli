@@ -599,7 +599,7 @@ Jira: ${issue}` });
     }
     const segs = L.segments(na), qcAhead = segs.some((x) => x.kind === "qc");
     const codeOnce = async (stage, o) => { // one coding call per repo (multi-repo task = feature/<KEY> in each), commit by script
-      let r = null; const wheres = []; let changed = false;
+      let r = null; const wheres = []; let changed = false; let noTrackedChanges = false; let commitFailed = false;
       for (const rp of runRepos) {
         repo = rp;
         log(`lean: ${rp} branch ${branch}: ${L.ensureBranch(rp, branch)}`);
@@ -609,12 +609,14 @@ Jira: ${issue}` });
         const r1 = await leanModel("code", issue, stage, L.codePrompt(iss, {  plan: (plan ?? "") + multi, techPlan: o.techPlan, approval, feedback: o.feedback, hints: L.fileHints(files, `${iss.summary} ${iss.description} ${plan ?? ""}`), qc: !!o.selfCheck?.[rp], preexisting: L.preexistingFails(L.loadPlan(st, issue).qc_baseline?.[rp] ?? o.baselines?.[rp]), review: !!o.review, branch }), o.dev, L.contextOf({ brief: await brief(o.dev), habits }));
         if (r1.question && !r1.summary) { await record("question", r1.question); await say(o.who, `QUESTION (${rname(rp)})\n${r1.question}`, "question"); repo = runRepos[0]; return null; }
         const sha = L.commitAll(rp, `${o.wip ? `WIP(${issue}) ${o.wip}: ` : `${issue}: `}${r1.commit_message || iss.summary || "agent change"}`, baselinePaths);
-        changed ||= !!sha;
+        changed ||= /^[0-9a-f]{7,40}$/i.test(String(sha ?? ""));
+        if (sha === null) noTrackedChanges = true;
+        if (String(sha ?? "").startsWith("failed:")) commitFailed = true;
         const h = o.host ? host(r1) : { msg: [] };
         wheres.push(`${runRepos.length > 1 ? rname(rp) + ": " : ""}Branch ${branch}${sha ? ` @ ${sha}` : " (no changes)"}${h.url ? ` PR ${h.url}${h.merged ? " (merged)" : ""}` : " (local, not pushed)"}${h.msg.length && !h.url ? ` - ${h.msg.join("; ")}` : ""}`);
         if (!r) r = { ...r1, commit: sha }; else r = { ...r, summary: `${r.summary ?? ""}\n${r1.summary ?? ""}`, tests: [r.tests, r1.tests].filter(Boolean).join("\n"), tech_plan: [r.tech_plan, r1.tech_plan].filter(Boolean).join("\n") };
       }
-      repo = runRepos[0]; return { ...r, changed, where: wheres.join("\n") };
+      repo = runRepos[0]; return { ...r, changed, noTrackedChanges, commitFailed, where: wheres.join("\n") };
     };
     if (seg.kind === "code") { // Coding: the card is already in Coding (moved by advance), now the developer codes
       const sv = L.loadPlan(st, issue);
@@ -640,7 +642,7 @@ Jira: ${issue}` });
         // A checkpoint is only resumable when it has real implementation
         // evidence. Old clients could record code_done without a commit after
         // a sandbox/git failure; never skip Coding in that state.
-        const hasCommitEvidence = /^[0-9a-f]{7,40}$/i.test(String(sv.commit ?? ""));
+        const hasCommitEvidence = /^[0-9a-f]{7,40}$/i.test(String(sv.commit ?? "")) || String(ck.last_commit ?? "").startsWith("no-commit:");
         if (done.length >= steps.length && !hasCommitEvidence) {
           log(`lean: ${issue} coding checkpoint has no commit; resetting stale sub-steps`);
           done = [];
@@ -653,17 +655,32 @@ Jira: ${issue}` });
           const last = i === steps.length - 1;
           const ri = await codeOnce(s0, { techPlan: `${sv.tech_plan}\n\nDo ONLY sub-step ${i + 1}/${steps.length} now${done.length ? ` (steps ${done.map((d) => d + 1).join(", ")} are already committed)` : ""}:\n${steps[i]}`, feedback: fb, baselines, selfCheck: last ? selfCheck : {}, who, dev, host: last && host1, wip: last ? null : `${i + 1}/${steps.length}` });
           if (!ri) return;
-          parts.push(ri); done.push(i); X.ckptSave(st, issue, { stage: s0, code_done: done, last_commit: ri.commit ?? null });
+          // A failed commit is not completed work. Older clients appended the
+          // sub-step before checking this, so a resume could skip the failed
+          // implementation and jump straight to the next step/QC.
+          if (!/^[0-9a-f]{7,40}$/i.test(String(ri.commit ?? ""))) {
+            X.ckptSave(st, issue, { stage: s0, code_done: done, last_commit: null, failed: ri.commit ?? "commit failed" });
+            log(`lean: ${issue} coding sub-step ${i + 1}/${steps.length} has no commit; will retry on resume`);
+            return;
+          }
+          parts.push(ri); done.push(i); X.ckptSave(st, issue, { stage: s0, code_done: done, last_commit: ri.commit ?? `no-commit:${new Date().toISOString()}`, failed: null });
           if (!last) await say(who, X.progressNote(L.getLang(), L.stageTitle(s0), steps, done));
         }
         r = parts.length ? { ...parts.at(-1), changed: parts.some((x) => x.changed), summary: parts.map((x) => x.summary).filter(Boolean).join("\n"), tests: parts.map((x) => x.tests).filter(Boolean).join("\n") } : { changed: false, summary: sv.summary ?? "resumed: all sub-steps were already committed", where: sv.where ?? `Branch ${branch}` };
       }
       if (!r) return;
+      if (r.commitFailed) {
+        const msg = `Coding bị dừng: commit thất bại. Chi tiết: ${r.commit}. Cần kiểm tra quyền Git/sandbox và chạy lại Coding; task chưa được chuyển QC.`;
+        await record("note", msg); await say(who, `BLOCKED\n${msg}`); log(`lean: ${issue} ${msg}`); return;
+      }
       if (!r.changed) {
-        const msg = "Coding produced no committed change; staying in Coding. QC will not start.";
-        await record("note", msg); await say(who, `BLOCKED\n${msg}`);
-        log(`lean: ${issue} coding produced no committed change; refusing advance to QC`);
-        return;
+        if (r.noTrackedChanges) {
+          const msg = "Coding không tạo thay đổi trong file được Git track; không có commit là hợp lệ. Các file ignored/generated không được yêu cầu commit. QC tiếp tục theo flow.";
+          await record("note", msg); await say(who, `INFO\n${msg}`); log(`lean: ${issue} ${msg}`);
+        } else {
+          const msg = "Coding không tạo được implementation evidence và cũng không xác định được nguyên nhân. Cần user kiểm tra repo/quyền đọc-ghi rồi chạy lại.";
+          await record("note", msg); await say(who, `BLOCKED\n${msg}`); log(`lean: ${issue} ${msg}`); return;
+        }
       }
       if (!r.summary || !r.why || !r.how) {
         const msg = "Coding handoff is incomplete: developer must summarize WHAT changed, WHY, and HOW before QC.";

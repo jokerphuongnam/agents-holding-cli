@@ -105,7 +105,17 @@ cmd_on() {
   install_watchdog
   [ "$OLD_AUTO" = 1 ] && cp "$MASTER" "$AUTO"   # migrated: keep autostart ON
   [ -f "$AUTO" ] && cp "$MASTER" "$AUTO"   # keep the login copy in sync
-  if loaded; then echo "replacing existing listener"; launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true; for _ in $(seq 1 15); do running || break; sleep 1; done; loaded && { echo "error: old listener job did not stop cleanly" >&2; return 1; }; fi
+  if loaded; then
+    echo "replacing existing listener"
+    launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
+    for _ in $(seq 1 15); do running || break; sleep 1; done
+    if loaded; then
+      launchctl kill SIGKILL "$DOMAIN/$LABEL" 2>/dev/null || true
+      launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
+      sleep 1
+    fi
+    loaded && { echo "error: stale listener launchd job could not be unloaded" >&2; return 1; }
+  fi
   launchctl bootstrap "$DOMAIN" "$MASTER"
   echo "Jira Listener started for $repo; waiting for process, realtime join, and heartbeat readiness..."
   local start start_ms; start=$(date -u +%Y-%m-%dT%H:%M:%S); start_ms=$(date +%s000)
