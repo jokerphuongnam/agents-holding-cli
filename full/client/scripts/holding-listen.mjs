@@ -640,7 +640,8 @@ Jira: ${issue}` });
         // A checkpoint is only resumable when it has real implementation
         // evidence. Old clients could record code_done without a commit after
         // a sandbox/git failure; never skip Coding in that state.
-        if (done.length >= steps.length && !sv.commit) {
+        const hasCommitEvidence = /^[0-9a-f]{7,40}$/i.test(String(sv.commit ?? ""));
+        if (done.length >= steps.length && !hasCommitEvidence) {
           log(`lean: ${issue} coding checkpoint has no commit; resetting stale sub-steps`);
           done = [];
           X.ckptSave(st, issue, { stage: s0, code_done: [], last_commit: null, failed: null });
