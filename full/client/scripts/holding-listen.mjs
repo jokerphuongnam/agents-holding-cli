@@ -512,7 +512,11 @@ async function leanRunInner(p, na, depth, vis) {
     await comms(issue, t, kind);
   };
   if (na.waiting) return log(`lean: ${issue} waiting (${na.stage})`);
-  const record = (kind, body) => mcp("record_artifact", { company, task: issue, kind, body: body || kind, role: "agent" }).catch((e) => log(`record ${kind} failed:`, e.message));
+  const record = (kind, body) => {
+    const text = body || kind;
+    const url = kind === "pr" ? String(text).match(/https?:\/\/[^\s)]+/)?.[0] : undefined;
+    return mcp("record_artifact", { company, task: issue, kind, body: text, ...(url ? { url } : {}), role: "agent" }).catch((e) => log(`record ${kind} failed:`, e.message));
+  };
   const advance = async (from, to, art) => {
     for (let i = 0; i < 2; i++) {
       try { const r = await mcp("advance", { company, task: issue, to_stage: to, listener_jira: true }); log(`lean: ${issue} ${from} -> ${r.stage}`);
@@ -690,6 +694,7 @@ Jira: ${issue}` });
       }
       L.savePlan(st, issue, { tech_plan: sv.tech_plan ?? r.tech_plan, summary: r.summary, tests: r.tests, commit: r.commit, branch, repos: runRepos, developer: dev, qc_baseline: baselines, where: r.where });
       await say(who, [review ? "CODE (review feedback)" : "CODE", !sv.tech_plan && r.tech_plan && `Tech plan:\n${r.tech_plan}`, `What changed: ${r.summary}`, `Why: ${r.why}`, `How: ${r.how}`, r.tests && `Checks: ${r.tests}`, `Files/commit: ${r.where}`].filter(Boolean).join("\n"));
+      await record("note", `Implementation evidence\nWhat changed: ${r.summary}\nWhy: ${r.why}\nHow: ${r.how}\nFiles/commit: ${r.where}`);
       const art = (k) => ({ tech_plan: r.tech_plan, pr: `${r.summary}\n${r.where}`, qc_pass: r.tests || r.summary, note: `${r.summary}\n${r.tests ?? ""}\n${r.where}` }[k] ?? r.summary);
       const to = seg.moves[0];
       if (to) { const need = L.neededArtifact(s0, to); if (need) await record(need, art(need)); if (!(await advance(s0, to, art))) return; }
