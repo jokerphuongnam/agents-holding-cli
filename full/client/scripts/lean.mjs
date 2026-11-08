@@ -208,14 +208,16 @@ export function runChecks(repo, checks, exec = (c, a, opts = {}) => execFileSync
     return { name: c.name, ok: true, out: clip(o, 300) }; }
     catch (e) { return { name: c.name, ok: false, out: clip(`${e.stdout ?? ""}\n${e.stderr ?? ""}\n${e.message ?? ""}`.split("\n").filter(Boolean).slice(-25).join("\n"), 1500) }; } });
 }
-/** QC verdict: a check fails QC only if it passed on the baseline (pre-existing failures are reported, not blamed on the change). */
+/** QC verdict: every required check must pass after coding. A baseline failure is
+ * still a QC failure: it is not evidence that the implementation is acceptable. */
 export function qcVerdict(baseline, after) {
   const was = Object.fromEntries((baseline ?? []).map((r) => [r.name, r.ok]));
   const failed = after.filter((r) => !r.ok && was[r.name] !== false), preexisting = after.filter((r) => !r.ok && was[r.name] === false);
   const passed = after.filter((r) => r.ok);
-  return { pass: !failed.length, failed, preexisting, passed,
+  const missing = !after.length ? [{ name: "required QC checks", ok: false, out: "No QC checks ran" }] : [];
+  return { pass: !failed.length && !preexisting.length && !missing.length, failed: [...failed, ...missing], preexisting, passed,
     text: [passed.length && `PASS: ${passed.map((r) => r.name).join(", ")}`, failed.length && `FAIL: ${failed.map((r) => `${r.name}\n${r.out}`).join("\n")}`,
-      preexisting.length && `Pre-existing failures (also fail before the change): ${preexisting.map((r) => r.name).join(", ")}`, !after.length && "No automated checks in this repo."].filter(Boolean).join("\n") };
+      preexisting.length && `FAIL: checks still failing (baseline was already failing): ${preexisting.map((r) => r.name).join(", ")}`, !after.length && "No automated checks ran."].filter(Boolean).join("\n") };
 }
 /** Agent-stage segments of a run: one per stage [{kind, stages:[s], moves:[to]}] from the current stage + server chain (each stage is its own step). */
 // Which stages need the model at all. Only real AI work (analysis/plan text, tech plan/code/QC) calls it;
