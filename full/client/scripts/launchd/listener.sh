@@ -14,7 +14,7 @@ MASTER="$BIN_DIR/$LABEL.plist"
 AUTO="$HOME/Library/LaunchAgents/$LABEL.plist"
 AUTOSTART_DISABLED="$HOME/.config/agents-holding/autostart.disabled"
 LOG_DIR="$HOME/Library/Logs/agents-holding"
-LOG="$LOG_DIR/jira-listener.log"
+LOG="$LOG_DIR/jira-listener.log" # legacy fallback; scoped paths are selected from the configured repo
 ERR="$LOG_DIR/jira-listener.err.log"
 
 WD_LABEL=com.agentsholding.listener-watchdog   # separate tiny job: notifies the moment the Jira Listener stops
@@ -39,11 +39,15 @@ ready_for_start() {
   curl -fsS --max-time 2 "http://${AH_LISTENER_HOST:-127.0.0.1}:${AH_LISTENER_PORT:-8787}/health" >/dev/null 2>&1
 }
 plist_repo() { [ -f "$1" ] || return 0; /usr/libexec/PlistBuddy -c "Print :EnvironmentVariables:AH_REPO_DIR" "$1" 2>/dev/null || true; }
+scope_tag() { printf '%s' "$1" | shasum -a 256 | cut -c1-16; }
+scoped_log() { local r="$(plist_repo "$MASTER")"; [ -z "$r" ] && r="$(plist_repo "$AUTO")"; [ -n "$r" ] && echo "$LOG_DIR/jira-listener-$(scope_tag "$r").log" || echo "$LOG"; }
+scoped_err() { local r="$(plist_repo "$MASTER")"; [ -z "$r" ] && r="$(plist_repo "$AUTO")"; [ -n "$r" ] && echo "$LOG_DIR/jira-listener-$(scope_tag "$r").err.log" || echo "$ERR"; }
 
 write_plist() { # $1 repo
   mkdir -p "$BIN_DIR" "$LOG_DIR" "$HOME/Library/LaunchAgents"
   install -m 755 "$SERVER_DIR/scripts/launchd/run-listener.sh" "$BIN_DIR/run-listener.sh"
-  sed -e "s#__SERVER_DIR__#$SERVER_DIR#g" -e "s#__REPO_DIR__#$1#g" -e "s#__HOME__#$HOME#g" -e "s#__BIN_DIR__#$BIN_DIR#g" \
+  local tag; tag="$(scope_tag "$1")"
+  sed -e "s#__SERVER_DIR__#$SERVER_DIR#g" -e "s#__REPO_DIR__#$1#g" -e "s#__HOME__#$HOME#g" -e "s#__BIN_DIR__#$BIN_DIR#g" -e "s#__LOG_FILE__#$LOG_DIR/jira-listener-$tag.log#g" -e "s#__ERR_FILE__#$LOG_DIR/jira-listener-$tag.err.log#g" \
     "$SERVER_DIR/scripts/launchd/$LABEL.plist.template" > "$MASTER.tmp"
   plutil -lint -s "$MASTER.tmp" && mv "$MASTER.tmp" "$MASTER"
 }
@@ -68,15 +72,16 @@ if [ "$MIGRATED" = 1 ] && [ "${1:-status}" = status ]; then # keep it running + 
 fi
 
 cmd_status() {
-  local pid repo last
+  local pid repo last log err
+  log="$(scoped_log)"; err="$(scoped_err)"
   repo="$(plist_repo "$MASTER")"; [ -z "$repo" ] && repo="$(plist_repo "$AUTO")"
   pid="$(running_pid)"; if process_ok "$pid" && heartbeat_fresh; then echo "Jira Listener: ON  (running and heartbeat fresh, PID $pid)"; elif loaded; then echo "Jira Listener: DEGRADED (launchd loaded but listener process/heartbeat is not healthy${pid:+, PID $pid})"; else printf '\033[1;31m🔴 Jira Listener is off — all Jira automation is stopped until you start it:\n   %s\033[0m\n   (Jira Listener keeps all Jira automation running.)\n' "$START_CMD"; fi
   if launchctl print "$DOMAIN/$WD_LABEL" >/dev/null 2>&1; then echo "watchdog     : ON  (notifies at once if the Jira Listener stops)"; else echo "watchdog     : OFF (holding listener start installs it)"; fi
   if [ -f "$AUTO" ]; then echo "autostart    : ON  (starts at login: $AUTO)"; else echo "autostart    : OFF"; fi
   echo "repo         : ${repo:-<not installed; run: holding listener start --repo DIR>}"
-  last="$(grep -E ' join ' "$LOG" 2>/dev/null | tail -1 || true)"
+  last="$(grep -E ' join ' "$log" 2>/dev/null | tail -1 || true)"
   echo "last join    : ${last:-never}"
-  grep -q "Operation not permitted" "$ERR" 2>/dev/null && \
+  grep -q "Operation not permitted" "$err" 2>/dev/null && \
     echo "WARNING  : macOS blocked file access (jira-listener.err.log). Allow the native Rust listener in System Settings > Privacy & Security > Files and Folders (Documents) or Full Disk Access, then: holding listener stop && holding listener start" || true
 }
 
@@ -135,6 +140,6 @@ case "${1:-status}" in
   start) shift; cmd_on "$@" ;;
   stop) cmd_off ;;
   autostart) shift; cmd_autostart "${1:-}" ;;
-  logs) shift; mkdir -p "$(dirname "$LOG")"; [ -f "$LOG" ] || { echo "no listener logs yet ($LOG); start it with: holding listener start"; exit 0; }; if [ "${1:-}" = "-f" ]; then tail -f "$LOG"; else tail -n 30 "$LOG"; echo "--- jira-listener.err.log"; tail -n 10 "$ERR" 2>/dev/null || true; fi ;;
+  logs) shift; log="$(scoped_log)"; err="$(scoped_err)"; mkdir -p "$(dirname "$log")"; [ -f "$log" ] || { echo "no listener logs for this repo yet ($log); start it with: holding listener start"; exit 0; }; if [ "${1:-}" = "-f" ]; then tail -f "$log"; else tail -n 30 "$log"; echo "--- $(basename "$err")"; tail -n 10 "$err" 2>/dev/null || true; fi ;;
   *) echo "usage: holding listener start [--repo DIR] | stop | autostart on|off | status | logs [-f]"; exit 2 ;;
 esac

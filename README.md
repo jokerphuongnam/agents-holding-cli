@@ -20,7 +20,7 @@ Set up a small company and ship with it. A CEO talks to you. An engineer builds 
 
 ```bash
 git clone https://github.com/jokerphuongnam/agents-holding-cli.git
-cd agents-holding-free
+cd agents-holding-cli
 ./setup.sh my-product
 ```
 

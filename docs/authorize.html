@@ -11,7 +11,7 @@ input{width:100%;box-sizing:border-box;padding:9px;font:14px ui-monospace,monosp
 <form id="f" method="post" hidden><label for="k">Your key</label>
 <input id="k" name="license_key" type="password" autocomplete="current-password" placeholder="ah_live_...">
 <button type="submit" id="submit-key">Use existing key</button> <button type="submit" name="cancel" value="1" formnovalidate>Cancel</button></form>
-<p class="muted">No key? See <a href="https://github.com/jokerphuongnam/agents-holding-cli">agents-holding-free</a>.</p>
+<p class="muted">No key? See <a href="https://github.com/jokerphuongnam/agents-holding-cli">agents-holding-cli</a>.</p>
 <script>
 const q = new URLSearchParams(location.search), f = document.getElementById("f");
 const action = q.get("action") || "";
