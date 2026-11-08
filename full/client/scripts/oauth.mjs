@@ -10,7 +10,10 @@ const poolSvc = (p) => `agents-holding-oauth-${p}-pool`;
 const activeSvc = (p) => `agents-holding-oauth-${p}-active`;
 const kc = (s) => { try { return execFileSync("security", ["find-generic-password", "-s", s, "-a", process.env.USER, "-w"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() || null; } catch { return null; } };
 const kcDel = (s) => { try { execFileSync("security", ["delete-generic-password", "-s", s, "-a", process.env.USER], { stdio: "ignore" }); } catch {} };
-const accountKey = (t) => String(t?.account || t?.cloud_id || t?.email || t?.site || "account").replace(/[^a-z0-9_.@:-]/gi, "_");
+// For Atlassian, a site's name is not a user identity: multiple users can grant
+// the same 3LO app access to the same cloud site. Prefer Jira's stable accountId
+// (returned by /myself), then fall back to the legacy labels for old tokens.
+const accountKey = (t) => String(t?.account_id || t?.accountId || t?.account || t?.cloud_id || t?.email || t?.site || "account").replace(/[^a-z0-9_.@:-]/gi, "_");
 export const loadPool = (p) => { try { const v = JSON.parse(kc(poolSvc(p)) ?? "{}"); return Array.isArray(v) ? v : []; } catch { return []; } };
 export const savePool = (p, xs) => execFileSync("security", ["add-generic-password", "-U", "-s", poolSvc(p), "-a", process.env.USER, "-w", JSON.stringify(xs)], { stdio: "ignore" });
 export const load = (p) => {
@@ -46,7 +49,22 @@ async function enrichAccount(provider, tok, f = fetch) {
       const sites = await r.json();
       const resources = (Array.isArray(sites) ? sites : []).map((x) => ({ id: x.id, url: x.url, name: x.name, scopes: x.scopes ?? [] })).filter((x) => x.id && x.url);
       tok.resources = resources;
-      const pick = resources[0]; if (pick) { tok.cloud_id = pick.id; tok.site = pick.url; tok.account = tok.account || pick.name || String(pick.url || "").replace(/^https?:\/\//, ""); } }
+      const pick = resources[0]; if (pick) {
+        tok.cloud_id = pick.id; tok.site = pick.url;
+        // /accessible-resources identifies sites, not the Atlassian user.
+        // Resolve the actual grant owner from Jira /myself.
+        try {
+          const me = await f(`https://api.atlassian.com/ex/jira/${encodeURIComponent(pick.id)}/rest/api/3/myself`, { headers: { Authorization: `Bearer ${tok.access_token}`, Accept: "application/json" } });
+          const mj = await me.json().catch(() => ({}));
+          if (me.ok && (mj.accountId || mj.account_id)) {
+            tok.account_id = mj.accountId || mj.account_id;
+            tok.display_name = mj.displayName || mj.display_name || null;
+            tok.email = mj.emailAddress || mj.email || null;
+            tok.account = tok.account_id;
+          }
+        } catch {}
+        tok.account = tok.account || pick.name || String(pick.url || "").replace(/^https?:\/\//, "");
+      } }
   } catch {} return tok;
 }
 export async function connect(provider, { log = console.log, timeoutMs = 300000, switch: sw = false } = {}) {
@@ -67,7 +85,7 @@ export async function connect(provider, { log = console.log, timeoutMs = 300000,
     if (!tok) throw new Error("timed out waiting for approval");
     tok = await enrichAccount(provider, tok);
     if (provider === "atlassian" && sw && loadPool(provider).some((x) => accountKey(x) === accountKey(tok))) {
-      throw new Error(`same Atlassian account returned (${accountOf(tok)}); account add/switch requires a different account. Log out in the browser or use a separate private window, then retry.`);
+      throw new Error(`same Atlassian account returned (${accountOf(tok)}). The browser authorized the currently signed-in Atlassian user; sign out of Atlassian in that browser or use a separate browser profile, then retry holding jira connect --switch.`);
     }
     save(provider, tok); return `${provider} connected as ${accountOf(tok)}`;
   } finally { srv.closeAllConnections?.(); srv.closeIdleConnections?.(); srv.close(); srv.unref?.(); }
