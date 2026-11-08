@@ -98,7 +98,10 @@ cmd_on() {
   local start start_ms; start=$(date -u +%Y-%m-%dT%H:%M:%S); start_ms=$(date +%s000)
   for _ in $(seq 1 45); do
     sleep 1
-    if process_ok "$(running_pid)" && awk -v s="$start" '$1>=s && / readiness online /' "$LOG" 2>/dev/null | grep -q . && ready_for_start "$start_ms"; then echo "listener readiness online ✔"; cmd_status; return 0; fi
+    # The health endpoint is authoritative. Log timestamps can lag or be shared
+    # with a previous launch, which used to report failure even when the new
+    # listener was already healthy.
+    if process_ok "$(running_pid)" && ready_for_start "$start_ms"; then echo "listener readiness online ✔"; cmd_status; return 0; fi
   done
   echo "listener failed readiness within 45s (process/realtime/server heartbeat not all ready) — check: holding listener logs" >&2; cmd_status; return 1
 }

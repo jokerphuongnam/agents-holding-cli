@@ -155,7 +155,11 @@ case "$noun" in
     ""|start|stop|logs|autostart) exec bash "$here/launchd/listener.sh" ${verb:-status} "$@" ;;
     *) usage ;; esac ;;
   jira) case "$verb" in
-    listen) exec bash "$here/launchd/listener.sh" start "$@" ;;
+    listen)
+      if bash "$here/launchd/listener.sh" status 2>/dev/null | grep -q 'Jira Listener: ON'; then
+        exec bash "$here/launchd/listener.sh" status
+      fi
+      exec bash "$here/launchd/listener.sh" start "$@" ;;
     attach) exec node "$here/attach.mjs" jira-attach "$@" ;;
     connect)
       # Lazy OAuth (browser). Legacy API-token: holding jira connect <site> <email>
