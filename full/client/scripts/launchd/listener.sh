@@ -12,6 +12,7 @@ DOMAIN="gui/$(id -u)"
 BIN_DIR="$HOME/Library/Application Support/agents-holding"   # outside ~/Documents (TCC-protected for launchd jobs)
 MASTER="$BIN_DIR/$LABEL.plist"
 AUTO="$HOME/Library/LaunchAgents/$LABEL.plist"
+AUTOSTART_DISABLED="$HOME/.config/agents-holding/autostart.disabled"
 LOG_DIR="$HOME/Library/Logs/agents-holding"
 LOG="$LOG_DIR/jira-listener.log"
 ERR="$LOG_DIR/jira-listener.err.log"
@@ -92,6 +93,9 @@ cmd_on() {
   install_watchdog
   [ "$OLD_AUTO" = 1 ] && cp "$MASTER" "$AUTO"   # migrated: keep autostart ON
   [ -f "$AUTO" ] && cp "$MASTER" "$AUTO"   # keep the login copy in sync
+  if [ ! -f "$AUTO" ] && [ ! -f "$AUTOSTART_DISABLED" ]; then
+    mkdir -p "$(dirname "$AUTO")"; cp "$MASTER" "$AUTO"; install_watchdog
+  fi
   if loaded; then echo "replacing existing listener"; launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true; for _ in $(seq 1 15); do running || break; sleep 1; done; loaded && { echo "error: old listener job did not stop cleanly" >&2; return 1; }; fi
   launchctl bootstrap "$DOMAIN" "$MASTER"
   echo "Jira Listener started for $repo; waiting for process, realtime join, and heartbeat readiness..."
@@ -107,6 +111,7 @@ cmd_on() {
 }
 
 cmd_off() {
+  mkdir -p "$(dirname "$AUTOSTART_DISABLED")"; : > "$AUTOSTART_DISABLED"
   rm -f "$AUTO"
   launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
   sleep 1
@@ -118,9 +123,10 @@ poke() { local pid; pid="$(running_pid)"; [ -n "$pid" ] && kill -USR1 "$pid" 2>/
 cmd_autostart() {
   case "${1:-}" in
     on) loaded || { echo "error: the Jira Listener is off. Turn it on first: holding listener start   (then: holding listener autostart on)"; exit 1; }
+        rm -f "$AUTOSTART_DISABLED"
         [ -f "$MASTER" ] || write_plist "$(plist_repo "$AUTO")"
         mkdir -p "$(dirname "$AUTO")"; cp "$MASTER" "$AUTO"; install_watchdog; poke; echo "autostart ON (starts at login)." ;;
-    off) rm -f "$AUTO"; poke; echo "autostart OFF (still running now: $(loaded && echo yes || echo no))." ;;
+    off) mkdir -p "$(dirname "$AUTOSTART_DISABLED")"; : > "$AUTOSTART_DISABLED"; rm -f "$AUTO"; poke; echo "autostart OFF (still running now: $(loaded && echo yes || echo no))." ;;
     *) echo "usage: holding listener autostart on|off"; exit 2 ;;
   esac
 }
