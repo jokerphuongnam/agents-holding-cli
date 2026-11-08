@@ -698,7 +698,7 @@ Jira: ${issue}` });
     if (seg.kind === "qc") { // QC by script: the repo's checks vs the baseline; one cheap fix round through Coding on a new failure
       const who = L.stageStaff(na, s0, { kind: "qc" });
       const codingKey = (na.flow_stages ?? []).includes("coding") ? "coding" : null;
-      const runQc = () => { const sv = L.loadPlan(st, issue); return runRepos.map((rp) => ({ rp, v: L.qcVerdict(sv.qc_baseline?.[rp] ?? null, L.runChecks(rp, L.detectChecks(rp))) })); };
+      const runQc = () => { const sv = L.loadPlan(st, issue); return runRepos.map((rp) => ({ rp, v: L.qcVerdict(sv.qc_baseline?.[rp] ?? null, L.runChecks(rp, L.detectChecks(rp), undefined, (m) => log(`lean: ${issue} ${m}`))) })); };
       const qcText = (res) => res.map((x) => `${runRepos.length > 1 ? rname(x.rp) + ": " : ""}${x.v.text}`).join("\n");
       for (const rp of runRepos) L.ensureBranch(rp, branch);
       let res = runQc(), fixes = 0;

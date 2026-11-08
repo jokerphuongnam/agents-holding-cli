@@ -196,8 +196,9 @@ export function detectChecks(repo, has = (f) => existsSync(join(repo, f)), read 
   if (!out.length && has("Makefile") && /^test:/m.test((() => { try { return read("Makefile"); } catch { return ""; } })())) out.push({ name: "make test", cmd: "make", args: ["test"] });
   return out;
 }
-export function runChecks(repo, checks, exec = (c, a, opts = {}) => execFileSync(c, a, { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: opts.timeout_ms ?? 5 * 60 * 1000, env: { ...process.env, CI: "1" } })) {
+export function runChecks(repo, checks, exec = (c, a, opts = {}) => execFileSync(c, a, { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: opts.timeout_ms ?? 5 * 60 * 1000, env: { ...process.env, CI: "1" } }), log = null) {
   return checks.map((c) => { try { let o;
+    log?.(`QC dispatch ${c.name}${c.runner ? ` via ${c.runner}` : ""} in ${repo}`);
     if (["registered_terminal", "terminal_session"].includes(c.runner)) {
       const sessionsFile = join(homedir(), ".config/agents-holding/terminal-sessions/sessions.json");
       const sessions = JSON.parse(readFileSync(sessionsFile, "utf8"));
@@ -205,10 +206,12 @@ export function runChecks(repo, checks, exec = (c, a, opts = {}) => execFileSync
       const s = Object.values(sessions).filter((x) => x?.status === "connected" && (!c.company || x.company === c.company) && x?.repo === targetRepo && x?.heartbeat_at && Date.now() - new Date(x.heartbeat_at).getTime() < 90000).sort((a, b) => new Date(b.heartbeat_at) - new Date(a.heartbeat_at))[0];
       if (!s) throw new Error(`no connected registered terminal for ${targetRepo}`);
       const script = join(homedir(), ".agents-holding/scripts/terminal.mjs");
+      log?.(`QC terminal selected ${s.session_id} (${s.company ?? "unscoped"})`);
       o = execFileSync(process.execPath, [script, "dispatch", s.session_id, [c.cmd, ...(c.args ?? [])].join(" ")], { cwd: c.cwd ? resolve(repo, c.cwd) : repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: c.timeout_ms || 0, env: { ...process.env, CI: "1" } });
     } else o = exec(c.cmd, c.args, c);
+    log?.(`QC result ${c.name}: PASS`);
     return { name: c.name, ok: true, out: clip(o, 300) }; }
-    catch (e) { return { name: c.name, ok: false, out: clip(`${e.stdout ?? ""}\n${e.stderr ?? ""}\n${e.message ?? ""}`.split("\n").filter(Boolean).slice(-25).join("\n"), 1500) }; } });
+    catch (e) { const out = clip(`${e.stdout ?? ""}\n${e.stderr ?? ""}\n${e.message ?? ""}`.split("\n").filter(Boolean).slice(-25).join("\n"), 1500); log?.(`QC result ${c.name}: FAIL\n${out}`); return { name: c.name, ok: false, out }; } });
 }
 /** QC verdict: every required check must pass after coding. A baseline failure is
  * still a QC failure: it is not evidence that the implementation is acceptable. */
