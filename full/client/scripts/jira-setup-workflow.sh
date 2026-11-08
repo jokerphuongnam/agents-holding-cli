@@ -5,7 +5,7 @@
 # Ends by reading the board's columns and, if they are out of order (team-managed boards append new columns after Done
 # and Jira has no public API to reorder them), printing the exact order to drag them into.
 # Ensures the project's workflow has, in order (or the company flow from AH_FLOW_JSON):
-#   To Do, In Progress, Product Work, BA Question, Planned, Pre Coding, Coding, QC, In Review, Done
+#   To Do, In Progress, Product Work, BA Question, Planned, Pre Code, Coding, QC, In Review, Done
 # with GLOBAL transitions (any status -> any status). Missing statuses are created
 # (project-scoped for team-managed, global for company-managed). An unused
 # "In Progress" status is dropped from the workflow (replaced by "Coding");
@@ -38,7 +38,7 @@ if [[ -n "${AH_FLOW_JSON:-}" ]]; then
   WANT=(); while IFS= read -r l; do WANT+=("$l"); done < <(jq -r '.[].name' "$AH_FLOW_JSON")
   cat_of() { jq -r --arg n "$1" '[.[]|select(.name==$n)][0].category // "IN_PROGRESS"' "$AH_FLOW_JSON"; }
 else
-WANT=("To Do" "In Progress" "Product Work" "BA Question" "Planned" "Pre Coding" "Coding" "QC" "In Review" "Done")
+WANT=("To Do" "In Progress" "Product Work" "BA Question" "Planned" "Pre Code" "Coding" "QC" "In Review" "Done")
 cat_of() { case "$1" in "To Do"|"Product Work"|"BA Question"|"Planned") echo TODO;; "Done") echo DONE;; *) echo IN_PROGRESS;; esac; }
 fi
 

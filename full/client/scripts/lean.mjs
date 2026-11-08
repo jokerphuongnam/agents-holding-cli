@@ -516,7 +516,7 @@ export const startedComment = (staff, stage, why) => `${staffTag(staff)} ${T("st
 export const failedComment = (staff, stage, reason) => `${staffTag(staff)} ${T("failed", { stage: stageTitle(stage), reason: clip(String(reason ?? "error").split("\n")[0], 200) })}`;
 // ---------- explicit user gates (posted once when the card enters the gate) ----------
 export const GATE_HINTS = {
-  planned: "🚦 Plan ready for your approval.\n- Approve: drag the card to Pre Coding, or comment `/approve`\n- Revise: comment what to change (the plan is rewritten, the card stays in Planned)",
+  planned: "🚦 Plan ready for your approval.\n- Approve: drag the card to Pre Code, or comment `/approve`\n- Revise: comment what to change (the plan is rewritten, the card stays in Planned)",
   in_review: "🚦 Ready for review.\n- Request changes: comment what to fix (back to Coding, same developer, then QC)\n- Accept: drag the card to Done",
 };
 export const gateComment = (staff, stage) => GATE_HINTS[stage] ? `${staffTag(staff)} ${T(`gate_${stage}`)}` : null;
