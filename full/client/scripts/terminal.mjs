@@ -30,7 +30,7 @@ if (verb === "register") {
         let req; try { req = JSON.parse(line); } catch { continue; }
         if (req.token !== token) { conn.end(JSON.stringify({ ok: false, error: "unauthorized" }) + "\n"); continue; }
         exec(String(req.command || ""), { cwd: req.cwd ? resolve(repo, req.cwd) : repo, timeout: Number(req.timeout_ms) || 0, maxBuffer: 8 * 1024 * 1024, env: { ...process.env, CI: "1" } }, (error, stdout, stderr) => {
-          conn.write(JSON.stringify({ ok: !error, code: error?.code ?? 0, stdout, stderr, error: error?.message ?? "" }) + "\n");
+          conn.end(JSON.stringify({ ok: !error, code: error?.code ?? 0, stdout, stderr, error: error?.message ?? "" }) + "\n");
         });
       }
     });
