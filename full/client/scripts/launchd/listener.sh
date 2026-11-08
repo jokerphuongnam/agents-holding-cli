@@ -129,8 +129,23 @@ cmd_on() {
 cmd_off() {
   rm -f "$AUTO"
   launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
-  sleep 1
-  if loaded; then echo "error: still loaded"; exit 1; fi
+  for _ in $(seq 1 5); do
+    loaded || break
+    sleep 1
+  done
+  if loaded; then
+    launchctl kill SIGTERM "$DOMAIN/$LABEL" 2>/dev/null || true
+    for _ in $(seq 1 5); do
+      loaded || break
+      sleep 1
+    done
+  fi
+  if loaded; then
+    launchctl kill SIGKILL "$DOMAIN/$LABEL" 2>/dev/null || true
+    launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
+    sleep 1
+  fi
+  if loaded; then echo "error: still loaded after launchd stop/kill"; exit 1; fi
   echo "Jira Listener OFF and autostart OFF."
 }
 
