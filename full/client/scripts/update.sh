@@ -92,10 +92,17 @@ if command -v launchctl >/dev/null 2>&1; then
     listener_repo="$(/usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:AH_REPO_DIR' "$HOME/Library/Application Support/agents-holding/$lbl.plist" 2>/dev/null || true)"
     echo "   listener active before update; stopping it for an atomic replace"
     if ! bash "$here/launchd/listener.sh" stop >/dev/null 2>&1; then
-      if launchctl print "gui/$(id -u)/com.agentsholding.jira-listener" >/dev/null 2>&1; then
-        echo "ERROR: could not stop the Jira Listener safely; update aborted" >&2; exit 1
+      # launchd can keep the job loaded while the listener is draining. Give it
+      # a direct graceful signal, then re-check before refusing the atomic update.
+      launchctl kill SIGTERM "$domain/$lbl" >/dev/null 2>&1 || true
+      for _ in 1 2 3 4 5; do
+        launchctl print "$domain/$lbl" >/dev/null 2>&1 || break
+        sleep 1
+      done
+      if launchctl print "$domain/$lbl" >/dev/null 2>&1; then
+        echo "ERROR: could not stop the Jira Listener safely; update aborted (all company subscriptions preserved)" >&2; exit 1
       fi
-      echo "   listener was already unloaded; continuing update"
+      echo "   listener stopped after graceful launchd retry; continuing update"
     fi
   fi
 fi
