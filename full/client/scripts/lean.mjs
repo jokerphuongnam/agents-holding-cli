@@ -13,6 +13,7 @@ import "./kc-guard.mjs"; // pin keychain calls to the real login keychain (never
 // the CLI is grok (default), claude or codex, see agents.mjs (AH_AGENT or per-company agent.json),
 // with a short saved plan (state dir) + the user's approval/feedback instead of the old conversation.
 import { execFileSync, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -338,9 +339,20 @@ export function changedPaths(repo) {
     return raw.split("\0").filter(Boolean).map((x) => x.slice(3)).filter((p) => p && p !== ".agents/company.json");
   } catch { return []; }
 }
+export function changedSnapshot(repo) {
+  const out = {};
+  for (const p of changedPaths(repo)) {
+    try {
+      const diff = execFileSync("git", ["diff", "--binary", "--", p], { cwd: repo, encoding: "buffer" });
+      out[p] = createHash("sha256").update(diff).digest("hex");
+    } catch { out[p] = "unreadable"; }
+  }
+  return out;
+}
 export function commitAll(repo, msg, baseline = []) {
   try {
-    const before = new Set(baseline), paths = changedPaths(repo).filter((p) => !before.has(p) && p !== ".agents/company.json");
+    const now = changedSnapshot(repo), before = baseline && !Array.isArray(baseline) ? baseline : Object.fromEntries((baseline ?? []).map((p) => [p, null]));
+    const paths = Object.keys(now).filter((p) => p !== ".agents/company.json" && (!Object.prototype.hasOwnProperty.call(before, p) || before[p] !== now[p]));
     if (!paths.length) return null;
     git(repo, "add", "--", ...paths);
     if (!git(repo, "diff", "--cached", "--name-only")) return null;

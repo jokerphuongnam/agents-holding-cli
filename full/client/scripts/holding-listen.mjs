@@ -603,7 +603,7 @@ Jira: ${issue}` });
       for (const rp of runRepos) {
         repo = rp;
         log(`lean: ${rp} branch ${branch}: ${L.ensureBranch(rp, branch)}`);
-        const baselinePaths = L.changedPaths(rp);
+        const baselinePaths = L.changedSnapshot(rp);
         const files = filesOf(rp);
         const multi = runRepos.length > 1 ? `\nThis task spans repos ${runRepos.map(rname).join(", ")}; you are in ${rname(rp)}: change only what belongs here.` : "";
         const r1 = await leanModel("code", issue, stage, L.codePrompt(iss, {  plan: (plan ?? "") + multi, techPlan: o.techPlan, approval, feedback: o.feedback, hints: L.fileHints(files, `${iss.summary} ${iss.description} ${plan ?? ""}`), qc: !!o.selfCheck?.[rp], preexisting: L.preexistingFails(L.loadPlan(st, issue).qc_baseline?.[rp] ?? o.baselines?.[rp]), review: !!o.review, branch }), o.dev, L.contextOf({ brief: await brief(o.dev), habits }));
