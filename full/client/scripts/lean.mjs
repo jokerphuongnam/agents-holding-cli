@@ -138,7 +138,8 @@ export function codePrompt(iss, o = {}) {
     !o.techPlan && o.hints?.length && `Likely files: ${o.hints.join(", ")}`,
     `${o.review ? "Change only what the feedback asks" : "Implement it in this repo with minimal changes"}${o.qc ? "; then run the cheapest relevant check (build/tests) and fix failures" : "; do not run tests/builds (QC runs them by script)"}.`,
     "Do not run git commit/branch/push and do not touch Jira (scripts do that).",
-    `Finish with JSON: {${o.techPlan ? "" : "\"tech_plan\": \"files+steps, 3-6 lines\", "}\"summary\": \"what changed\", ${o.qc ? "\"tests\": \"checks run + result\", " : ""}\"commit_message\": \"one line\"}.`].filter(Boolean).join("\n\n");
+    "Before handoff, explain WHAT changed, WHY this approach, HOW it works, and FILES/areas touched. Do not claim work that was not done.",
+    `Finish with JSON: {${o.techPlan ? "" : "\"tech_plan\": \"files+steps, 3-6 lines\", "}\"summary\": \"WHAT changed and files/areas\", \"why\": \"WHY this approach\", \"how\": \"HOW it works\", ${o.qc ? "\"tests\": \"checks run + result\", " : ""}\"commit_message\": \"one line\"}.`].filter(Boolean).join("\n\n");
 }
 export const TECH_SYSTEM = "You are the tech lead. You write short technical plans and pick the developer. You never write code. Reply with JSON only.";
 /** Pre Coding prompt: tech plan only (no code), with inline file excerpts so one tool-less turn is enough, and the developer roles to pick from. */
@@ -332,7 +333,7 @@ export function ensureBranch(repo, branch) {
   catch (e) { return "failed: " + e.message.split("\n")[0]; }
 }
 export function commitAll(repo, msg) {
-  try { git(repo, "add", "-A", "--", ".", ":!.agents/company.json"); if (!git(repo, "diff", "--cached", "--name-only")) return null;
+  try { git(repo, "add", "-A", "--", ".", ":(exclude).agents/company.json"); if (!git(repo, "diff", "--cached", "--name-only")) return null;
     git(repo, "commit", "-q", "-m", msg); return git(repo, "rev-parse", "--short", "HEAD"); } catch (e) { return "failed: " + e.message.split("\n")[0]; }
 }
 export const stateDir = (home, company) => { const d = join(home, ".config/agents-holding/state", company); mkdirSync(d, { recursive: true, mode: 0o700 }); return d; };

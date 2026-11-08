@@ -654,8 +654,14 @@ Jira: ${issue}` });
         log(`lean: ${issue} coding produced no committed change; refusing advance to QC`);
         return;
       }
+      if (!r.summary || !r.why || !r.how) {
+        const msg = "Coding handoff is incomplete: developer must summarize WHAT changed, WHY, and HOW before QC.";
+        await record("note", msg); await say(who, `BLOCKED\n${msg}`);
+        log(`lean: ${issue} coding handoff missing summary/why/how; refusing advance`);
+        return;
+      }
       L.savePlan(st, issue, { tech_plan: sv.tech_plan ?? r.tech_plan, summary: r.summary, tests: r.tests, commit: r.commit, branch, repos: runRepos, developer: dev, qc_baseline: baselines, where: r.where });
-      await say(who, [review ? "CODE (review feedback)" : "CODE", !sv.tech_plan && r.tech_plan && `Tech plan:\n${r.tech_plan}`, `Summary: ${r.summary ?? ""}`, r.tests && `Checks: ${r.tests}`, r.where].filter(Boolean).join("\n"));
+      await say(who, [review ? "CODE (review feedback)" : "CODE", !sv.tech_plan && r.tech_plan && `Tech plan:\n${r.tech_plan}`, `What changed: ${r.summary}`, `Why: ${r.why}`, `How: ${r.how}`, r.tests && `Checks: ${r.tests}`, `Files/commit: ${r.where}`].filter(Boolean).join("\n"));
       const art = (k) => ({ tech_plan: r.tech_plan, pr: `${r.summary}\n${r.where}`, qc_pass: r.tests || r.summary, note: `${r.summary}\n${r.tests ?? ""}\n${r.where}` }[k] ?? r.summary);
       const to = seg.moves[0];
       if (to) { const need = L.neededArtifact(s0, to); if (need) await record(need, art(need)); if (!(await advance(s0, to, art))) return; }
