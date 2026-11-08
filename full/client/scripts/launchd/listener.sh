@@ -111,7 +111,6 @@ cmd_on() {
 }
 
 cmd_off() {
-  mkdir -p "$(dirname "$AUTOSTART_DISABLED")"; : > "$AUTOSTART_DISABLED"
   rm -f "$AUTO"
   launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
   sleep 1
