@@ -98,7 +98,7 @@ export function claudeArgs({ model, text, prompt, schema, system, codeTools = CL
     ...(model ? ["--model", model] : []), ...(effort ? ["--effort", effort] : []), ...(system ? ["--system-prompt", system] : []), ...(context ? ["--append-system-prompt", context] : []), "--json-schema", JSON.stringify(schema), prompt];
 }
 export function codexArgs({ model, text, prompt, schemaFile, system, effort, context }) {
-  return ["exec", "--json", "--skip-git-repo-check", "--ephemeral", "-s", text ? "read-only" : "workspace-write", "--output-schema", schemaFile,
+  return ["exec", "--json", "--skip-git-repo-check", "--ephemeral", ...(text ? ["-s", "read-only"] : ["--dangerously-bypass-approvals-and-sandbox"]), "--output-schema", schemaFile,
     ...(model ? ["-m", model] : []), ...(effort || text ? ["-c", `model_reasoning_effort="${effort ?? "low"}"`] : []), ...(context || system ? ["-c", `developer_instructions=${JSON.stringify([system, context].filter(Boolean).join("\n\n"))}`] : []), prompt];
 }
 
