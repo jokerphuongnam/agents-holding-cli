@@ -51,6 +51,7 @@ if [ -x /usr/bin/osascript ] || command -v osascript >/dev/null; then
 fi
 grep -q 'HOOKCMD="\[ -x .*ah-hook.sh \] && bash .* || exit 0"' full/client/scripts/sync-commands.sh && ok 'host hook installation is executable guarded' || no 'host hook installation is executable guarded'
 grep -q 'atlassianToken(homedir())' "$S/holding-listen.mjs" && grep -q 'let listenerJira = dryJira || !!jiraCfg' "$S/holding-listen.mjs" && grep -q 'jira_ready: listenerJira' "$S/holding-listen.mjs" && grep -q 'mcpJiraFallback' "$S/holding-listen.mjs" && ok 'listener prefers local Jira and can fall back to agent MCP' || no 'listener prefers local Jira and can fall back to agent MCP'
+grep -q 'AH_COMPANY=' "$S/launchd/run-listener.sh" && grep -q 'company.json' "$S/launchd/run-listener.sh" && ok 'native listener is scoped to the repo company' || no 'native listener is scoped to the repo company'
 grep -q 'routeForRepo' "$S/holding-listen.mjs" && grep -q 'export function routeForRepo' "$S/registry.mjs" && ok 'foreground replay routes parent and child repos explicitly' || no 'foreground replay routes parent and child repos explicitly'
 node "$S/release_listener_test.mjs" >/dev/null && ok 'OAuth transport and parent/child replay behavior' || no 'OAuth transport and parent/child replay behavior'
 node "$S/registry_registration_test.mjs" >/dev/null && ok 'generic project registration reconcile detects missing/stale/duplicate mappings' || no 'generic project registration reconcile detects missing/stale/duplicate mappings'

@@ -4,6 +4,17 @@ set -euo pipefail
 export PATH="$HOME/.grok/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 export GROK_BIN="${GROK_BIN:-$HOME/.grok/bin/grok}"
 cd "$AH_REPO_DIR"
+# The native listener must be scoped to the company represented by this repo.
+# Without this, a multi-project checkout can subscribe to every company in the
+# user's registry, so a Nailly listener may also recover MARLIN issues.
+if [ -z "${AH_COMPANY:-}" ] && [ -f "$AH_REPO_DIR/.agents/company.json" ]; then
+  AH_COMPANY="$(node -e 'try{const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(String(j.company||""))}catch{}' "$AH_REPO_DIR/.agents/company.json")"
+fi
+export AH_COMPANY
+if [ -z "$AH_COMPANY" ]; then
+  echo "ERROR: no company scope in $AH_REPO_DIR/.agents/company.json" >&2
+  exit 1
+fi
 # Prefer the native Rust listener when the update package installed it.
 AH_RUST_BIN="${AH_RUST_LISTENER_BIN:-$HOME/.agents-holding/bin/agents-holding-listener}"
 if [ ! -x "$AH_RUST_BIN" ] && [ -x "$HOME/.agents-holding/scripts/install-rust-listener.sh" ]; then
