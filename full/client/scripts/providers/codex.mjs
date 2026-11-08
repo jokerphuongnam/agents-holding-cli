@@ -11,7 +11,12 @@ export default {
     const schemaFile = join(ctx.logDir, `schema-${o.sid}.json`);
     writeFileSync(schemaFile, JSON.stringify({ ...o.schema, additionalProperties: false, required: Object.keys(o.schema.properties) }));
     const args = codexArgs({ model: o.model, effort: o.effort, text: o.text, prompt: o.prompt, schemaFile, system: o.system, context: o.context });
-    const exitCode = await ctx.spawn(args, { bin: o.bin, env: { ...process.env, CODEX_HOME: leanCodexHome(homedir()) } });
+    // Codex manages its own skills/state during startup. On macOS the outer
+    // seatbelt wrapper can reject that internal write even when the repo is
+    // writable, producing a misleading "workspace unavailable" result.
+    // Keep Holding's native policy and Codex workspace-write sandbox, but do
+    // not wrap Codex in a second OS sandbox.
+    const exitCode = await ctx.spawn(args, { bin: o.bin, env: { ...process.env, AH_SANDBOX: "off", CODEX_HOME: leanCodexHome(homedir()) } });
     const p = parseCodex(ctx.stdout(), o.model); return { result: p.result, usage: p.usage, error: p.error, exitCode };
   },
 };
