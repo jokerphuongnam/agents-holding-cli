@@ -25,6 +25,7 @@ security() {
 }
 # <<< ah_kc_guard
 SITE="${1:?site}"; EMAIL="${2:?email}"
+if node "$(dirname "$0")/jira-setup-workflow-oauth.mjs" "$@"; then exit 0; fi
 if [[ $# -ge 4 && "$4" != --dry-run ]]; then TOKEN="$3"; KEY="$4"; DRY="${5:-}"   # legacy form
 else KEY="${3:?project key}"; DRY="${4:-}"
   TOKEN=$(security find-generic-password -s "${AH_KEYCHAIN_SERVICE:-agents-holding-atlassian}" -a "$EMAIL" -w 2>/dev/null) || { echo "no Jira token in Keychain: run scripts/jira-keychain-setup.sh $SITE $EMAIL first" >&2; exit 1; }
