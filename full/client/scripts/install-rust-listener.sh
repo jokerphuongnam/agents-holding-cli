@@ -25,4 +25,4 @@ if curl -fsSL "$base/agents-holding-listener-$target.sha256" -o "$archive.sha256
   (cd "$tmp" && sha256sum -c "$(basename "$archive.sha256")")
 fi
 install -m 755 "$archive" "$install_dir/agents-holding-listener"
-echo "installed Rust Jira Listener: $install_dir/agents-holding-listener"
+echo "installed Jira Listener: $install_dir/agents-holding-listener"
