@@ -603,11 +603,12 @@ Jira: ${issue}` });
       for (const rp of runRepos) {
         repo = rp;
         log(`lean: ${rp} branch ${branch}: ${L.ensureBranch(rp, branch)}`);
+        const baselinePaths = L.changedPaths(rp);
         const files = filesOf(rp);
         const multi = runRepos.length > 1 ? `\nThis task spans repos ${runRepos.map(rname).join(", ")}; you are in ${rname(rp)}: change only what belongs here.` : "";
         const r1 = await leanModel("code", issue, stage, L.codePrompt(iss, {  plan: (plan ?? "") + multi, techPlan: o.techPlan, approval, feedback: o.feedback, hints: L.fileHints(files, `${iss.summary} ${iss.description} ${plan ?? ""}`), qc: !!o.selfCheck?.[rp], preexisting: L.preexistingFails(L.loadPlan(st, issue).qc_baseline?.[rp] ?? o.baselines?.[rp]), review: !!o.review, branch }), o.dev, L.contextOf({ brief: await brief(o.dev), habits }));
         if (r1.question && !r1.summary) { await record("question", r1.question); await say(o.who, `QUESTION (${rname(rp)})\n${r1.question}`, "question"); repo = runRepos[0]; return null; }
-        const sha = L.commitAll(rp, `${o.wip ? `WIP(${issue}) ${o.wip}: ` : `${issue}: `}${r1.commit_message || iss.summary || "agent change"}`);
+        const sha = L.commitAll(rp, `${o.wip ? `WIP(${issue}) ${o.wip}: ` : `${issue}: `}${r1.commit_message || iss.summary || "agent change"}`, baselinePaths);
         changed ||= !!sha;
         const h = o.host ? host(r1) : { msg: [] };
         wheres.push(`${runRepos.length > 1 ? rname(rp) + ": " : ""}Branch ${branch}${sha ? ` @ ${sha}` : " (no changes)"}${h.url ? ` PR ${h.url}${h.merged ? " (merged)" : ""}` : " (local, not pushed)"}${h.msg.length && !h.url ? ` - ${h.msg.join("; ")}` : ""}`);

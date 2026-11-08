@@ -332,8 +332,18 @@ export function ensureBranch(repo, branch) {
     try { git(repo, "rev-parse", "--verify", branch); git(repo, "checkout", branch); return "switched"; } catch { git(repo, "checkout", "-b", branch); return "created"; } }
   catch (e) { return "failed: " + e.message.split("\n")[0]; }
 }
-export function commitAll(repo, msg) {
-  try { git(repo, "add", "-A", "--", ".", ":(exclude).agents/company.json"); if (!git(repo, "diff", "--cached", "--name-only")) return null;
+export function changedPaths(repo) {
+  try {
+    const raw = execFileSync("git", ["status", "--porcelain=v1", "-z"], { cwd: repo, encoding: "utf8" });
+    return raw.split("\0").filter(Boolean).map((x) => x.slice(3)).filter((p) => p && p !== ".agents/company.json");
+  } catch { return []; }
+}
+export function commitAll(repo, msg, baseline = []) {
+  try {
+    const before = new Set(baseline), paths = changedPaths(repo).filter((p) => !before.has(p) && p !== ".agents/company.json");
+    if (!paths.length) return null;
+    git(repo, "add", "--", ...paths);
+    if (!git(repo, "diff", "--cached", "--name-only")) return null;
     git(repo, "commit", "-q", "-m", msg); return git(repo, "rev-parse", "--short", "HEAD"); } catch (e) { return "failed: " + e.message.split("\n")[0]; }
 }
 export const stateDir = (home, company) => { const d = join(home, ".config/agents-holding/state", company); mkdirSync(d, { recursive: true, mode: 0o700 }); return d; };
