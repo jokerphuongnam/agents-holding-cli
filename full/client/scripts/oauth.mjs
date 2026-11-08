@@ -14,7 +14,9 @@ export const save = (p, t) => execFileSync("security", ["add-generic-password", 
 export const clear = (p) => kcDel(svc(p));
 const key = () => process.env.AGENTS_HOLDING_KEY || kc("agents-holding-license");
 async function post(path, body, f = fetch) { const k = key(); if (!k) throw new Error("no agents-holding key (run setup first)");
-  const r = await f(BASE() + path, { method: "POST", headers: { Authorization: `Bearer ${k}`, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  let r, last;
+  for (let i = 0; i < 3; i++) { try { r = await f(BASE() + path, { method: "POST", headers: { Authorization: `Bearer ${k}`, "Content-Type": "application/json" }, body: JSON.stringify(body) }); break; } catch (e) { last = e; if (i < 2) await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** i)); } }
+  if (!r) throw new Error(`OAuth service unavailable: ${last?.message ?? "network error"}`);
   const j = await r.json().catch(() => ({})); if (r.status === 202) return { pending: true }; if (!r.ok) throw new Error(j.message ?? j.error ?? `HTTP ${r.status}`); return j; }
 export const connectHint = (p) => `Not connected to ${p}. Run: holding ${p} connect  (opens the browser to approve; no key to copy)`;
 const openUrl = (u) => { try { spawn(process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open", process.platform === "win32" ? ["/c", "start", "", u] : [u], { stdio: "ignore", detached: true }).unref(); return true; } catch { return false; } };
@@ -49,7 +51,9 @@ export async function connect(provider, { log = console.log, timeoutMs = 300000,
     await Promise.race([got, new Promise((r) => setTimeout(r, timeoutMs))]);
     while (!tok && Date.now() - t0 < timeoutMs) { const j = await post("/claim", { provider, state: b.state, verifier }); if (!j.pending) tok = j; else await new Promise((r) => setTimeout(r, 2000)); }
     if (!tok) throw new Error("timed out waiting for approval");
-    tok = await enrichAccount(provider, tok); save(provider, tok); return `${provider} connected as ${accountOf(tok)}`;
+    tok = await enrichAccount(provider, tok);
+    if (!tok.expires_at && tok.expires_in) tok.expires_at = Date.now() + Number(tok.expires_in) * 1000 - 60000;
+    save(provider, tok); return `${provider} connected as ${accountOf(tok)}`;
   } finally { srv.closeAllConnections?.(); srv.closeIdleConnections?.(); srv.close(); }
 }
 /** Valid access token (refreshing through our server when expired), or null when not connected. */
