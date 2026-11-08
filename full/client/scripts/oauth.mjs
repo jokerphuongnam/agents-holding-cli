@@ -6,6 +6,7 @@ import { randomBytes, createHash } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
 const BASE = () => (process.env.AH_MCP_URL ?? "https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp").replace(/\/mcp$/, "/oauth-connect");
 const svc = (p) => `agents-holding-oauth-${p}`;
+const refreshInFlight = new Map();
 const kc = (s) => { try { return execFileSync("security", ["find-generic-password", "-s", s, "-a", process.env.USER, "-w"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() || null; } catch { return null; } };
 const kcDel = (s) => { try { execFileSync("security", ["delete-generic-password", "-s", s, "-a", process.env.USER], { stdio: "ignore" }); } catch {} };
 export const load = (p) => { try { return JSON.parse(kc(svc(p)) ?? "null"); } catch { return null; } };
@@ -56,7 +57,20 @@ export async function token(provider, f = fetch, force = false) {
   const t = load(provider); if (!t?.access_token) return null;
   if (!force && Date.now() < (t.expires_at ?? 0)) return t;
   if (!t.refresh_token) return null;
-  try { const n = await post("/refresh", { provider, refresh_token: t.refresh_token }, f); const m = { ...t, ...n, expires_at: Date.now() + Number(n.expires_in ?? 3600) * 1000 - 60000 }; save(provider, m); return m; } catch { return null; }
+  const existing = refreshInFlight.get(provider); if (existing) return existing;
+  const job = (async () => {
+    // Re-read after waiting: another caller may already have rotated the token.
+    const latest = load(provider); if (!latest?.refresh_token) return null;
+    if (!force && Date.now() < (latest.expires_at ?? 0)) return latest;
+    try {
+      const n = await post("/refresh", { provider, refresh_token: latest.refresh_token }, f);
+      if (!n?.access_token) return null;
+      const m = { ...latest, ...n, refresh_token: n.refresh_token ?? latest.refresh_token, expires_at: Date.now() + Number(n.expires_in ?? 3600) * 1000 - 60000 };
+      save(provider, m); return m;
+    } catch { return null; }
+  })();
+  refreshInFlight.set(provider, job);
+  try { return await job; } finally { if (refreshInFlight.get(provider) === job) refreshInFlight.delete(provider); }
 }
 /** Token, or start the browser connect flow (interactive terminal), or throw a clear hint (AI / non-interactive). */
 export async function ensure(provider) {

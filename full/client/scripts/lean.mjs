@@ -13,8 +13,8 @@ import "./kc-guard.mjs"; // pin keychain calls to the real login keychain (never
 // the CLI is grok (default), claude or codex, see agents.mjs (AH_AGENT or per-company agent.json),
 // with a short saved plan (state dir) + the user's approval/feedback instead of the old conversation.
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join, realpathSync, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 
