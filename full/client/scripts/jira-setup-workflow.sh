@@ -54,6 +54,7 @@ if [[ "$STYLE" != next-gen ]]; then
   echo "NOTE: company-managed; updating every workflow returned for project (shared workflows affect other projects!)" >&2
 fi
 ALLST=$(api GET "/rest/api/3/statuses/search?projectId=$PID&maxResults=200" | jq '.values')
+DUPLICATE_STATUS_IDS=$(jq -r '.[]|select(.name=="Pre Code (duplicate)" or .name=="Pre Coding")|.id' <<<"$ALLST" | tr '\n' ' ')
 
 # resolve / create statuses
 IDS=""; idget() { printf '%s\n' "$IDS" | awk -F'\t' -v n="$1" '$1==n{print $2; exit}'; }  # bash 3.2 (macOS): no associative arrays
@@ -89,7 +90,13 @@ for i in $(seq 0 $((NWF-1))); do
     if ! printf '%s\n' "${REFS[@]}" | grep -qx "$r"; then
       nm=$(jq -r --arg r "$r" '.[]|select(.id==$r).name' <<<"$ALLST")
       [[ -z "$nm" ]] && nm=$(api GET "/rest/api/3/status/$r" | jq -r .name)
-      if [[ "${DROP_IN_PROGRESS:-0}" == 1 && "$nm" == "In Progress" && "$IPC" == 0 ]]; then echo "dropping unused '$nm' ($r) from workflow"; DROPPED+=("$r"); else echo "keeping extra status '$nm' ($r)"; REFS+=("$r"); fi
+      if [[ "$nm" == "Pre Code (duplicate)" || "$nm" == "Pre Coding" ]]; then
+        echo "dropping legacy/duplicate '$nm' ($r) from workflow"; DROPPED+=("$r")
+      elif [[ "${DROP_IN_PROGRESS:-0}" == 1 && "$nm" == "In Progress" && "$IPC" == 0 ]]; then
+        echo "dropping unused '$nm' ($r) from workflow"; DROPPED+=("$r")
+      else
+        echo "keeping extra status '$nm' ($r)"; REFS+=("$r")
+      fi
     fi
   done
   REFJSON=$(printf '%s\n' "${REFS[@]}" | jq -R . | jq -s .)
@@ -111,6 +118,13 @@ for i in $(seq 0 $((NWF-1))); do
   R=$(api POST /rest/api/3/workflows/update -d "$BODY")
   jq -e '.workflows' <<<"$R" >/dev/null || { echo "update failed: $R" >&2; exit 1; }
   echo "workflow $(jq -r .name <<<"$WF") updated"
+done
+# Delete legacy duplicate statuses only after every workflow has stopped referencing them.
+for sid in $DUPLICATE_STATUS_IDS; do
+  if [[ "$DRY" != --dry-run ]]; then
+    DEL=$(api DELETE "/rest/api/3/statuses?id=$sid" || true)
+    if [[ -z "$DEL" ]]; then echo "removed legacy status id=$sid"; else echo "legacy status id=$sid retained: $DEL"; fi
+  fi
 done
 # ---- column order: Jira has no public API to reorder board columns (team-managed boards append new ones after Done),
 # so read the board and print the exact order to drag into.
