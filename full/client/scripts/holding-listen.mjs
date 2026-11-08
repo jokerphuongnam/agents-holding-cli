@@ -658,7 +658,7 @@ Jira: ${issue}` });
           // A failed commit is not completed work. Older clients appended the
           // sub-step before checking this, so a resume could skip the failed
           // implementation and jump straight to the next step/QC.
-          if (!/^[0-9a-f]{7,40}$/i.test(String(ri.commit ?? ""))) {
+          if (String(ri.commit ?? "").startsWith("failed:")) {
             X.ckptSave(st, issue, { stage: s0, code_done: done, last_commit: null, failed: ri.commit ?? "commit failed" });
             log(`lean: ${issue} coding sub-step ${i + 1}/${steps.length} has no commit; will retry on resume`);
             return;
