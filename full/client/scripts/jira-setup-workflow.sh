@@ -105,7 +105,8 @@ for i in $(seq 0 $((NWF-1))); do
   for r in "${REFS[@]}"; do jq -e --arg r "$r" 'any(.[];.id==$r)' <<<"$NAMES" >/dev/null || NAMES=$(jq --argjson s "$(api GET /rest/api/3/status/$r | jq '{id,name,statusCategory:.statusCategory.key|ascii_upcase|sub("NEW";"TODO")|sub("INDETERMINATE";"IN_PROGRESS"),statusReference:.id}')" '.+[$s]' <<<"$NAMES"); done
   DJ=$( ((${#DROPPED[@]})) && printf '%s\n' "${DROPPED[@]}" | jq -R . | jq -s . || echo '[]')
   ITS=$(api GET "/rest/api/3/project/$KEY/statuses" | jq '[.[].id]')
-  MAP=$(jq -n --argjson d "$DJ" --argjson its "$ITS" --arg p "$PID" --arg to "$(idget Coding)" 'if ($d|length)==0 then [] else [$its[]|{issueTypeId:., projectId:$p, statusMigrations:[]}] end')
+  MIG=$(jq -n --argjson d "$DJ" --arg to "$(idget "Pre Code")" '[ $d[] | {oldStatusReference:., newStatusReference:$to} ]')
+  MAP=$(jq -n --argjson d "$DJ" --argjson its "$ITS" --argjson mig "$MIG" --arg p "$PID" 'if ($d|length)==0 then [] else [$its[]|{issueTypeId:., projectId:$p, statusMigrations:$mig}] end')
   INIT=$(jq '[.transitions[]|select(.type=="INITIAL")]' <<<"$WF")
   BODY=$(jq -n --argjson wf "$WF" --argjson refs "$REFJSON" --argjson st "$NAMES" --argjson init "$INIT" --argjson map "$MAP" '
     {statuses:$st,
