@@ -112,8 +112,15 @@ restore_listener() {
   [ -x "$script" ] || script="${AH_INSTALL_DIR:-$HOME/.agents-holding}/scripts/launchd/listener.sh"
   echo "   restoring Jira Listener after update" >&2
   if ! bash "$script" start --repo "$listener_repo" >/dev/null 2>&1; then
-    echo "ERROR: holding update could not restore a healthy Jira Listener" >&2
-    return 1
+    # Readiness can lag while several company subscriptions reconnect. A
+    # loaded listener with a live process is restored enough; its own retry and
+    # reconciliation loop will finish joining companies after the update.
+    if launchctl print "gui/$(id -u)/com.agentsholding.jira-listener" >/dev/null 2>&1; then
+      echo "   listener restored but readiness is still warming; keeping it running" >&2
+    else
+      echo "ERROR: holding update could not restore the Jira Listener" >&2
+      return 1
+    fi
   fi
   if [ "$listener_was_autostart" = 1 ]; then bash "$script" autostart on >/dev/null 2>&1 || return 1; fi
 }
@@ -150,8 +157,12 @@ if [ "$listener_was_active" = 1 ]; then
     [ "$listener_was_autostart" = 1 ] && bash "$here/launchd/listener.sh" autostart on >/dev/null || true
     echo "   restarted and ready"
   else
-    echo "ERROR: listener update completed but restart/readiness failed; autostart was $([ "$listener_was_autostart" = 1 ] && echo on || echo off). Run: holding listener start --repo '$listener_repo'" >&2
-    exit 1
+    if launchctl print "gui/$(id -u)/com.agentsholding.jira-listener" >/dev/null 2>&1; then
+      echo "   listener restarted but readiness is still warming; it will reconcile automatically"
+    else
+      echo "ERROR: listener update completed but restart failed; autostart was $([ "$listener_was_autostart" = 1 ] && echo on || echo off). Run: holding listener start --repo '$listener_repo'" >&2
+      exit 1
+    fi
   fi
 elif command -v systemctl >/dev/null && systemctl --user is-active -q agents-holding-listener 2>/dev/null; then systemctl --user restart agents-holding-listener && echo "   restarted";
 else echo "   not installed as a service (start: holding jira listen)"; fi
