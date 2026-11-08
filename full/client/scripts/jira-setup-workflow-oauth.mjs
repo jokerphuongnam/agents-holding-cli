@@ -14,8 +14,11 @@ const statuses = await req("GET", `/project/${encodeURIComponent(key)}/statuses`
 const rows = (statuses ?? []).flatMap((x) => x.statuses ?? []);
 const old = rows.find((x) => String(x.name).toLowerCase() === "pre coding");
 if (!old) {
-  console.log(`OAuth workflow setup: no "Pre Coding" status found for ${key}; nothing to rename.`);
-  process.exit(0);
+  // Let the Basic-auth fallback run the full workflow reconciliation. A
+  // missing legacy status is not a successful setup: Pre Code may still need
+  // to be created and duplicate statuses removed.
+  console.log(`OAuth workflow setup: no "Pre Coding" status found for ${key}; falling back to full setup.`);
+  process.exit(2);
 }
 console.log(`OAuth workflow setup: renaming status ${old.id} "Pre Coding" -> "Pre Code"`);
 await req("PUT", `/status/${old.id}`, { name: "Pre Code", description: old.description ?? "" });
