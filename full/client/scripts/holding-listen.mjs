@@ -130,7 +130,8 @@ const autostartPlist = join(homedir(), "Library/LaunchAgents/com.agentsholding.j
 const myJira = {}; // enterprise: this key's Jira account; work starts only on cards assigned to it
 let lastBeat = 0;
 const joined = new Set();
-const readiness = () => listenerJira && joined.size === companyList.length && companyList.length > 0;
+const mcpJiraFallback = !args.includes("--no-jira-mcp-fallback") && process.env.AH_JIRA_MCP_FALLBACK !== "0";
+const readiness = () => joined.size === companyList.length && companyList.length > 0 && (listenerJira || mcpJiraFallback);
 const heartbeatIfStale = () => { if (Date.now() - lastBeat > 300000) heartbeat(); };
 const heartbeat = (requested = "online") => { const state = requested === "stopped" ? "stopped" : (readiness() ? "online" : "starting"); if (state === "online") log("readiness online", companyList.join(",")); return (lastBeat = Date.now(), Promise.all(companyList.map((company) => mcp("listener_heartbeat", { company, host: hostname(), pid: process.pid, autostart: existsSync(autostartPlist), version: AH_CLIENT_VERSION, state, meta: { ...localMeta(), jira_ready: listenerJira, process_ready: true, realtime_ready: readiness() } })
   .then(async (r) => { if (r?.communication) commMode[company] = r.communication; if (r?.enterprise) myJira[company] = r.jira_account ?? null; if (envStatusSyncSec === null && Number.isInteger(r?.jira_status_sync_sec)) statusSyncSec[company] = Math.min(86400, Math.max(60, r.jira_status_sync_sec)); L.writeStatus(homedir(), { companies: { [company]: { heartbeat_at: new Date().toISOString(), heartbeat_ok: true, jira_status_sync_sec: envStatusSyncSec ?? statusSyncSec[company] } } });
@@ -310,7 +311,29 @@ async function announceWaiting(issue, na, p) {
   } catch (e) { log(`Jira waiting signal failed for ${issue}:`, e.message); }
 }
 const leanHome = lean ? L.leanGrokHome(homedir()) : null;
-const listenerJira = dryJira || !!jiraCfg; // readiness is established before the listener advertises online
+let listenerJira = dryJira || !!jiraCfg; // prefer local deterministic Jira; the agent MCP is an optional fallback
+let jiraRouteCheckedAt = 0;
+async function refreshJiraRoute() {
+  if (dryJira || !jiraCfg) { listenerJira = false; return false; }
+  if (Date.now() - jiraRouteCheckedAt < 30_000) return listenerJira;
+  jiraRouteCheckedAt = Date.now();
+  try {
+    const A = await atlassianToken();
+    const auth = A?.jira ? A.auth() : (() => { const tok = L.jiraToken(jiraCfg); return tok ? "Basic " + Buffer.from(`${jiraCfg.email}:${tok}`).toString("base64") : null; })();
+    const site = A?.jira ?? String(jiraCfg.site || "").replace(/\/$/, "");
+    if (!auth || !site) throw new Error("no local Jira credential");
+    const r = await fetch(`${site}/rest/api/3/myself`, { headers: { Authorization: auth, Accept: "application/json" } });
+    if (r.status === 401 || r.status === 403) {
+      listenerJira = false;
+      log(`local Jira credential rejected (HTTP ${r.status}); ${mcpJiraFallback ? "agent Atlassian MCP fallback enabled" : "MCP fallback disabled"}`);
+    } else if (r.ok) listenerJira = true;
+    else log(`local Jira credential probe returned HTTP ${r.status}; keeping current Jira route`);
+  } catch (e) {
+    listenerJira = false;
+    log(`local Jira credential unavailable; ${mcpJiraFallback ? "agent Atlassian MCP fallback enabled" : "MCP fallback disabled"} (${e.message})`);
+  }
+  return listenerJira;
+}
 const sessDir = (sid, home = join(homedir(), ".grok")) => join(home, "sessions", encodeURIComponent(repo), sid);
 
 // User events on the same card within AH_DEBOUNCE_SEC (default 15s) are coalesced into ONE run (latest notice wins):
@@ -402,6 +425,7 @@ let runSettings = {};
 async function run(p, depth = 0) {
   const issue = p.issue ?? p.task_id ?? "";
   if (depth === 0 && !(await useCtx(p))) return;
+  await refreshJiraRoute();
   await clearWaitingSignal(issue, p.event);
   let na = null; try { na = await mcp("next_action", { company, task: issue, listener_jira: listenerJira }); } catch (e) { log("next_action failed:", e.message); }
   if (na && !(await ensureAgentOwnedAssignment(issue, na))) return;
@@ -412,7 +436,8 @@ async function run(p, depth = 0) {
   const jiraTxt = dryJira
     ? ` DRY JIRA: never call any Jira/Atlassian tool. Print every Jira action you would take (comments, transitions, links) under "JIRA ACTIONS (dry)" instead.`
     : listenerJira ? ` Do NOT transition Jira cards (pass listener_jira=true to next_action/advance; the listener moves cards). Post Jira comments with my Atlassian MCP.`
-    : ` Jira comments/transitions via my Atlassian MCP if available; otherwise print them under "JIRA ACTIONS".`;
+    : mcpJiraFallback ? ` The local Jira credential is unavailable. Use my own Atlassian MCP session to read, comment and transition ${issue}; verify the intended company account/site first. If MCP is unavailable or lacks permission, report the exact missing account/permission instead of pretending success.`
+    : ` Jira access is unavailable and MCP fallback is disabled. Do not mutate Jira; report the exact re-authentication needed.`;
   const prev = process.env.AH_RESUME === "0" ? null : sessions[issue];
   const resume = prev && existsSync(sessDir(prev));
   const prompt = resume
@@ -751,7 +776,8 @@ Jira: ${issue}` });
       let res = runQc(), fixes = 0;
       while (res.some((x) => !x.v.pass) && fixes < 1 && codingKey) {
         const txt = qcText(res); await record("qc_fail", txt); await say(who, `QC FAIL\n${txt}\nBack to Coding for one fix.`);
-        if (!(await advance(s0, codingKey))) return;
+        const recoveryKey = (na.flow_stages ?? []).includes("reopened") ? "reopened" : codingKey;
+        if (!(await advance(s0, recoveryKey))) return;
         const sv = L.loadPlan(st, issue), dev = sv.developer ?? "tech-lead", dwho = L.stageStaff(na, codingKey, { kind: "code", developer: dev });
         const r = await codeOnce(codingKey, { techPlan: sv.tech_plan, dev, feedback: `QC failed, fix it:\n${res.filter((x) => !x.v.pass).map((x) => x.v.failed.map((f) => `${f.name}: ${f.out}`).join("\n")).join("\n")}`, who: dwho });
         if (!r) return;
