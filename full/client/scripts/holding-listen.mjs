@@ -843,7 +843,16 @@ Jira: ${issue}` });
       const checksOut = res.flatMap((x) => [...x.v.passed, ...x.v.failed]);
       const checkRows = configured.map((spec) => { const id = String(spec.id), match = checksOut.find((x) => (id.includes("static") && /lint|typecheck|analy/i.test(x.name)) || (id === "build" && /build|install/i.test(x.name)) || (id.includes("unit") && /test|unit/i.test(x.name)) || (id.includes("integration") && /integration|smoke/i.test(x.name))); const x = id === "implementation_command" ? { command: "coding worker result + local commit", ok: !!sv.implementation_evidence, out: sv.implementation_evidence?.summary ?? "missing" } : id === "artifact-check" || id === "working_tree_artifact_policy" ? { command: "git status / artifact policy", ok: !!sv.where, out: sv.where ?? "missing" } : id === "local_commit" ? { command: "git commit (local, no push)", ok: !!sv.commit, out: sv.commit ?? "missing" } : match ? { command: match.name, ok: !!match.ok, out: match.out } : { command: spec.commands?.join(" && ") || spec.tool || id, ok: false, out: "missing configured evidence" }; return { id, ...x, exit_code: x.ok ? 0 : 1, stdout_digest: digest(x.out), stderr_digest: digest(x.ok ? "" : x.out), commit: sv.commit ?? "", tree: digest(sv.where ?? ""), artifacts: [sv.where, sv.commit].filter(Boolean), timestamp: new Date().toISOString(), actor: "agents-holding-qc", model: "script", ok: !!x.ok }; });
       const qcReport = { timestamp: new Date().toISOString(), actor: "agents-holding-qc", developer: sv.developer ?? null, model: "script", pass: checkRows.every((x) => x.ok), checks: checkRows };
-      if (!qcReport.pass) { await record("qc_fail", `QC evidence gate failed: ${checkRows.filter((x) => !x.ok).map((x) => x.id).join(", ")}`); return; }
+      if (!qcReport.pass) {
+        const failed = checkRows.filter((x) => !x.ok).map((x) => x.id).join(", ");
+        const failureText = `QC evidence gate failed: ${failed}`;
+        await record("qc_fail", failureText);
+        await say(who, `QC FAIL\n${failureText}\nReturning to Coding for remediation.`);
+        const recoveryKey = (na.flow_stages ?? []).includes("reopened") ? "reopened" : codingKey;
+        if (recoveryKey) await advance(s0, recoveryKey);
+        else log(`lean: ${issue} QC failed; no recovery stage configured`);
+        return;
+      }
       await record("qc_report", JSON.stringify(qcReport));
       const art = (k) => ({ pr: `${sv.summary ?? ""}\n${where}`, qc_pass: txt, note: `${txt}\n${where}` }[k] ?? txt);
       const to = seg.moves[0];
