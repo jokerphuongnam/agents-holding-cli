@@ -18,6 +18,7 @@ def main():
             'company': a.company or None, 'repo': repo, 'cwd': repo,
             'user_id': os.getenv('USER', 'unknown'), 'device_id': os.getenv('AGENTS_HOLDING_DEVICE', 'local-device'),
             'pid': os.getpid(), 'socket': str(sock), 'allowlist': a.allow,
+            'active_job': None,
             'started_at': time.time(), 'heartbeat_at': time.time()}
     state.write_text(json.dumps(meta)); os.chmod(state, 0o600)
     pid, master = pty.fork()
@@ -66,12 +67,16 @@ def main():
                 elif op == 'dispatch':
                     command = req.get('command', '')
                     if active_job:
-                        c.sendall(b'{"ok":false,"error":"terminal is busy"}\n'); c.close(); continue
+                        active = jobs.get(active_job, {})
+                        error = 'terminal already running this command' if active.get('command') == command else 'terminal is busy'
+                        c.sendall((json.dumps({'ok': False, 'error': error, 'active_job': active_job,
+                                               'active_command': active.get('command'),
+                                               'active_started_at': active.get('started_at')}) + '\n').encode()); c.close(); continue
                     if meta['allowlist'] and not any(command.strip().startswith(x) for x in meta['allowlist']):
                         c.sendall(b'{"ok":false,"error":"command is not on terminal allowlist"}\n'); c.close(); continue
                     job_id = 'job-' + secrets.token_hex(10); marker = '__AH_DONE_' + secrets.token_hex(8) + '__'
                     jobs[job_id] = {'marker': marker.encode(), 'client': c, 'command': command, 'started_at': time.time(), 'buf': b''}
-                    active_job = job_id; c.setblocking(False)
+                    active_job = job_id; meta['active_job'] = {'job_id': job_id, 'command': command, 'started_at': jobs[job_id]['started_at']}; state.write_text(json.dumps(meta)); c.setblocking(False)
                     os.write(master, (command + f"\nprintf '{marker}:%s\\n' $?\n" ).encode())
                 else: c.close()
             if active_job and active_job in jobs and re.search(re.escape(jobs[active_job]['marker'].decode()) + r':-?\d+', jobs[active_job]['buf'].decode(errors='replace')):
@@ -84,7 +89,10 @@ def main():
                          'started_at': job['started_at'], 'completed_at': time.time()}
                 try: job['client'].sendall((json.dumps(event) + '\n').encode())
                 except OSError: pass
+                elapsed = max(0, time.time() - job['started_at'])
+                print(f"[terminal] completed command={job['command']} exit_code={exit_code} elapsed_sec={elapsed:.1f} output_bytes={len(transcript.encode())}", flush=True)
                 job['client'].close(); del jobs[active_job]; active_job = None
+                meta['active_job'] = None; meta['heartbeat_at'] = time.time(); state.write_text(json.dumps(meta))
     finally:
         try: os.kill(pid, 15)
         except OSError: pass
