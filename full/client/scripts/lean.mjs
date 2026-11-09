@@ -431,7 +431,9 @@ export function prSteps(na, seg) {
   const op = acts.find((a) => a.action === "open_pr"), mg = acts.find((a) => a.action === "merge");
   const releaseGate = seg.stages.some((s) => /verified|release/i.test(s));
   const open = op || releaseGate || !!mg;
-  return { open, openBase: op?.base ?? null, merge: !!mg, mergeBase: mg?.base ?? null };
+  return { open, openBase: op?.base ?? null, merge: !!mg, mergeBase: mg?.base ?? null,
+    // Project/flow custom only. No template or target-branch default.
+    squash: mg?.squash === true || mg?.merge_strategy === "squash" };
 }
 /** Push + PR + merge with the user's own git/gh login, only when the company opted in (auto_pr). Never forces. exec(cmd,args)->stdout|throws. */
 export function gitHost(repo, o, exec = (c, a) => execFileSync(c, a, { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim()) {
@@ -448,7 +450,8 @@ export function gitHost(repo, o, exec = (c, a) => execFileSync(c, a, { cwd: repo
   }
   r.msg.push(`PR ${r.url}`);
   if (o.merge) {
-    try { exec("gh", ["pr", "merge", o.branch, "--merge"]); r.merged = true; r.msg.push(`merged into ${o.mergeBase ?? "base"}`); }
+    const mode = o.squash ? "--squash" : "--merge";
+    try { exec("gh", ["pr", "merge", o.branch, mode]); r.merged = true; r.msg.push(`merged into ${o.mergeBase ?? "base"}${o.squash ? " (squash)" : ""}`); }
     catch (e) { r.msg.push(`merge NOT done (conflicts/checks?): ${String(e.message).split("\n")[0]}; not forced`); }
   }
   return r;
