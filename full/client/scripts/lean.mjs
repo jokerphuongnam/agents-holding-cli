@@ -351,20 +351,18 @@ export function ensureBranch(repo, branch) {
 }
 export function commitAll(repo, msg) {
   try {
-    // .agents/ is holding-managed in every company repo and must never enter a
-    // product commit. Stage tracked changes, then add only Git-reported
-    // eligible untracked paths; this is equivalent to a directory pathspec
-    // exclude while avoiding shell/pathspec differences across platforms.
+    // Respect the repository's own ignore rules. Do not hard-code .agents or
+    // any other directory: a company/task policy may explicitly allow a path
+    // to be committed. For legacy tracked ignored files, check-ignore --no-index
+    // applies the same rule that users see in .gitignore.
     git(repo, "add", "-u", "--");
     const raw = execFileSync("git", ["ls-files", "--others", "--exclude-standard", "-z"], { cwd: repo, encoding: "utf8" });
-    const paths = raw.split("\0").filter(Boolean).filter((p) => !(/^\.agents(?:\/|$)/).test(p));
+    const paths = raw.split("\0").filter(Boolean);
     if (paths.length) execFileSync("git", ["add", "--", ...paths], { cwd: repo, stdio: ["ignore", "pipe", "pipe"] });
     const staged = git(repo, "diff", "--cached", "--name-only").split("\n").filter(Boolean);
-    const forbidden = staged.filter((p) => /^\.agents(?:\/|$)/.test(p));
-    // Agent/company metadata may be tracked by an old checkout. Never fail the
-    // product run because of it: unstage those paths and leave their worktree
-    // changes untouched. Only eligible product changes participate in commit.
-    if (forbidden.length) execFileSync("git", ["reset", "-q", "--", ...forbidden], { cwd: repo, stdio: ["ignore", "pipe", "pipe"] });
+    // check-ignore throws for a non-ignored path; keep this explicit and portable.
+    const ignoredPaths = staged.filter((p) => { try { execFileSync("git", ["check-ignore", "--no-index", "-q", "--", p], { cwd: repo, stdio: "ignore" }); return true; } catch { return false; } });
+    if (ignoredPaths.length) execFileSync("git", ["reset", "-q", "--", ...ignoredPaths], { cwd: repo, stdio: ["ignore", "pipe", "pipe"] });
     const eligible = git(repo, "diff", "--cached", "--name-only").split("\n").filter(Boolean);
     if (!eligible.length) return null;
     git(repo, "commit", "-q", "-m", msg); return git(repo, "rev-parse", "--short", "HEAD"); } catch (e) { return "failed: " + e.message.split("\n")[0]; }
