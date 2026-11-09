@@ -151,6 +151,8 @@ async function serverUsage(company, issue) { // tokens per task from the server 
 export async function main(argv, { home = homedir(), cwd = process.cwd(), fetchFn = fetch, token, out = console.log, auth } = {}) {
   const a = [...argv]; let project = null; const i = a.indexOf("--project"); if (i >= 0) { project = a[i + 1]; a.splice(i, 2); }
   const cmd = a.shift();
+  const keyOf = (k) => String(k ?? "").toUpperCase();
+  const b = () => pickBoard(loadReg(home), cwd, project, (() => { const i = process.argv.indexOf("--company"); return i >= 0 ? process.argv[i + 1] : null; })());
   let req;
   if (token) {
     // Unit-test / injected token path (Basic against site in jira.json or placeholder).
@@ -159,11 +161,10 @@ export async function main(argv, { home = homedir(), cwd = process.cwd(), fetchF
     req = client(cfg, fetchFn, token);
   } else {
     // Lazy: OAuth (or API-token fallback). Opens the browser only when nothing is stored yet.
-    const A = auth ?? await (await import("./attach.mjs")).atlassian(home);
+    const board = b();
+    const A = auth ?? await (await import("./attach.mjs")).atlassian(home, { site: board.site });
     req = client(A, fetchFn);
   }
-  const keyOf = (k) => String(k ?? "").toUpperCase();
-  const b = () => pickBoard(loadReg(home), cwd, project, (() => { const i = process.argv.indexOf("--company"); return i >= 0 ? process.argv[i + 1] : null; })());
   switch (cmd) {
     case "list": return out(await tasks(req, b().project_key, a.join(" ")));
     case "board": { const { listenerWarning } = await import("./lean.mjs"); const w = listenerWarning(); if (w) console.log(w + "\n"); return out(await board(req, b().project_key)); }

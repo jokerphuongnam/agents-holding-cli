@@ -1030,7 +1030,7 @@ async function applyJiraRules(p) {
   let audit = {}; try { audit = JSON.parse(readFileSync(auditFile, "utf8")); } catch {}
   const updated = issueUpdated(p.issue);
   try {
-    const A = await (await import("./attach.mjs")).atlassianToken(homedir()); if (!A?.auth) return log("rules: Jira not connected");
+    const A = await (await import("./attach.mjs")).atlassianToken(homedir(), { site: board?.site }); if (!A?.auth) return log("rules: Jira not connected");
     const req = jiraRaw(A), issue = await req("GET", `/issue/${encodeURIComponent(p.issue)}?fields=summary,status,issuetype,parent,labels,assignee,updated`);
     const status = issue.fields?.status?.name, isDone = issue.fields?.status?.statusCategory?.key === "done" || status?.toLowerCase() === "done";
     const event = RULE_EVENTS[p.event] ?? p.event, events = [...new Set([event, event === "issue_transitioned" && isDone && issue.fields?.parent ? "all_subtasks_done" : null].filter(Boolean))];
