@@ -256,6 +256,15 @@ const commMode = {};
 const WORKFLOW_FAILURE_LABEL = "ah-workflow-failed";
 const mirrorCache = new Map();
 const mirrorSeen = new Set();
+const mirrorClients = new Map();
+async function mirrorClient(source) {
+  if (!source?.site || !jira) return jira;
+  if (String(source.site).toLowerCase() === String(jiraCfg?.site ?? "").toLowerCase()) return jira;
+  if (mirrorClients.has(source.site)) return mirrorClients.get(source.site);
+  const cfg = await atlassianToken(homedir(), { site: source.site });
+  if (!cfg) return null;
+  const c = L.jiraClient(cfg, { dry: dryJira, log }); mirrorClients.set(source.site, c); return c;
+}
 async function mirrorSync(company, project, issue, status, updated) {
   if (!jira) return;
   let cfg = mirrorCache.get(company);
@@ -278,7 +287,12 @@ async function mirrorSync(company, project, issue, status, updated) {
     if (!task) continue;
     const side = task.source_issue === issue && src.project_key === project ? "source" : task.control_issue === issue && ctl.project_key === project ? "mirror" : null;
     if (!side) continue;
-    const executor = ME.createMirrorExecutor({ jira, seen: mirrorSeen, log, notify: async (a) => {
+    const executor = ME.createMirrorExecutor({ jira: { transition: async (targetIssue, targetStatus, meta) => {
+      const target = meta?.side === "source" ? src : ctl;
+      const client = await mirrorClient(target);
+      if (!client) throw new Error(`no Jira credentials for mirror site ${target?.site ?? "unknown"}`);
+      return client.transition(targetIssue, targetStatus, meta);
+    }}, seen: mirrorSeen, log, notify: async (a) => {
       log(`mirror notification ${a.issue} -> ${a.status}`);
       try { await mcp("inbox_post", { company, issue: a.issue, kind: "other", need: "Mirror status update", body: `Mirror ${m.id}: ${a.status}` }); } catch (e) { log(`mirror notification failed: ${e.message}`); }
     }});
