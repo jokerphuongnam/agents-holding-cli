@@ -315,6 +315,9 @@ const WAITING_LABEL = "ah-awaiting-user";
 const USER_RECOVERY_EVENTS = new Set(["user_move", "user_comment", "review_feedback", "work_started", "user_approved", "staff_chosen", "staffing_choice", "staffing_retry"]);
 async function clearWaitingSignal(issue, event) {
   if (!jira || !USER_RECOVERY_EVENTS.has(event)) return;
+  const coState = L.stateDir(homedir(), company);
+  const prior = L.loadPlan(coState, issue);
+  if (prior.workflow_blocked) L.savePlan(coState, issue, { workflow_blocked: null });
   try {
     const meta = await jira.meta(issue);
     if (!(meta.labels ?? []).includes(WAITING_LABEL)) return;
@@ -696,6 +699,10 @@ async function leanRun(p, na, depth = 0) {
 }
 async function leanRunInner(p, na, depth, vis) {
   const issue = na.issue ?? p.issue ?? p.task_id; const st = L.stateDir(homedir(), company); const saved = L.loadPlan(st, issue);
+  if (saved.workflow_blocked && !USER_RECOVERY_EVENTS.has(p.event) && p.event !== "manual") {
+    log(`lean: ${issue} waiting for user workflow action (${saved.workflow_blocked.from} -> ${saved.workflow_blocked.to})`);
+    return;
+  }
   let iss = { key: issue, summary: na.title ?? "", description: String(na.request ?? "").slice(0, 1500), comments: [] };
   const readKey = opt("--jira-read-as") || process.env.AH_JIRA_READ_AS || issue; // dry replays may read the real issue (GET only)
   if (jira) { try { iss = { key: issue, ...L.compactIssue(await jira.issue(readKey)) }; } catch (e) { log(`lean: Jira read ${readKey} failed (${e.message}); using server title/request`); } }
@@ -726,7 +733,21 @@ async function leanRunInner(p, na, depth, vis) {
         vis.gates ??= new Set();
         if (r.stage === to && L.GATE_HINTS[to] && !vis.gates.has(to)) { vis.gates.add(to); await say(false, L.gateComment(L.stageStaff(na, to), to), "gate"); } // explicit gate: how to approve / revise
         return true; }
-      catch (e) { const m = e.message.match(/kind=(\w+)/); if (i || !m) { log(`lean: advance ${from} -> ${to} failed: ${e.message}`); return false; } await record(m[1], art?.(m[1])); }
+      catch (e) {
+        const m = e.message.match(/kind=(\w+)/);
+        if (i || !m) {
+          log(`lean: advance ${from} -> ${to} failed: ${e.message}`);
+          // A Jira workflow may reject an automated recovery transition (most
+          // commonly QC -> Reopened). Mark the issue as waiting instead of
+          // allowing reconcile/comments to start another Coding/QC loop.
+          if (/Reopened can only be entered by the user|workflow.*reject|transition.*not allowed/i.test(String(e.message))) {
+            L.savePlan(st, issue, { workflow_blocked: { from, to, reason: String(e.message), at: new Date().toISOString() } });
+            await announceWaiting(issue, { ...na, stage: from, waiting: true, steps: [String(e.message)] }, { ...p, workflow_error: `Jira blocked ${from} → ${to}. User action required: ${String(e.message)}` });
+          }
+          return false;
+        }
+        await record(m[1], art?.(m[1]));
+      }
     }
   };
   log(`lean run ${issue} (${p.event}) segments ${L.segments(na).map((s) => `${s.kind}:${s.stages.join(">")}`).join(" | ") || "none"}`);
