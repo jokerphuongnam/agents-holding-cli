@@ -1111,7 +1111,16 @@ async function connect(company) {
     const msg = JSON.parse(m.data); lastRx[company] = Date.now();
     if (msg.event === "phx_reply" && msg.topic === topic) { log("join", msg.payload.status, "company", company); if (msg.payload.status === "ok") { joined.add(company); backoffs[company] = 1000; heartbeat(); rt("joined"); if (!joinedOnce[company]) { joinedOnce[company] = true; reconcile(company).catch((e) => log("reconcile failed:", e.message)); } if (downNotified[company]) { downNotified[company] = false; L.desktopNotify(homedir(), "agents-holding", `Listener reconnected (${company})`); reconcile(company).catch((e) => log("reconcile failed:", e.message)); } } else { joined.delete(company); heartbeat("starting"); rt(`join ${msg.payload.status}`); } }
     if (msg.event === "broadcast" && msg.payload?.event === "next_action") {
-      const p = { ...(msg.payload.payload ?? {}), company };
+      const raw = msg.payload.payload ?? {};
+      // Realtime topics are company-scoped, but a stale/misrouted server
+      // broadcast must never make a listener run another company's issue.
+      // Trust the local repo registry as the final routing boundary.
+      if (raw.company && raw.company !== company) { log("skip", raw.issue ?? raw.task_id ?? "", `(event company ${raw.company} != ${company})`); return; }
+      const issueKey = raw.issue ?? raw.task_id ?? "";
+      const projectKey = String(issueKey).split("-")[0].toUpperCase();
+      const ownsProject = registry.projects.some((pr) => (pr.boards ?? []).some((b) => b.company === company && String(b.project_key).toUpperCase() === projectKey));
+      if (issueKey && !ownsProject) { log("skip", issueKey, `(project ${projectKey} is not registered for ${company}/${onlyRepo ?? repo})`); return; }
+      const p = { ...raw, company };
       if (p.enterprise && company in myJira && p.assignee_account !== myJira[company]) { log("skip", p.issue ?? "", "(assigned to someone else)"); return; }
       if (p.rules_only) { applyJiraRules(p).catch((e) => log("rules failed:", e.message)); return; }
       L.writeStatus(homedir(), { companies: { [company]: { last_event_at: new Date().toISOString(), last_event: `${p.event} ${p.issue ?? ""}`.trim() } } });
