@@ -448,11 +448,7 @@ export function gitHost(repo, o, exec = (c, a) => execFileSync(c, a, { cwd: repo
   }
   r.msg.push(`PR ${r.url}`);
   if (o.merge) {
-    // Develop is the integration boundary for NAIL. Keep its history clean:
-    // feature/WIP commits are squashed only at the merge handoff, never during
-    // Coding or QC and never on unrelated target branches.
-    const mergeMode = String(o.mergeBase ?? "").toLowerCase() === "develop" ? "--squash" : "--merge";
-    try { exec("gh", ["pr", "merge", o.branch, mergeMode]); r.merged = true; r.msg.push(`merged into ${o.mergeBase ?? "base"} (${mergeMode === "--squash" ? "squash" : "merge"})`); }
+    try { exec("gh", ["pr", "merge", o.branch, "--merge"]); r.merged = true; r.msg.push(`merged into ${o.mergeBase ?? "base"}`); }
     catch (e) { r.msg.push(`merge NOT done (conflicts/checks?): ${String(e.message).split("\n")[0]}; not forced`); }
   }
   return r;
