@@ -142,8 +142,9 @@ export function implementationEvidence(result, commit, where = "", policy = {}) 
   const reasons = [];
   if (!summary) reasons.push("worker output is missing a summary");
   if (!policy.allow_no_commit && (!sha || /^failed:/i.test(sha))) reasons.push("no local implementation commit exists");
+  const deferred = policy.allow_missing_tests && /(?:not\s+run|skipped|not\s+performed|chưa\s+chạy)/i.test(tests);
   if (!tests && !policy.allow_missing_tests) reasons.push("build/test evidence is missing");
-  else if (failures.test(tests)) reasons.push("build/test evidence reports failure or was not run");
+  else if (failures.test(tests) && !deferred) reasons.push("build/test evidence reports failure or was not run");
   if (!location) reasons.push("implementation location/evidence is missing");
   return { ok: reasons.length === 0, reasons, commit: sha || null, summary, tests, where: location };
 }
