@@ -699,9 +699,14 @@ async function leanRun(p, na, depth = 0) {
 }
 async function leanRunInner(p, na, depth, vis) {
   const issue = na.issue ?? p.issue ?? p.task_id; const st = L.stateDir(homedir(), company); const saved = L.loadPlan(st, issue);
-  if (saved.workflow_blocked && !USER_RECOVERY_EVENTS.has(p.event)) {
+  const recoveredByReconcile = saved.workflow_blocked && p.event === "jira_startup_scan" && na.stage && na.stage !== saved.workflow_blocked.from;
+  if (saved.workflow_blocked && !USER_RECOVERY_EVENTS.has(p.event) && !recoveredByReconcile) {
     log(`lean: ${issue} waiting for user workflow action (${saved.workflow_blocked.from} -> ${saved.workflow_blocked.to})`);
     return;
+  }
+  if (recoveredByReconcile) {
+    L.savePlan(st, issue, { workflow_blocked: null });
+    log(`lean: ${issue} reconcile detected recovery (${saved.workflow_blocked.from} -> ${na.stage}); cleared workflow block`);
   }
   let iss = { key: issue, summary: na.title ?? "", description: String(na.request ?? "").slice(0, 1500), comments: [] };
   const readKey = opt("--jira-read-as") || process.env.AH_JIRA_READ_AS || issue; // dry replays may read the real issue (GET only)
