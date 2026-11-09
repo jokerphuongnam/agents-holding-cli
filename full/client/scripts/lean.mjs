@@ -351,6 +351,20 @@ export function ensureBranch(repo, branch) {
 }
 export function commitAll(repo, msg) {
   try {
+    // Some company workspaces keep product projects as nested git repositories
+    // (gitlinks) without a .gitmodules file. Commit the actual product change
+    // in the child repo first, then record its new gitlink in the parent.
+    const links = git(repo, "ls-files", "-s").split("\n")
+      .map((line) => { const m = /^(160000)\s+\S+\s+\d+\t(.+)$/.exec(line); return m?.[2]; })
+      .filter(Boolean);
+    for (const rel of links) {
+      const child = join(repo, rel);
+      if (existsSync(join(child, ".git"))) {
+        const childCommit = commitAll(child, msg);
+        if (typeof childCommit === "string" && childCommit.startsWith("failed:")) return childCommit;
+        if (childCommit) execFileSync("git", ["add", "--", rel], { cwd: repo, stdio: ["ignore", "pipe", "pipe"] });
+      }
+    }
     // Respect the repository's own ignore rules. Do not hard-code .agents or
     // any other directory: a company/task policy may explicitly allow a path
     // to be committed. For legacy tracked ignored files, check-ignore --no-index
