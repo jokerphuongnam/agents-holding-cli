@@ -489,6 +489,10 @@ async function useCtx(p) {
     const localProject = JSON.parse(readFileSync(join(repo, ".agents", "project.json"), "utf8"));
     runSettings = { ...runSettings, ...localProject, ...(localProject.git ? { squash_merge: localProject.git.squash_merge, squash_target: localProject.git.squash_target } : {}) };
   } catch {}
+  try {
+    const localCompany = JSON.parse(readFileSync(join(repo, ".agents", "company.json"), "utf8"));
+    if (localCompany.git?.branch_prefix) runSettings = { ...runSettings, branch_prefix: localCompany.git.branch_prefix };
+  } catch {}
   if (jira) {
     try {
       const fixed = await jira.meta(issue);
@@ -811,7 +815,7 @@ async function leanRunInner(p, na, depth, vis) {
       if (seg.moves[0] && !(await advance(s0, seg.moves[0]))) return;
       continue;
     }
-    const branch = `feature/${issue}`;
+    const branch = `${runSettings.branch_prefix ?? "feature/"}${issue}`;
     const host = (r) => { const steps = L.prSteps(na, seg);
       const squashTargets = Array.isArray(runSettings.squash_targets) ? runSettings.squash_targets : [runSettings.squash_target ?? "develop"];
       const squashTarget = squashTargets.some((x) => String(x).toLowerCase() === String(steps.mergeBase ?? "").toLowerCase());
