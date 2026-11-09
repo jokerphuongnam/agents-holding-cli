@@ -361,8 +361,12 @@ export function commitAll(repo, msg) {
     if (paths.length) execFileSync("git", ["add", "--", ...paths], { cwd: repo, stdio: ["ignore", "pipe", "pipe"] });
     const staged = git(repo, "diff", "--cached", "--name-only").split("\n").filter(Boolean);
     const forbidden = staged.filter((p) => /^\.agents(?:\/|$)/.test(p));
-    if (forbidden.length) throw new Error(`refusing to commit holding-managed .agents/ paths: ${forbidden.join(", ")}`);
-    if (!staged.length) return null;
+    // Agent/company metadata may be tracked by an old checkout. Never fail the
+    // product run because of it: unstage those paths and leave their worktree
+    // changes untouched. Only eligible product changes participate in commit.
+    if (forbidden.length) execFileSync("git", ["reset", "-q", "--", ...forbidden], { cwd: repo, stdio: ["ignore", "pipe", "pipe"] });
+    const eligible = git(repo, "diff", "--cached", "--name-only").split("\n").filter(Boolean);
+    if (!eligible.length) return null;
     git(repo, "commit", "-q", "-m", msg); return git(repo, "rev-parse", "--short", "HEAD"); } catch (e) { return "failed: " + e.message.split("\n")[0]; }
 }
 export const stateDir = (home, company) => { const d = join(home, ".config/agents-holding/state", company); mkdirSync(d, { recursive: true, mode: 0o700 }); return d; };
