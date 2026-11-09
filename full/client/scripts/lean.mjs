@@ -81,7 +81,7 @@ export const codeMaxTurns = (env = process.env) => Math.max(5, Number(env.AH_COD
 export const CODE_TOOLS = "Bash,read_file,search_replace,write,grep,list_dir";
 export const TECH_TOOLS = "read_file,grep,list_dir"; // Pre Coding: read-only, a few turns max, cheap model
 export const TEXT_SCHEMA = { type: "object", properties: { plan: { type: "string" }, question: { type: "string" } } };
-export const CODE_SCHEMA = { type: "object", properties: { summary: { type: "string" }, tests: { type: "string" }, commit_message: { type: "string" }, commit: { type: "string" }, where: { type: "string" }, question: { type: "string" } }, required: ["summary"] };
+export const CODE_SCHEMA = { type: "object", properties: { summary: { type: "string" }, tests: { type: "string" }, commit_message: { type: "string" }, commit: { type: "string" }, where: { type: "string" }, changed_files: { type: "array", items: { type: "string" } }, implementation_evidence: { type: "string" }, question: { type: "string" } }, required: ["summary"] };
 export const TECH_SCHEMA = { type: "object", properties: { tech_plan: { type: "string" }, developer: { type: "string" }, question: { type: "string" } } };
 
 // ---------- pure helpers (unit-tested in tests/lean_test.mjs) ----------
@@ -141,7 +141,9 @@ export function implementationEvidence(result, commit, where = "", policy = {}) 
   const failures = /(?:^|\b)(?:fail(?:ed|ure)?|error|exception|not\s+run|skipped|timeout|timed\s*out|no\s+changes?)(?:\b|$)/i;
   const reasons = [];
   if (!summary) reasons.push("worker output is missing a summary");
-  if (!policy.allow_no_commit && (!sha || /^failed:/i.test(sha))) reasons.push("no local implementation commit exists");
+  const files = Array.isArray(r.changed_files) ? r.changed_files.filter((x) => String(x).trim()) : [];
+  const evidence = String(r.implementation_evidence ?? "").trim();
+  if (!policy.allow_no_commit && (!sha || /^failed:/i.test(sha)) && !files.length && !evidence) reasons.push("no implementation change evidence exists (commit or changed files required)");
   const deferred = policy.allow_missing_tests && /(?:not\s+run|skipped|not\s+performed|chưa\s+chạy)/i.test(tests);
   if (!tests && !policy.allow_missing_tests) reasons.push("build/test evidence is missing");
   else if (failures.test(tests) && !deferred) reasons.push("build/test evidence reports failure or was not run");
@@ -170,7 +172,7 @@ export function codePrompt(iss, o = {}) {
     `${o.review ? "Change only what the feedback asks" : "Implement it in this repo with minimal changes"}${o.qc ? "; then run the cheapest relevant check (build/tests) and fix failures" : "; do not run tests/builds (QC runs them by script)"}.`,
     `${o.review ? "This is a review follow-up: inspect the existing implementation and apply only the requested review changes. If no file change is needed, report that clearly and do not create a fake commit." : "This is an implementation run, not a planning/review-only run: inspect the named files, make the required code/config changes in the checked-out repo, verify the diff, and create a local commit when the task requires code. Do not stop after describing a plan."} Do not push, create a PR, merge, or touch Jira (the workflow scripts handle those actions). If the task is documentation/config-only, commit only the required tracked changes.`,
     "Do not return a tech_plan, plan, or implementation proposal from Coding. The final JSON must describe work already performed: summary of files changed, local commit SHA/message, and checks/results. A plan-only response is invalid and will be retried.",
-    `Finish with JSON: {"summary": "what changed", ${o.qc ? "\"tests\": \"checks run + result\", " : ""}\"commit_message\": \"one line\", \"commit\": \"local SHA\", \"where\": \"exact changed paths\"}.`].filter(Boolean).join("\n\n");
+    `Finish with JSON: {"summary": "what changed", ${o.qc ? "\"tests\": \"checks run + result\", " : ""}\"commit_message\": \"one line or empty if no commit is appropriate\", \"commit\": \"local SHA or empty\", \"changed_files\": ["exact changed paths, including ignored files"], \"implementation_evidence\": \"before/after hash or concrete change evidence\", \"where\": \"exact paths\"}.`].filter(Boolean).join("\n\n");
 }
 export const TECH_SYSTEM = "You are the tech lead. You write short technical plans and pick the developer. You never write code. Reply with JSON only.";
 /** Pre Coding prompt: tech plan only (no code), with inline file excerpts so one tool-less turn is enough, and the developer roles to pick from. */
