@@ -342,6 +342,15 @@ export function jiraClient(cfg, { dry, log }) {
       if (dry) return log(`JIRA (dry): comment ${key} "${text.slice(0, 160).replace(/\n/g, " ")}${text.length > 160 ? "…" : ""}"`);
       await req("POST", `/issue/${encodeURIComponent(key)}/comment`, { body: toAdf(text) }); log(`JIRA: commented ${key}`);
     },
+    async transition(key, status, { side = "unknown" } = {}) {
+      if (dry) return log(`JIRA (dry): transition ${key} -> ${status} (${side})`);
+      const current = await req("GET", `/issue/${encodeURIComponent(key)}?fields=status`);
+      if (String(current?.fields?.status?.name ?? "").toLowerCase() === String(status).toLowerCase()) return { skipped: true, status };
+      const ts = await req("GET", `/issue/${encodeURIComponent(key)}/transitions`);
+      const hit = (ts?.transitions ?? []).find((x) => String(x.to?.name ?? "").toLowerCase() === String(status).toLowerCase());
+      if (!hit) throw new Error(`no Jira transition to ${status} for ${key}`);
+      await req("POST", `/issue/${encodeURIComponent(key)}/transitions`, { transition: { id: hit.id } }); log(`JIRA: transitioned ${key} -> ${status} (${side})`); return { ok: true, status };
+    },
   };
 }
 export function git(repo, ...a) { return execFileSync("git", a, { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim(); }

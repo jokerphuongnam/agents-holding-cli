@@ -20,6 +20,7 @@ import * as POL from "./policy.mjs";
 import * as XT from "./crossteam.mjs";
 import { client as jiraRaw } from "./jira.mjs";
 import * as JR from "./jira-rules.mjs";
+import * as ME from "./mirror-executor.mjs";
 import { atlassianToken } from "./attach.mjs";
 import { readFileSync as readFileSync_AH } from "node:fs";
 const AH_CLIENT_VERSION = (() => { try { return readFileSync_AH(new URL("./VERSION", import.meta.url), "utf8").trim(); } catch { return "0"; } })();
@@ -253,6 +254,37 @@ if (!jira) log("Jira client: not ready (holding jira connect or Atlassian OAuth 
 // they post the item and exit; the answer (Jira comment, /ceo or holding inbox reply) re-triggers the task from its checkpoint.
 const commMode = {};
 const WORKFLOW_FAILURE_LABEL = "ah-workflow-failed";
+const mirrorCache = new Map();
+const mirrorSeen = new Set();
+async function mirrorSync(company, project, issue, status, updated) {
+  if (!jira) return;
+  let cfg = mirrorCache.get(company);
+  if (!cfg || Date.now() - cfg.at > 30000) {
+    try {
+      const listed = await mcp("list_jira_mirrors", { company });
+      const mirrors = listed.data ?? [];
+      const mapped = await Promise.all(mirrors.map(async (m) => {
+        try { return { ...m, tasks: (await mcp("list_jira_mirror_tasks", { company, mirror_id: m.id })).data ?? [] }; }
+        catch { return { ...m, tasks: [] }; }
+      }));
+      cfg = { at: Date.now(), mirrors: mapped };
+      mirrorCache.set(company, cfg);
+    } catch (e) { log(`mirror config unavailable for ${company}: ${e.message}`); return; }
+  }
+  for (const m of cfg.mirrors) {
+    const src = m.mirroring; const ctl = m.mirrorer;
+    if (!src || !ctl || src.project_key !== project && ctl.project_key !== project) continue;
+    const task = (m.tasks ?? []).find((t) => (t.source_issue === issue || t.control_issue === issue));
+    if (!task) continue;
+    const side = task.source_issue === issue && src.project_key === project ? "source" : task.control_issue === issue && ctl.project_key === project ? "mirror" : null;
+    if (!side) continue;
+    const executor = ME.createMirrorExecutor({ jira, seen: mirrorSeen, log, notify: async (a) => {
+      log(`mirror notification ${a.issue} -> ${a.status}`);
+      try { await mcp("inbox_post", { company, issue: a.issue, kind: "other", need: "Mirror status update", body: `Mirror ${m.id}: ${a.status}` }); } catch (e) { log(`mirror notification failed: ${e.message}`); }
+    }});
+    await executor(m, { side, issue, status, updated, source_issue: task.source_issue, control_issue: task.control_issue });
+  }
+}
 async function comms(issue, text, kind = null) {
   if (kind) {
     try { const it = await mcp("inbox_post", { company, issue, kind, need: L.INBOX_NEED[kind] ?? "needs you", body: String(text).slice(0, 8000) });
@@ -994,6 +1026,7 @@ async function reconcile(company, sinceIso) {
       const res = await jira.search(X.jqlSince(b.project_key, since), ["status", "updated", "summary", "description", "labels", "assignee", "comment"]);
       for (const x of X.replayTodo(res, seen)) {
         const f = res.find((i) => i.key === x.key)?.fields ?? {};
+        await mirrorSync(company, b.project_key, x.key, x.status, x.updated);
         const latestComment = [...(f.comment?.comments ?? [])].sort((a, z) => String(z.created ?? "").localeCompare(String(a.created ?? ""))).at(-1);
         const r = await mcp("reconcile_issue", { company, issue: x.key, status: x.status, updated: x.updated, project_key: b.project_key, summary: f.summary ?? "", description: f.description ?? "", labels: f.labels ?? [], assignee_account: f.assignee?.accountId ?? null,
           comment: latestComment ? { id: latestComment.id, body: latestComment.body, author: latestComment.author } : null });
