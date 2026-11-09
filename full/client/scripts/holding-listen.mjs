@@ -977,7 +977,10 @@ async function learnHabits(issue, readKey, staff) {
 
 // Deterministic Jira card moves (no AI): transition by target STATUS NAME, fallback stage comment. Dry: print only.
 async function jiraOps(issue) {
-  if (!listenerJira) return;
+  // Jira mirroring must still be attempted when the legacy/local credential is
+  // unavailable: atlassianToken() may have a separate OAuth account.  The old
+  // early return made the internal flow advance while Jira stayed stale.
+  if (!listenerJira && !mcpJiraFallback) return log(`JIRA: mirror skipped for ${issue}; Jira fallback disabled`);
   let ops = []; try { ops = (await mcp("jira_ops", { company, issue })).ops; } catch (e) { return log("jira_ops failed:", e.message); }
   for (const o of ops) {
     if (dryJira) { log(`JIRA (dry): ${o.notice ? `comment ${o.issue} "${o.notice}"; ` : ""}transition ${o.issue} -> ${o.to_names.join(" | ")} (else comment "${o.fallback_comment}")`); continue; }
@@ -991,10 +994,15 @@ async function jiraOps(issue) {
         authHdr = "Basic " + Buffer.from(`${jiraCfg.email}:${tok}`).toString("base64");
         base = `${jiraCfg.site.replace(/\/$/, "")}/rest/api/3`;
       } else { log(`JIRA: not connected; cannot move ${o.issue} (holding jira connect)`); continue; }
-      const api = (m, path, body) => fetch(`${base}/issue/${encodeURIComponent(o.issue)}${path}`, { method: m,
+      const api = async (m, path, body) => { const r = await fetch(`${base}/issue/${encodeURIComponent(o.issue)}${path}`, { method: m,
         headers: { Authorization: authHdr, "Content-Type": "application/json", Accept: "application/json" }, body: body && JSON.stringify(body) });
+        if (r.status === 401 || r.status === 403) throw new Error(`JIRA_AUTH_EXPIRED (${r.status})`);
+        if (!r.ok) { let detail = ""; try { detail = JSON.stringify(await r.json()); } catch {} throw new Error(`JIRA_API_${r.status}${detail ? `: ${detail}` : ""}`); }
+        return r;
+      };
       const adf = (t) => ({ body: { type: "doc", version: 1, content: [{ type: "paragraph", content: [{ type: "text", text: t }] }] } });
-      const cur = (await (await api("GET", "?fields=status")).json())?.fields?.status?.name ?? "";
+      const current = await api("GET", "?fields=status");
+      const cur = (await current.json())?.fields?.status?.name ?? "";
       if (o.to_names.some((n) => n.toLowerCase() === cur.toLowerCase())) { log(`JIRA: ${o.issue} already in ${cur}`); continue; }
       if (o.notice) await api("POST", "/comment", adf(o.notice));
       const tr = (await (await api("GET", "/transitions")).json()).transitions ?? [];
