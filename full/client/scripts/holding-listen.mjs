@@ -741,6 +741,12 @@ async function leanRunInner(p, na, depth, vis) {
           // commonly QC -> Reopened). Mark the issue as waiting instead of
           // allowing reconcile/comments to start another Coding/QC loop.
           if (/Reopened can only be entered by the user|workflow.*reject|transition.*not allowed/i.test(String(e.message))) {
+            // Keep Jira at the last valid stage even when the next recovery
+            // transition is user-only.  Previously the internal state moved
+            // to QC, the QC->Reopened request was rejected, and the board was
+            // left at the older Coding status because this path returned
+            // before the normal Jira mirror call.
+            try { await jiraOps(issue); } catch (mirrorError) { log(`JIRA mirror after blocked transition failed for ${issue}:`, mirrorError.message); }
             L.savePlan(st, issue, { workflow_blocked: { from, to, reason: String(e.message), at: new Date().toISOString() } });
             await announceWaiting(issue, { ...na, stage: from, waiting: true, steps: [String(e.message)] }, { ...p, workflow_error: `Jira blocked ${from} → ${to}. User action required: ${String(e.message)}` });
           }
