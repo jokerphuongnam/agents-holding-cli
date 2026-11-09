@@ -659,7 +659,7 @@ async function leanRunInner(p, na, depth, vis) {
     for (let i = 0; i < 2; i++) {
       try { const r = await mcp("advance", { company, task: issue, to_stage: to, listener_jira: true }); log(`lean: ${issue} ${from} -> ${r.stage}`);
         await jiraOps(issue); // move the card NOW, before the next stage's work starts (the board shows what is actually happening)
-        if (jira && r.stage !== "done") { const role = L.stageRole(na, r.stage, { developer: L.loadPlan(st, issue).developer }); if (role && vis.staffRole !== role) { vis.staffRole = role; await jira.staffLabel(issue, role, L.loadAgentCfg(homedir(), company).staff?.[role]?.jira_user || null).then((acct) => acct ? mcp("set_task_assignee", { company, task: issue, account: acct }).catch((e) => log("persist assignee failed:", e.message)) : null).catch((e) => log("Jira staff label failed:", e.message)); } } // staff:<id> = owner of the stage just entered
+        if (jira && r.stage !== "done") { const role = L.stageRole(na, r.stage, { developer: L.loadPlan(st, issue).developer }); if (role && vis.staffRole !== role) { vis.staffRole = role; await jira.staffLabel(issue, role, L.loadAgentCfg(homedir(), company).staff?.[role]?.jira_user || null).then(async (acct) => { if (!acct) return null; const cur = await jira.meta(issue).catch(() => null); if (cur?.assignee?.accountId === acct) return null; return mcp("set_task_assignee", { company, task: issue, account: acct }).catch((e) => log("persist assignee failed:", e.message)); }).catch((e) => log("Jira staff label failed:", e.message)); } } // staff:<id> = owner of the stage just entered
         X.ckptSave(st, issue, { stage: r.stage, done: [] });
         vis.gates ??= new Set();
         if (r.stage === to && L.GATE_HINTS[to] && !vis.gates.has(to)) { vis.gates.add(to); await say(false, L.gateComment(L.stageStaff(na, to), to), "gate"); } // explicit gate: how to approve / revise
@@ -679,7 +679,7 @@ async function leanRunInner(p, na, depth, vis) {
     { const ck = X.ckptLoad(st, issue); if (ck?.stage !== s0) X.ckptSave(st, issue, { stage: s0, done: [], code_done: [], running: true }); else X.ckptSave(st, issue, { running: true }); }
     if (vis.started.has(s0)) return; vis.started.add(s0);
     if (jira && !vis.labeled) { vis.labeled = true; await jira.label(issue, "add").catch((e) => log("Jira label add failed:", e.message)); }
-    if (jira && kind !== "script" && vis.staffRole !== role) { vis.staffRole = role; await jira.staffLabel(issue, role, L.loadAgentCfg(homedir(), company).staff?.[role]?.jira_user || null).then((acct) => acct ? mcp("set_task_assignee", { company, task: issue, account: acct }).catch((e) => log("persist assignee failed:", e.message)) : null).catch((e) => log("Jira staff label failed:", e.message)); }
+    if (jira && kind !== "script" && vis.staffRole !== role) { vis.staffRole = role; await jira.staffLabel(issue, role, L.loadAgentCfg(homedir(), company).staff?.[role]?.jira_user || null).then(async (acct) => { if (!acct) return null; const cur = await jira.meta(issue).catch(() => null); if (cur?.assignee?.accountId === acct) return null; return mcp("set_task_assignee", { company, task: issue, account: acct }).catch((e) => log("persist assignee failed:", e.message)); }).catch((e) => log("Jira staff label failed:", e.message)); }
     if (kind !== "script" && !(kind === "code" && na.review_feedback)) await say(false, L.startedComment(vis.staff, s0, L.staffWhy(na, s0, { kind, developer: dev0 }))); // review: the "back to Coding" comment says it
     const ck = L.loadPlan(st, issue);
     if (!ck[`work_checklist_${s0}`]) {
@@ -783,7 +783,16 @@ Jira: ${issue}` });
       let r = null;
       if (steps.length === 1) r = await codeOnce(s0, { techPlan: sv.tech_plan, feedback: review ? na.review_feedback : fb, review, baselines, selfCheck, who, dev, host: host1 });
       else { // sub-steps: one WIP commit each on feature/<KEY>, checkpoint + progress note after each; a rerun skips finished steps
-        const ck = X.ckptLoad(st, issue) ?? {}, done = ck.stage === s0 && (ck.running || ck.failed) ? [...(ck.code_done ?? [])] : [];
+        const ck = X.ckptLoad(st, issue) ?? {};
+        let done = ck.stage === s0 && (ck.running || ck.failed) ? [...(ck.code_done ?? [])] : [];
+        // A stale checkpoint can claim every sub-step is done without a
+        // durable implementation commit (for example after a worker crash).
+        // Never enter the evidence gate in that state: restart Coding at step 1.
+        if (done.length >= steps.length && !sv.commit && !ck.last_commit) {
+          log(`lean: ${issue} coding checkpoint ${done.length}/${steps.length} has no commit; resetting to sub-step 1/${steps.length}`);
+          done = [];
+          X.ckptSave(st, issue, { stage: s0, code_done: [], last_commit: null, failed: null, running: true });
+        }
         if (done.length) log(`lean: ${issue} coding: resume at sub-step ${done.length + 1}/${steps.length}`);
         const parts = [];
         for (let i = 0; i < steps.length; i++) {
