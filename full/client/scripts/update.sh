@@ -52,6 +52,18 @@ ah_refresh_package() {
   endpoint="https://api.github.com/repos/jokerphuongnam/agents-holding-cli/releases/latest"
   [ "$tag" != latest ] && endpoint="https://api.github.com/repos/jokerphuongnam/agents-holding-cli/releases/tags/$tag"
   asset_url="$(curl -fsSL -H 'Accept: application/vnd.github+json' "$endpoint" 2>/dev/null | awk -F'"' '$2=="browser_download_url" && $4 ~ /agents-holding-cli-.*\.tar\.gz$/ {print $4; exit}')" || true
+  # Do not trust GitHub's `latest` pointer: older numeric releases may remain
+  # marked latest. Always compare against the newest non-future tag when Git is
+  # available, then download that exact release asset.
+  if command -v git >/dev/null 2>&1; then
+    today="$(date -u +%Y%m%d)"
+    newest="$(git ls-remote --tags --refs "$url" 2>/dev/null | awk -F/ -v today="$today" '$NF ~ /^(v)?[0-9]{10}$/ {v=$NF; sub(/^v/,"",v); if (substr(v,1,8) <= today) print v}' | sort -n | tail -1)"
+    if [ -n "$newest" ] && { [ "$tag" = latest ] || [ "$newest" -gt "${tag#v}" ] 2>/dev/null; }; then
+      tag="$newest"
+      asset_url="https://github.com/jokerphuongnam/agents-holding-cli/releases/download/$tag/agents-holding-cli-$tag.tar.gz"
+      echo "   resolved newest non-future tag from Git: $tag"
+    fi
+  fi
   # GitHub's unauthenticated API is rate-limited. Resolve a published tag
   # directly instead of treating a 403 as "no release". Ignore future-dated
   # tags so a clock/build mistake cannot make clients jump into the future.
