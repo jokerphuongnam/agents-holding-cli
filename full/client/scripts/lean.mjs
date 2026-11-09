@@ -142,7 +142,7 @@ export function implementationEvidence(result, commit, where = "", policy = {}) 
   const reasons = [];
   if (!summary) reasons.push("worker output is missing a summary");
   if (!policy.allow_no_commit && (!sha || /^failed:/i.test(sha))) reasons.push("no local implementation commit exists");
-  if (!tests) reasons.push("build/test evidence is missing");
+  if (!tests && !policy.allow_missing_tests) reasons.push("build/test evidence is missing");
   else if (failures.test(tests)) reasons.push("build/test evidence reports failure or was not run");
   if (!location) reasons.push("implementation location/evidence is missing");
   return { ok: reasons.length === 0, reasons, commit: sha || null, summary, tests, where: location };

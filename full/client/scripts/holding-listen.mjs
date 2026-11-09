@@ -794,10 +794,13 @@ Jira: ${issue}` });
           parts.push(ri); done.push(i); X.ckptSave(st, issue, { stage: s0, code_done: done, last_commit: ri.commit ?? null });
           if (!last) await say(who, X.progressNote(L.getLang(), L.stageTitle(s0), steps, done));
         }
-        r = parts.length ? { ...parts.at(-1), summary: parts.map((x) => x.summary).filter(Boolean).join("\n"), tests: parts.map((x) => x.tests).filter(Boolean).join("\n") } : { summary: sv.summary ?? "resumed: all sub-steps were already committed", where: sv.where ?? `Branch ${branch}` };
+        r = parts.length
+          ? { ...parts.at(-1), summary: parts.map((x) => x.summary).filter(Boolean).join("\n"), tests: parts.map((x) => x.tests).filter(Boolean).join("\n") }
+          : { summary: sv.summary ?? "resumed: all sub-steps were already committed", tests: sv.tests ?? "", commit: sv.commit ?? ck.last_commit ?? null, where: sv.where ?? `Branch ${branch}` };
       }
       if (!r) return;
-      const evidence = L.implementationEvidence(r, r.commit, r.where, na.implementation_policy ?? na.workflow_policy?.implementation ?? {});
+      const evidencePolicy = { ...(na.implementation_policy ?? na.workflow_policy?.implementation ?? {}), allow_missing_tests: qcAhead };
+      const evidence = L.implementationEvidence(r, r.commit, r.where, evidencePolicy);
       if (!evidence.ok) { const e = new Error(`implementation evidence gate failed: ${evidence.reasons.join("; ")}`); e.command = "coding worker + local commit + required build/test"; e.agentCode = 1; e.agentOut = JSON.stringify({ summary: r.summary ?? "", tests: r.tests ?? "", commit: r.commit ?? null, where: r.where ?? "", reasons: evidence.reasons }); throw e; }
       L.savePlan(st, issue, { tech_plan: sv.tech_plan ?? r.tech_plan, summary: r.summary, tests: r.tests, commit: r.commit, branch, repos: runRepos, developer: dev, qc_baseline: baselines, where: r.where, implementation_evidence: evidence });
       await say(who, [review ? "CODE (review feedback)" : "CODE", !sv.tech_plan && r.tech_plan && `Tech plan:\n${r.tech_plan}`, `Summary: ${r.summary ?? ""}`, r.tests && `Checks: ${r.tests}`, r.where].filter(Boolean).join("\n"));
