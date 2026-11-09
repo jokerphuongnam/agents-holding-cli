@@ -168,7 +168,7 @@ export function codePrompt(iss, o = {}) {
     o.preexisting?.length && `Already failing BEFORE your change (QC baseline): ${o.preexisting.join(", ")}. Ignore these: do not run, investigate or fix them; QC only blames new failures.`,
     !o.techPlan && o.hints?.length && `Likely files: ${o.hints.join(", ")}`,
     `${o.review ? "Change only what the feedback asks" : "Implement it in this repo with minimal changes"}${o.qc ? "; then run the cheapest relevant check (build/tests) and fix failures" : "; do not run tests/builds (QC runs them by script)"}.`,
-    "Do not run git commit/branch/push and do not touch Jira (scripts do that).",
+    `${o.review ? "This is a review follow-up: inspect the existing implementation and apply only the requested review changes. If no file change is needed, report that clearly and do not create a fake commit." : "This is an implementation run, not a planning/review-only run: inspect the named files, make the required code/config changes in the checked-out repo, verify the diff, and create a local commit when the task requires code. Do not stop after describing a plan."} Do not push, create a PR, merge, or touch Jira (the workflow scripts handle those actions). If the task is documentation/config-only, commit only the required tracked changes.`,
     `Finish with JSON: {${o.techPlan ? "" : "\"tech_plan\": \"files+steps, 3-6 lines\", "}\"summary\": \"what changed\", ${o.qc ? "\"tests\": \"checks run + result\", " : ""}\"commit_message\": \"one line\"}.`].filter(Boolean).join("\n\n");
 }
 export const TECH_SYSTEM = "You are the tech lead. You write short technical plans and pick the developer. You never write code. Reply with JSON only.";
