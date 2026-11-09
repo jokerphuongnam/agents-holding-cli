@@ -1113,6 +1113,18 @@ async function reconcile(company, sinceIso) {
         X.replayMark(st, [X.replayKey(x.key, x.status, x.updated)]); n++;
         await applyJiraRules({ company, issue: x.key, event: x.status?.toLowerCase() === "done" ? "issue_transitioned" : "label_added" });
         log(`reconcile ${x.key} "${x.status}": ${r.duplicate ? "already applied" : r.replayed ? `replayed (${r.event ?? "?"}, ${r.stage_before ?? "new"} -> ${r.stage_after ?? "?"})` : `skipped (${r.reason ?? "?"})`}`);
+        // A user recovery move (QC -> Reopened) can be missed while the
+        // listener/server is offline. reconcile_issue repairs the server
+        // checkpoint, but that alone does not emit a realtime next_action.
+        // Re-wake the local runner exactly once for the replayed Jira snapshot;
+        // replayMark above makes later sweeps idempotent and wake()'s issue lock
+        // prevents duplicate runs if a webhook arrives at the same time.
+        const recovered = /^(reopened|coding)$/i.test(String(x.status ?? ""))
+          && String(r.stage_after ?? "").toLowerCase() === "coding";
+        if (!r.duplicate && r.replayed && recovered) {
+          log(`reconcile ${x.key}: dispatching recovered Coding action`);
+          wake({ company, issue: x.key, event: "jira_startup_scan", stage: "coding", updated: x.updated });
+        }
       }
     }
     log(`reconcile ${company}: ${n} change(s) since ${since}`);
