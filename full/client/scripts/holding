@@ -38,7 +38,7 @@ usage: holding <noun> <verb> [args]   (chat: /<noun> <verb> ...; no verb = list/
   company staff move <role> <from> <to> | staff assign <role> <c> | link <c> <KEY> | unlink <c> | config [c] [set|unset <key> <value>] | config defaults
   company migrate <local company folder> [--parent P] [--dry-run]   (bring an older local company into holding; originals kept)
   company set lang <code|auto> | communication [jira+chat|chat] | auto-pr on|off | convention "<text>" | agent [grok|claude|codex] [--model M]
-  listener start [--repo DIR] | stop | status [--server] | logs [-f] | autostart on|off | run [--repo DIR] [--once]
+  listener start [--repo DIR] | restart [--repo DIR] | stop | status [--server] | logs [-f] | autostart on|off | run [--repo DIR] [--once]
   jira connect [--switch] | status | logout   (OAuth in Keychain; legacy: jira connect <site> <email>) | setup-workflow <site> <email> <KEY> [--dry-run] | connect-events '<setup_url>' | sources
   jira list [column] | show KEY | board | add "title" [desc] | move KEY <column> | comment KEY "text" | edit KEY [--description-file FILE] [--label-add L] [--label-remove L] [--assignee ACCOUNT_ID] [--fields-json JSON]   [--project KEY] | listen
   inbox list [--all] [KEY] | inbox reply <KEY|item> <answer> | inbox dismiss <item|KEY>
@@ -152,6 +152,7 @@ case "$noun" in
   listener) case "$verb" in
     run) exec node "$here/holding-listen.mjs" "$@" ;;
     status) case " $* " in *" --server "*) srv "$@" ;; esac; exec bash "$here/launchd/listener.sh" status ;;
+    restart) bash "$here/launchd/listener.sh" stop --preserve-autostart; exec bash "$here/launchd/listener.sh" start "$@" ;;
     ""|start|stop|logs|autostart) exec bash "$here/launchd/listener.sh" ${verb:-status} "$@" ;;
     *) usage ;; esac ;;
   jira) case "$verb" in
