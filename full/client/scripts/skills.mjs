@@ -96,7 +96,16 @@ export async function uploadSkill(s, { company, dry = false, key, device } = {})
   const payload = { company: company || activeCompany(), name: s.name, files: b.files, manifest_hash: signed.manifest_hash, nonce: signed.nonce, ts: signed.ts, sig: signed.sig, excluded_count: b.excluded.length };
   if (!payload.company) throw new Error("no company: holding company use <slug> or AH_COMPANY");
   if (dry) return { name: s.name, status: "dry-run", files: b.files.length, excluded: b.excluded.length, company: payload.company };
+  const cacheFile = join(process.env.HOME || homedir(), ".config/agents-holding/cache", "public-skills.json");
+  let cache = {}; try { cache = JSON.parse(readFileSync(cacheFile, "utf8")); } catch {}
+  const cacheKey = `${payload.company}/${s.name}`;
+  if (cache[cacheKey]?.manifest_hash === signed.manifest_hash) {
+    return { name: s.name, status: "unchanged", manifest_hash: signed.manifest_hash, company: payload.company };
+  }
   const r = await mcpCall("skill_crawl_upload", payload, { key: k, device: dev });
+  mkdirSync(join(process.env.HOME || homedir(), ".config/agents-holding/cache"), { recursive: true, mode: 0o700 });
+  cache[cacheKey] = { manifest_hash: signed.manifest_hash, synced_at: new Date().toISOString() };
+  writeFileSync(cacheFile, JSON.stringify(cache, null, 2) + "\n", { mode: 0o600 });
   return { name: s.name, status: "uploaded", files: b.files.length, excluded: b.excluded.length, server: r };
 }
 /** Crawl all public skills (holding skill sync + Jira Listener periodic crawl). */

@@ -12,7 +12,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { homedir, hostname } from "node:os";
 import { join, resolve } from "node:path";
 import * as L from "./lean.mjs";
-import { enrichBriefWithPackSkills } from "./pack-skills.mjs";
+import { enrichBriefWithPackSkills, enrichBriefWithLocalSkills } from "./pack-skills.mjs";
 import * as P from "./providers/index.mjs";
 import * as R from "./registry.mjs";
 import * as X from "./resilience.mjs";
@@ -647,7 +647,7 @@ async function leanRunInner(p, na, depth, vis) {
   const brief = async (role) => { // persona + 2 relevant own skills, summaries only (~1.5k tokens max), once per role per run
     if (!role || process.env.AH_BRIEF === "0") return null;
     if (!(role in vis.briefs)) { try { vis.briefs[role] = await mcp("staff_brief", { company, role, text: `${iss.summary}\n${iss.description}`.slice(0, 2000), max_skills: 2 }); } catch (e) { log(`staff_brief ${role} failed: ${e.message}`); vis.briefs[role] = null; } }
-    return enrichBriefWithPackSkills(company, role, vis.briefs[role]);
+    return enrichBriefWithLocalSkills(company, role, enrichBriefWithPackSkills(company, role, vis.briefs[role]));
   };
   const say = async (staff, t0, kind = null) => { const t = staff === false ? t0 : `${L.staffTag(staff)} ${t0}`; // every comment: [agent-holding] [<staff name>] ...
     if (dryJira && !jira) return log(`JIRA (dry): comment ${issue} "${t.slice(0, 160).replace(/\n/g, " ")}"`);

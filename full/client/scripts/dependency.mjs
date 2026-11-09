@@ -18,7 +18,7 @@ import { pathToFileURL } from "node:url";
 import { join, dirname, basename, resolve, relative } from "node:path";
 import { spawnSync, execFileSync } from "node:child_process";
 import { resolveCompany as _resolveCompany } from "./company.mjs";
-import { detachPackAttachments } from "./pack-skills.mjs";
+import { detachPackAttachments, createPrivatePackMappings } from "./pack-skills.mjs";
 
 const HOME = process.env.HOME || homedir();
 const PACKS = (...p) => join(HOME, ".agents-holding", "packs", ...p);
@@ -404,7 +404,7 @@ function companiesUsing(name) {
   return hits;
 }
 
-function cmdAdd(link) {
+function cmdAdd(link, { privateSkill = false } = {}) {
   if (!link) { usage(); process.exit(2); }
   const company = companyOf();
   if (!company) throw new Error("no company resolved — pass --company <slug> or run inside a company workspace");
@@ -429,9 +429,11 @@ function cmdAdd(link) {
   idx.packs[name] = { path: dest, url: url || link, updated_at: new Date().toISOString() };
   saveIndex(idx);
   const { entries, exposed } = exposePack(name, dest);
+  const mappings = privateSkill ? createPrivatePackMappings(company, name, entries) : [];
   console.log(`status\tok\t${reused ? "reused" : "cloned"}\tpack=${name}\tcompany=${company}`);
   console.log(`path\t${dest}`);
   console.log(`skills\t${entries.length}\texposed\t${exposed.length}`);
+  if (privateSkill) console.log(`private-mappings\t${mappings.length}\tattached=*\tcontent=pointer-only`);
   console.log(`consent\tpack scripts need: holding dependency consent ${name}`);
   console.log(`note\tproject git is untouched; only a company reference was stored`);
 }
@@ -575,7 +577,7 @@ function cmdExpose(name) {
 
 function usage() {
   console.log(`usage: holding dependency <verb>
-  add <link>              clone pack to ~/.agents-holding/packs/<name>, store company ref, expose skills
+  add <link> [--private]  clone pack, store company ref, expose skills; --private creates local pointer mappings and auto-attaches them company-wide
   list                    company refs + packs on disk
   update <name|link>      pull --rebase upstream (local learning commits stay)
   remove <name|link>      drop company ref (--purge deletes unused checkout)
@@ -594,6 +596,8 @@ if (asJson) argv.splice(jsonIdx, 1);
 const purge = argv.includes("--purge");
 const revoke = argv.includes("--revoke");
 const cleaned = argv.filter((a) => a !== "--purge" && a !== "--revoke");
+const privateSkill = cleaned.includes("--private");
+if (privateSkill) cleaned.splice(cleaned.indexOf("--private"), 1);
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
 const verb = (cleaned[0] || "list").toLowerCase();
 const rest = cleaned.slice(1);
@@ -601,7 +605,7 @@ const rest = cleaned.slice(1);
 try {
   switch (verb) {
     case "add":
-      cmdAdd(rest[0]);
+      cmdAdd(rest[0], { privateSkill });
       break;
     case "list":
     case "":

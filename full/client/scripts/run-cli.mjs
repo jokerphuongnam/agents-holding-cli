@@ -9,6 +9,7 @@ import * as L from "./lean.mjs";
 import { runStaff, runBatch } from "./provider-run.mjs";
 import * as S from "./subagent.mjs";
 import { resolveCompany, localCompanies } from "./company.mjs";
+import { enrichBriefWithPackSkills, enrichBriefWithLocalSkills, packSkillsCover } from "./pack-skills.mjs";
 import { readFileSync as readFileSync_AH } from "node:fs";
 const AH_CLIENT_VERSION = (() => { try { return readFileSync_AH(new URL("./VERSION", import.meta.url), "utf8").trim(); } catch { return "0"; } })();
 const a = process.argv.slice(2), flag = (n) => a.includes(n), opt = (n) => { const i = a.indexOf(n); return i >= 0 ? a[i + 1] : undefined; };
@@ -51,6 +52,7 @@ if (flag("--batch")) { const parts = task.split(";;").map((x) => x.trim()).filte
   rs.forEach((x, n) => console.log(`${n + 1}. ${S.renderShort(x)}`)); process.exit(rs.some((x) => x.status === "blocked") ? 1 : 0); }
 let b = await mcp("staff_brief", { company, role: staff, text: task, max_skills: 2 }).catch(() => null);
 b = enrichBriefWithPackSkills(company, staff, b);
+b = enrichBriefWithLocalSkills(company, staff, b);
 function repoFor(co) { const here = process.cwd(); try { const c = localCompanies().find((x) => x.company === co); const rs = c?.repos ?? []; if (!rs.length || rs.some((r) => here === r || here.startsWith(r + "/"))) return here; return rs[0]; } catch { return here; } }
 const r = await runStaff({ company, role: staff, kind: code ? "code" : "text", noTools: !code, cwd: repoFor(company),
   schema: code ? undefined : { type: "object", properties: { summary: { type: "string" }, steps: { type: "array", items: { type: "string" } } }, required: ["summary", "steps"] },

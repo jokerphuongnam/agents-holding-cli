@@ -7,15 +7,19 @@
  */
 import {
   existsSync, mkdirSync, readFileSync, writeFileSync,
+  readdirSync, statSync,
 } from "node:fs";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
+import { createHash } from "node:crypto";
 import { resolveCompany as _resolveCompany } from "./company.mjs";
 
 const HOME = process.env.HOME || homedir();
 const PACKS = (...p) => join(HOME, ".agents-holding", "packs", ...p);
 const STATE = (...p) => join(HOME, ".config", "agents-holding", "state", ...p);
 const LIB = (...p) => join(HOME, ".agents-holding", "skills", "library", ...p);
+const LOCAL = (...p) => join(HOME, ".agents-holding", "skills", ...p);
+const LOCAL_CACHE = (...p) => join(HOME, ".config", "agents-holding", "cache", ...p);
 
 function resolveCompany(argv = process.argv.slice(2)) {
   try {
@@ -190,7 +194,7 @@ export function detachPackAttachments(company, packName) {
 }
 
 export function attachmentsForStaff(company, staff) {
-  return loadAttachments(company).filter((a) => a.staff === staff);
+  return loadAttachments(company).filter((a) => a.staff === staff || a.staff === "*");
 }
 
 function squash(t, n) {
@@ -238,6 +242,68 @@ export function enrichBriefWithPackSkills(company, role, brief) {
     base.skills.push({ id, summary: readPackSkillSummary(a) });
   }
   return base;
+}
+
+function localSkillFiles() {
+  const out = [];
+  for (const vis of ["public", "private"]) {
+    const root = LOCAL(vis);
+    if (!existsSync(root)) continue;
+    for (const name of readdirSync(root)) {
+      const p = join(root, name, "SKILL.md");
+      if (existsSync(p) && statSync(p).isFile()) out.push({ name, vis, path: p });
+    }
+  }
+  return out;
+}
+
+function localSkillSummary(path) {
+  let md = "";
+  try { md = readFileSync(path, "utf8"); } catch { return null; }
+  const hash = createHash("sha256").update(md).digest("hex");
+  const fm = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/.exec(md);
+  const desc = fm?.[1]?.match(/^description:\s*(.*)$/m)?.[1]?.trim().replace(/^['"]|['"]$/g, "") || "";
+  const body = fm ? fm[2] : md;
+  return { hash, summary: squash(desc ? `${desc}\n${body}` : body, 1400) };
+}
+
+/** Inject local skills; private content never leaves this machine. */
+export function enrichBriefWithLocalSkills(company, role, brief) {
+  const base = brief && typeof brief === "object"
+    ? { ...brief, skills: [...(brief.skills || [])] }
+    : { role, persona: null, skills: [] };
+  const cachePath = LOCAL_CACHE(company || "_global", "skills.json");
+  const cache = readJson(cachePath, {});
+  let changed = false;
+  for (const s of localSkillFiles()) {
+    const x = localSkillSummary(s.path);
+    if (!x) continue;
+    const key = `${s.vis}/${s.name}`;
+    if (cache[key]?.hash !== x.hash) { cache[key] = { hash: x.hash, summary: x.summary, updated_at: new Date().toISOString() }; changed = true; }
+    const id = `local/${s.vis}/${s.name}`;
+    if (!base.skills.some((v) => v.id === id)) base.skills.push({ id, visibility: s.vis, summary: cache[key].summary });
+  }
+  if (changed) writeJson(cachePath, cache);
+  return base;
+}
+
+/** Create pointer skills for a dependency without copying its repository. */
+export function createPrivatePackMappings(company, pack, entries) {
+  const mappings = [];
+  for (const e of (entries || []).filter((x) => x.kind === "skill")) {
+    const slug = `ah-pack-${pack}-${e.id}`;
+    const dir = LOCAL("private", slug);
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const md = `---\nname: ${slug}\ndescription: ${JSON.stringify(`[private mapping] ${e.description || e.id} from dependency ${pack}`)}\nversion: 1\nvisibility: private\nsource_pack: ${pack}\nsource_entry: ${e.rel || ""}\n---\n# Private dependency mapping\n\nUse this mapped skill only when relevant. Dependency checkout: \`${PACKS(pack)}\`\n\nSource entry: \`${e.rel || ""}\`\n\nInspect the source before applying it. Do not copy the whole dependency into this skill directory or run dependency scripts without explicit consent.\n`;
+    const path = join(dir, "SKILL.md");
+    if (!existsSync(path) || readFileSync(path, "utf8") !== md) writeFileSync(path, md, { mode: 0o600 });
+    mappings.push({ staff: "*", pack, skill: e.id, ref: `${pack}/${e.id}`, source: "private-mapping", updated_at: new Date().toISOString() });
+  }
+  if (company && mappings.length) {
+    const current = loadAttachments(company).filter((a) => !(a.pack === pack && a.source === "private-mapping"));
+    saveAttachments(company, [...current, ...mappings]);
+  }
+  return mappings;
 }
 
 /** True when every listed skill id is covered by a pack attachment for this staff. */
