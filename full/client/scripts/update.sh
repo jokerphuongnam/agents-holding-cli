@@ -128,6 +128,13 @@ echo "   package install: downloading latest published agents-holding-cli releas
 ah_refresh_package || true
 echo "   now $(ver_raw)"
 
+# Keep an already-installed native Jira Listener aligned with the latest
+# public release. The listener is optional; missing platform assets must not
+# make the CLI update fail.
+if [ -x "$HOME/.agents-holding/bin/agents-holding-listener" ] && [ -x "$here/install-rust-listener.sh" ]; then
+  bash "$here/install-rust-listener.sh" >/dev/null 2>&1 || echo "   native Jira Listener update skipped (asset unavailable)"
+fi
+
 echo "2/4 native agent configs + sandbox profiles"
 for co in $(ls "$HOME/.config/agents-holding/state" 2>/dev/null); do
   for role in $(node -e 'try{const c=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(Object.keys(c.staff||{}).join(" "))}catch{}' "$HOME/.config/agents-holding/state/$co/policy.json" 2>/dev/null); do
