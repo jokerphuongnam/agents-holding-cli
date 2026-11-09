@@ -213,11 +213,16 @@ setTimeout(() => { crawlSkillsForCompanies().catch((e) => log("skill-crawl faile
 
 
 // Clean shutdown (launchctl bootout/unload, holding listener stop, Ctrl-C, logout): tell the server right away.
+const activeWorkers = new Set();
 let stopping = false;
 for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(sig, () => { if (stopping) return; stopping = true;
   log(`\x1b[31m${sig}: Jira Listener stopping; telling the MCP server it is offline\x1b[0m`);
   L.writeStatus(homedir(), { stopped_at: new Date().toISOString(), stop_signal: sig });
-  Promise.race([heartbeat("stopped"), new Promise((r) => setTimeout(r, 4000))]).finally(() => process.exit(0)); });
+  // A listener restart must not kill an active coding/QC worker.  Stop intake,
+  // keep the child alive, and exit only after the current action has flushed its
+  // checkpoint.  Startup recovery will pick it up if the host still kills us.
+  log(activeWorkers.size ? `shutdown deferred: ${activeWorkers.size} active worker(s) still running` : "shutdown: no active workers");
+  Promise.race([heartbeat("stopped"), new Promise((r) => setTimeout(r, 4000))]).then(() => { if (!activeWorkers.size) process.exit(0); }); });
 process.on("SIGUSR1", () => heartbeat()); // `holding listener autostart on|off` pokes us to report the new state
 
 // ---- one-at-a-time runner (token saving) ----
@@ -575,6 +580,7 @@ function spawnGrok(gargs, out, issue, sid, o = {}) {
     const w = POL.wrapLaunch({ co: company, role: o.role ?? "staff", bin: o.bin ?? grokBin, args: gargs, env, cwd: repo }); // unified staff policy + OS sandbox
     const spawnOne = (wrapped) => spawn("nice", ["-n", "10", wrapped.bin, ...wrapped.args], { cwd: repo, env: wrapped.env, stdio: ["ignore", "pipe", "pipe"] });
     const ch = spawnOne(w);
+    activeWorkers.add(ch.pid);
     let lastOut = Date.now(); // claude/codex have no grok events file: stdout activity counts as progress
     let stderr = "", stdout = "";
     ch.stdout.on("data", (d) => { lastOut = Date.now(); stdout += d.toString(); appendFileSync(out, d); if (o.collect) o.collect.push(d); });
@@ -598,6 +604,7 @@ function spawnGrok(gargs, out, issue, sid, o = {}) {
       }
     }, 15000);
     ch.on("close", (code, sig) => {
+      activeWorkers.delete(ch.pid);
       clearInterval(watch);
       // macOS sandbox-exec can be present but unusable in managed/hosted terminals.
       // Retry once without the outer OS sandbox; the provider-native policy remains active
@@ -610,6 +617,7 @@ function spawnGrok(gargs, out, issue, sid, o = {}) {
         return;
       }
       res(code ?? sig);
+      if (stopping && !activeWorkers.size) process.exit(0);
     });
   });
 }
@@ -1078,7 +1086,12 @@ async function reconcile(company, sinceIso) {
     let n = 0;
     for (const b of boards) {
       const res = await jira.search(X.jqlSince(b.project_key, since), ["status", "updated", "summary", "description", "labels", "assignee", "comment"]);
-      for (const x of X.replayTodo(res, seen)) {
+      const replay = X.replayTodo(res, seen).sort((a, z) => {
+        const af = res.find((i) => i.key === a.key)?.fields ?? {}, zf = res.find((i) => i.key === z.key)?.fields ?? {};
+        const priority = (f) => (f.labels ?? []).includes("agent-working") ? 0 : 1;
+        return priority(af) - priority(zf);
+      });
+      for (const x of replay) {
         const f = res.find((i) => i.key === x.key)?.fields ?? {};
         await mirrorSync(company, b.project_key, x.key, x.status, x.updated);
         const latestComment = [...(f.comment?.comments ?? [])].sort((a, z) => String(z.created ?? "").localeCompare(String(a.created ?? ""))).at(-1);
