@@ -79,14 +79,28 @@ export async function runCommand(b, { prompt, system, context, cwd, env = proces
   const e = { ...env, ...r.env }; delete e.AGENTS_HOLDING_KEY; // staff commands never get server access
   log(`command ${r.bin} (${r.kind}) in ${r.cwd}, prompt via ${r.stdin === null ? "placeholder" : "stdin"}, context via ${r.contextVia}`);
   const buf = [], errb = [];
+  let retriedResult = null;
   const exitCode = await new Promise((res) => {
     const w = POL.wrapLaunch({ co: company, role: role ?? "staff", bin: r.bin, args: r.args, env: e, cwd: r.cwd });
     const ch = spawn(w.bin, w.args, { cwd: r.cwd, env: w.env, stdio: [r.stdin === null ? "ignore" : "pipe", "pipe", "pipe"] });
     ch.stdout.on("data", (d) => buf.push(d)); ch.stderr.on("data", (d) => errb.push(d));
     if (r.stdin !== null) { ch.stdin.on("error", () => {}); ch.stdin.end(r.stdin); }
     const t = setTimeout(() => ch.kill("SIGTERM"), timeoutMs);
-    ch.on("close", (c, s) => { clearTimeout(t); res(c ?? s); }); ch.on("error", () => { clearTimeout(t); res(127); });
+    ch.on("close", async (c, s) => {
+      clearTimeout(t);
+      const out = Buffer.concat(buf).toString("utf8"), err = Buffer.concat(errb).toString("utf8");
+      // sandbox-exec can exist but be unusable on managed macOS hosts. Some
+      // provider CLIs report that failure in their JSON and still exit 0, so
+      // retry based on the transcript, not only the exit code.
+      if (!env.AH_SANDBOX_RETRIED && /(?:Operation not permitted|sandbox_apply|sandbox-exec)/i.test(`${out}\n${err}`)) {
+        log(`command ${r.kind}: OS sandbox rejected process; retrying with provider policy`);
+        retriedResult = await runCommand(b, { prompt, system, context, cwd, env: { ...env, AH_SANDBOX: "off", AH_SANDBOX_RETRIED: "1" }, log, company, role });
+        res(retriedResult.exitCode ?? 1); return;
+      }
+      res(c ?? s);
+    }); ch.on("error", () => { clearTimeout(t); res(127); });
   });
+  if (retriedResult) return retriedResult;
   const out = Buffer.concat(buf).toString("utf8"), p = parseOut(r.kind, out, b.model);
   return { result: p.result ?? {}, usage: p.usage ?? null, error: p.error ?? (exitCode ? Buffer.concat(errb).toString("utf8").slice(-300) : null), exitCode, text: p.text ?? null };
 }
