@@ -483,6 +483,12 @@ async function useCtx(p) {
     log(`route: ${issue} feeds ${r.ask.join(",")}; no repo:<name> label/component -> asked on Jira, waiting`); return false;
   }
   runRepos = r.repos.map((x) => x.path); repo = runRepos[0]; runSettings = r.repos[0].settings ?? {};
+  // Project-local overrides are intentionally not part of the shared flow
+  // template. NAIL can opt into squash-at-develop in .agents/project.json.
+  try {
+    const localProject = JSON.parse(readFileSync(join(repo, ".agents", "project.json"), "utf8"));
+    runSettings = { ...runSettings, ...localProject, ...(localProject.git ? { squash_merge: localProject.git.squash_merge, squash_target: localProject.git.squash_target } : {}) };
+  } catch {}
   if (jira) {
     try {
       const fixed = await jira.meta(issue);
@@ -807,7 +813,7 @@ async function leanRunInner(p, na, depth, vis) {
     }
     const branch = `feature/${issue}`;
     const host = (r) => { const steps = L.prSteps(na, seg);
-      const h = L.gitHost(repo, { ...steps, autoPr: !!na.auto_pr && runSettings.auto_pr !== false && !dryJira, branch, title: `${issue}: ${iss.summary}`.slice(0, 120), body: `${r?.summary ?? ""}
+      const h = L.gitHost(repo, { ...steps, squash: steps.squash || (runSettings.squash_merge === true && String(steps.mergeBase ?? "").toLowerCase() === String(runSettings.squash_target ?? "develop").toLowerCase()), autoPr: !!na.auto_pr && runSettings.auto_pr !== false && !dryJira, branch, title: `${issue}: ${iss.summary}`.slice(0, 120), body: `${r?.summary ?? ""}
 
 Jira: ${issue}` });
       if (steps.open || steps.merge) log(`lean git host (${na.auto_pr ? "auto_pr ON" : "auto_pr OFF"}${dryJira ? ", dry: no push" : ""}): ${h.msg.join("; ")}`); return h; };
