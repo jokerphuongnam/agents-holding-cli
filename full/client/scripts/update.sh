@@ -58,13 +58,18 @@ ah_refresh_package() {
   if [ -z "$asset_url" ] && command -v git >/dev/null 2>&1; then
     today="$(date -u +%Y%m%d)"
     if [ "$tag" = latest ]; then
-      tag="$(git ls-remote --tags --refs "$url" 2>/dev/null | awk -F/ -v today="$today" '$NF ~ /^v[0-9]{10}$/ {v=substr($NF,2); if (substr(v,1,8) <= today) print v}' | sort -n | tail -1)"
+      tag="$(git ls-remote --tags --refs "$url" 2>/dev/null | awk -F/ -v today="$today" '$NF ~ /^(v)?[0-9]{10}$/ {v=$NF; sub(/^v/,"",v); if (substr(v,1,8) <= today) print v}' | sort -n | tail -1)"
       [ -n "$tag" ] && echo "   API unavailable; resolved tag directly: $tag"
     fi
-    [ -n "$tag" ] && asset_url="https://github.com/jokerphuongnam/agents-holding-cli/releases/download/v$tag/agents-holding-cli-v$tag.tar.gz"
+    [ -n "$tag" ] && asset_url="https://github.com/jokerphuongnam/agents-holding-cli/releases/download/$tag/agents-holding-cli-$tag.tar.gz"
   fi
   [ -n "$asset_url" ] || { echo "   no published client artifact found; keeping current scripts" >&2; rm -rf "$tmp"; return 1; }
-  curl -fsSL "$asset_url" -o "$tmp/client.tar.gz" || { echo "   package download failed; keeping current scripts" >&2; rm -rf "$tmp"; return 1; }
+  if ! curl -fsSL "$asset_url" -o "$tmp/client.tar.gz"; then
+    # Older releases used a v-prefixed tag and asset name; retain compatibility.
+    compat="${asset_url/$tag/v$tag}"
+    compat="${compat/agents-holding-cli-$tag.tar.gz/agents-holding-cli-v$tag.tar.gz}"
+    curl -fsSL "$compat" -o "$tmp/client.tar.gz" || { echo "   package download failed; keeping current scripts" >&2; rm -rf "$tmp"; return 1; }
+  fi
   mkdir -p "$tmp/src" && tar xzf "$tmp/client.tar.gz" -C "$tmp/src"
   mkdir -p "$dest"
   rm -rf "$tmp/stage"; mkdir -p "$tmp/stage"
