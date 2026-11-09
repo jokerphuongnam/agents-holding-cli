@@ -142,7 +142,10 @@ fi
 root="$(git -C "$here" rev-parse --show-toplevel 2>/dev/null || true)"
 echo "1/4 client scripts ($before_raw)"
 echo "   package install: downloading latest published agents-holding-cli release (${AH_VERSION:-latest})"
-ah_refresh_package || true
+if ! ah_refresh_package; then
+  echo "ERROR: client update failed; keeping client $before_raw. The published release must contain a downloadable agents-holding-cli-<version>.tar.gz artifact." >&2
+  exit 1
+fi
 echo "   now $(ver_raw)"
 
 # Keep an already-installed native Jira Listener aligned with the latest
