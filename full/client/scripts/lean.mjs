@@ -81,7 +81,7 @@ export const codeMaxTurns = (env = process.env) => Math.max(5, Number(env.AH_COD
 export const CODE_TOOLS = "Bash,read_file,search_replace,write,grep,list_dir";
 export const TECH_TOOLS = "read_file,grep,list_dir"; // Pre Coding: read-only, a few turns max, cheap model
 export const TEXT_SCHEMA = { type: "object", properties: { plan: { type: "string" }, question: { type: "string" } } };
-export const CODE_SCHEMA = { type: "object", properties: { tech_plan: { type: "string" }, summary: { type: "string" }, tests: { type: "string" }, commit_message: { type: "string" }, question: { type: "string" } }, required: ["summary"] };
+export const CODE_SCHEMA = { type: "object", properties: { summary: { type: "string" }, tests: { type: "string" }, commit_message: { type: "string" }, commit: { type: "string" }, where: { type: "string" }, question: { type: "string" } }, required: ["summary"] };
 export const TECH_SCHEMA = { type: "object", properties: { tech_plan: { type: "string" }, developer: { type: "string" }, question: { type: "string" } } };
 
 // ---------- pure helpers (unit-tested in tests/lean_test.mjs) ----------
@@ -169,7 +169,8 @@ export function codePrompt(iss, o = {}) {
     !o.techPlan && o.hints?.length && `Likely files: ${o.hints.join(", ")}`,
     `${o.review ? "Change only what the feedback asks" : "Implement it in this repo with minimal changes"}${o.qc ? "; then run the cheapest relevant check (build/tests) and fix failures" : "; do not run tests/builds (QC runs them by script)"}.`,
     `${o.review ? "This is a review follow-up: inspect the existing implementation and apply only the requested review changes. If no file change is needed, report that clearly and do not create a fake commit." : "This is an implementation run, not a planning/review-only run: inspect the named files, make the required code/config changes in the checked-out repo, verify the diff, and create a local commit when the task requires code. Do not stop after describing a plan."} Do not push, create a PR, merge, or touch Jira (the workflow scripts handle those actions). If the task is documentation/config-only, commit only the required tracked changes.`,
-    `Finish with JSON: {${o.techPlan ? "" : "\"tech_plan\": \"files+steps, 3-6 lines\", "}\"summary\": \"what changed\", ${o.qc ? "\"tests\": \"checks run + result\", " : ""}\"commit_message\": \"one line\"}.`].filter(Boolean).join("\n\n");
+    "Do not return a tech_plan, plan, or implementation proposal from Coding. The final JSON must describe work already performed: summary of files changed, local commit SHA/message, and checks/results. A plan-only response is invalid and will be retried.",
+    `Finish with JSON: {"summary": "what changed", ${o.qc ? "\"tests\": \"checks run + result\", " : ""}\"commit_message\": \"one line\", \"commit\": \"local SHA\", \"where\": \"exact changed paths\"}.`].filter(Boolean).join("\n\n");
 }
 export const TECH_SYSTEM = "You are the tech lead. You write short technical plans and pick the developer. You never write code. Reply with JSON only.";
 /** Pre Coding prompt: tech plan only (no code), with inline file excerpts so one tool-less turn is enough, and the developer roles to pick from. */
