@@ -85,7 +85,9 @@ case "$noun" in
       bash "$here/ah-cli.sh" staff add ${rest[@]+"${rest[@]}"} || exit $?; node "$here/bind-cli.mjs" "$role" ${bind[@]+"${bind[@]}"} || exit $?
       exec node "$here/policy.mjs" init "$role" ${AH_COMPANY:+--company "$AH_COMPANY"} ;;  # role defaults + review menu (AH_NONINTERACTIVE=1: defaults)
     policy) case "${1:-}" in sync|native|exec|init) exec node "$here/policy.mjs" "$@" ;; esac
-      bash "$here/ah-cli.sh" staff policy "$@" || exit $?; case "${1:-}" in set|rule|git|deny|shell) node "$here/policy.mjs" sync "${2:-*}" >/dev/null 2>&1 || true ;; esac; exit 0 ;;
+      case "${1:-}" in set|rule|deny|shell) pcmd="$1"; shift; exec node "$here/local-policy-cli.mjs" "$pcmd" "$@" ;; esac
+      case "${1:-}" in git) echo "git policy is local-only; use holding policy through the local company context"; exit 2 ;; esac
+      bash "$here/ah-cli.sh" staff policy "$@" || exit $?; exit 0 ;;
     deny) dv="${1:-list}"; [ $# -gt 0 ] && shift; denycmd "$dv" "${1:-}" "${@:2}" ;;
     presets) exec node "$here/presets.mjs" "$@" ;;
     remove) srv "$@" ;;

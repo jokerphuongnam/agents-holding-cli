@@ -38,8 +38,9 @@ export function savePolicy(home, co, role, p, meta = {}) {
 }
 /** Best effort: fetch the server policy (owner-edited) into the cache. Offline -> cache/defaults stay. */
 export async function syncPolicy(home, co, role, mcp) {
-  try { const d = await mcp("staff_policy_get", { company: co, staff: role }); savePolicy(home, co, role, d.effective, { company: d.company ?? null }); return d.effective; }
-  catch { return loadPolicy(home, co, role); }
+  // Permissions are intentionally device-local. Never hydrate them from the
+  // server: a remote/company policy must not overwrite this user's access.
+  return loadPolicy(home, co, role);
 }
 /** Free-text + git rules injected into the staff's instructions (context file). */
 export function rulesText(p) {
@@ -148,7 +149,7 @@ async function initStaff(home, co, role, mcp) {
   if (pick === 4) { const b = await ask(`Branch regex [${p.rules.git?.branch_pattern ?? C.GIT_DEFAULTS.branch_pattern}]: `), c = await ask(`Commit regex [${p.rules.git?.commit_format ?? C.GIT_DEFAULTS.commit_format}]: `), s = await ask(`PR required sections, comma separated [${(p.rules.git?.pr_required_sections ?? C.GIT_DEFAULTS.pr_required_sections).join(", ")}]: `);
     patch.rules = { ...(patch.rules ?? {}), git: { ...(b ? { branch_pattern: b } : {}), ...(c ? { commit_format: c } : {}), ...(s ? { pr_required_sections: s.split(",").map((x) => x.trim()).filter(Boolean) } : {}) } }; }
   const eff = C.mergePolicy(role, null, patch); savePolicy(home, co, role, eff);
-  if (Object.keys(patch).length && mcp) await mcp("staff_policy_set", { company: co, staff: role, op: "replace", value: patch }).catch((e) => console.error(`(saved locally; server sync failed: ${e.message})`));
+  // Staff permission, deny, scope and special-allow changes are local-only.
   console.log(Object.keys(patch).length ? `Saved. More changes: holding staff policy show ${role}` : `Defaults applied. Change later: holding staff policy show|set ${role} ...`);
 }
 // Company processes setup (company create / migrate / later: holding company process setup). Arrow-key menu; AH_NONINTERACTIVE=1 skips.
