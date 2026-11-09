@@ -524,9 +524,12 @@ function spawnGrok(gargs, out, issue, sid, o = {}) {
     const env = o.env ?? (o.home ? { ...process.env, GROK_HOME: o.home } : { ...process.env, AGENTS_HOLDING_KEY: key });
     if (o.home) delete env.AGENTS_HOLDING_KEY; // lean runs need no server access
     const w = POL.wrapLaunch({ co: company, role: o.role ?? "staff", bin: o.bin ?? grokBin, args: gargs, env, cwd: repo }); // unified staff policy + OS sandbox
-    const ch = spawn("nice", ["-n", "10", w.bin, ...w.args], { cwd: repo, env: w.env, stdio: ["ignore", "pipe", "pipe"] });
+    const spawnOne = (wrapped) => spawn("nice", ["-n", "10", wrapped.bin, ...wrapped.args], { cwd: repo, env: wrapped.env, stdio: ["ignore", "pipe", "pipe"] });
+    const ch = spawnOne(w);
     let lastOut = Date.now(); // claude/codex have no grok events file: stdout activity counts as progress
-    ch.stdout.on("data", (d) => { lastOut = Date.now(); appendFileSync(out, d); if (o.collect) o.collect.push(d); }); ch.stderr.on("data", (d) => { lastOut = Date.now(); appendFileSync(out, d); });
+    let stderr = "", stdout = "";
+    ch.stdout.on("data", (d) => { lastOut = Date.now(); stdout += d.toString(); appendFileSync(out, d); if (o.collect) o.collect.push(d); });
+    ch.stderr.on("data", (d) => { lastOut = Date.now(); stderr += d.toString(); appendFileSync(out, d); });
     const t0 = Date.now(); let warned = "";
     const events = join(sessDir(sid, o.home), "events.jsonl");
     const watch = setInterval(() => {
@@ -545,7 +548,20 @@ function spawnGrok(gargs, out, issue, sid, o = {}) {
         clearInterval(watch);
       }
     }, 15000);
-    ch.on("close", (code, sig) => { clearInterval(watch); res(code ?? sig); });
+    ch.on("close", (code, sig) => {
+      clearInterval(watch);
+      // macOS sandbox-exec can be present but unusable in managed/hosted terminals.
+      // Retry once without the outer OS sandbox; the provider-native policy remains active
+      // and this prevents a false "no commit" failure before the worker can read the repo.
+      if (code !== 0 && w.sandbox === "sandbox-exec" && Date.now() - t0 < 15000 &&
+          /(?:Operation not permitted|sandbox_apply|sandbox-exec)/i.test(`${stderr}\n${stdout}`) && !o._sandboxRetried) {
+        log(`worker ${issue}: OS sandbox rejected process; retrying once with provider policy`);
+        const env2 = { ...w.env, AH_SANDBOX: "off" };
+        spawnGrok(gargs, out, issue, sid, { ...o, env: env2, _sandboxRetried: true, collect: o.collect }).then(res);
+        return;
+      }
+      res(code ?? sig);
+    });
   });
 }
 
