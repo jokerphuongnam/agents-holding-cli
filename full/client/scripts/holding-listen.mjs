@@ -312,7 +312,7 @@ async function comms(issue, text, kind = null) {
   await jira.comment(issue, text).catch((e) => log("Jira comment failed:", e.message));
 }
 const WAITING_LABEL = "ah-awaiting-user";
-const USER_RECOVERY_EVENTS = new Set(["user_move", "user_comment", "review_feedback", "work_started", "user_approved", "staff_chosen", "staffing_choice", "staffing_retry"]);
+const USER_RECOVERY_EVENTS = new Set(["user_move", "user_comment", "review_feedback", "work_started", "user_approved", "staff_chosen", "staffing_choice", "staffing_retry", "manual"]);
 async function clearWaitingSignal(issue, event) {
   if (!jira || !USER_RECOVERY_EVENTS.has(event)) return;
   const coState = L.stateDir(homedir(), company);
@@ -699,7 +699,7 @@ async function leanRun(p, na, depth = 0) {
 }
 async function leanRunInner(p, na, depth, vis) {
   const issue = na.issue ?? p.issue ?? p.task_id; const st = L.stateDir(homedir(), company); const saved = L.loadPlan(st, issue);
-  if (saved.workflow_blocked && !USER_RECOVERY_EVENTS.has(p.event) && p.event !== "manual") {
+  if (saved.workflow_blocked && !USER_RECOVERY_EVENTS.has(p.event)) {
     log(`lean: ${issue} waiting for user workflow action (${saved.workflow_blocked.from} -> ${saved.workflow_blocked.to})`);
     return;
   }
