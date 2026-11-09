@@ -815,7 +815,7 @@ async function leanRunInner(p, na, depth, vis) {
     const host = (r) => { const steps = L.prSteps(na, seg);
       const squashTargets = Array.isArray(runSettings.squash_targets) ? runSettings.squash_targets : [runSettings.squash_target ?? "develop"];
       const squashTarget = squashTargets.some((x) => String(x).toLowerCase() === String(steps.mergeBase ?? "").toLowerCase());
-      const h = L.gitHost(repo, { ...steps, squash: steps.squash || (runSettings.squash_merge === true && squashTarget), autoPr: !!na.auto_pr && runSettings.auto_pr !== false && !dryJira, branch, title: `${issue}: ${iss.summary}`.slice(0, 120), body: `${r?.summary ?? ""}
+      const h = L.gitHost(repo, { ...steps, squash: steps.squash || (runSettings.squash_merge === true && squashTarget), squashOnlyNotIn: runSettings.squash_only_not_in ?? null, autoPr: !!na.auto_pr && runSettings.auto_pr !== false && !dryJira, branch, title: `${issue}: ${iss.summary}`.slice(0, 120), body: `${r?.summary ?? ""}
 
 Jira: ${issue}` });
       if (steps.open || steps.merge) log(`lean git host (${na.auto_pr ? "auto_pr ON" : "auto_pr OFF"}${dryJira ? ", dry: no push" : ""}): ${h.msg.join("; ")}`); return h; };

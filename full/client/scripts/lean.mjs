@@ -450,6 +450,13 @@ export function gitHost(repo, o, exec = (c, a) => execFileSync(c, a, { cwd: repo
   }
   r.msg.push(`PR ${r.url}`);
   if (o.merge) {
+    if (o.squash && o.squashOnlyNotIn && String(o.mergeBase ?? "").toLowerCase() === "main") {
+      try {
+        const pending = Number(exec("git", ["rev-list", "--count", `${o.squashOnlyNotIn}..${o.branch}`]) || 0);
+        if (!pending) { r.msg.push(`no commits in ${o.branch} outside ${o.squashOnlyNotIn}; squash merge skipped`); return r; }
+        r.msg.push(`${pending} commit(s) not in ${o.squashOnlyNotIn}; squash merge eligible`);
+      } catch (e) { r.msg.push(`cannot verify commits outside ${o.squashOnlyNotIn}: ${String(e.message).split("\n")[0]}`); return r; }
+    }
     const mode = o.squash ? "--squash" : "--merge";
     try { exec("gh", ["pr", "merge", o.branch, mode]); r.merged = true; r.msg.push(`merged into ${o.mergeBase ?? "base"}${o.squash ? " (squash)" : ""}`); }
     catch (e) { r.msg.push(`merge NOT done (conflicts/checks?): ${String(e.message).split("\n")[0]}; not forced`); }
