@@ -56,7 +56,10 @@ ah_refresh_package() {
   # marked latest. Always compare against the newest non-future tag when Git is
   # available, then download that exact release asset.
   if command -v git >/dev/null 2>&1; then
-    today="$(date -u +%Y%m%d)"
+    # Build tags use the user's local calendar day, not UTC. Using UTC makes
+    # a release made after midnight local time look future-dated and causes
+    # clients to fall back to an older tag/artifact.
+    today="$(date +%Y%m%d)"
     newest="$(git ls-remote --tags --refs "$url" 2>/dev/null | awk -F/ -v today="$today" '$NF ~ /^(v)?[0-9]{10}$/ {v=$NF; sub(/^v/,"",v); if (substr(v,1,8) <= today) print v}' | sort -n | tail -1)"
     if [ -n "$newest" ] && { [ "$tag" = latest ] || [ "$newest" -gt "${tag#v}" ] 2>/dev/null; }; then
       tag="$newest"
@@ -68,7 +71,7 @@ ah_refresh_package() {
   # directly instead of treating a 403 as "no release". Ignore future-dated
   # tags so a clock/build mistake cannot make clients jump into the future.
   if [ -z "$asset_url" ] && command -v git >/dev/null 2>&1; then
-    today="$(date -u +%Y%m%d)"
+    today="$(date +%Y%m%d)"
     if [ "$tag" = latest ]; then
       tag="$(git ls-remote --tags --refs "$url" 2>/dev/null | awk -F/ -v today="$today" '$NF ~ /^(v)?[0-9]{10}$/ {v=$NF; sub(/^v/,"",v); if (substr(v,1,8) <= today) print v}' | sort -n | tail -1)"
       [ -n "$tag" ] && echo "   API unavailable; resolved tag directly: $tag"
