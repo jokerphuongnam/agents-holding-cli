@@ -231,6 +231,7 @@ export function fileSnippets(repo, files, { max = 1200, total = 6000 } = {}) {
 /** Check commands a repo offers: package.json scripts test/lint/typecheck/build (npm), pytest, go test, cargo test, make test. */
 export function detectChecks(repo, has = (f) => existsSync(join(repo, f)), read = (f) => readFileSync(join(repo, f), "utf8")) {
   const out = [];
+  if (has("run_tests.sh")) out.push({ name: "./run_tests.sh --all", cmd: "./run_tests.sh", args: ["--all"] });
   if (has("package.json")) {
     let sc = {}; try { sc = JSON.parse(read("package.json")).scripts ?? {}; } catch {}
     for (const n of ["test", "lint", "typecheck", "build"]) if (sc[n] && !/no test specified/.test(sc[n])) out.push({ name: `npm run ${n}`, cmd: "npm", args: ["run", "-s", n] });
