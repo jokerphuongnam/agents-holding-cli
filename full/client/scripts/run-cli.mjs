@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import "./kc-guard.mjs"; // pin keychain calls to the real login keychain (never a dialog under a fake HOME)
 // holding staff run <staff> "task" [--company X] [--json]: run one staff directly on ITS bound provider/model/effort
-// (holding staff set). Dev/engineer roles get the code tool loop in the cwd; others answer as text.
+// (holding staff set). Every staff run may use tools; the task and local policy decide whether tools are needed.
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -31,12 +31,6 @@ async function mcp(name, args) {
 
 const cfg = L.loadAgentCfg(process.env.HOME, company);
 const lang = L.pickLang(cfg.lang, task); L.setLang(lang);
-// Repo/review work needs the provider tool loop even when the role is a
-// technical lead or a custom role such as int-tech-lead. Text-only staff must
-// stay tool-less, but repository verbs are an explicit signal for read-only
-// inspection and implementation tasks.
-const code = flag("--code") || /(^|[-_])(dev|developer|engineer|tech-lead|ios|android|backend|frontend|qa)([-_]|$)/i.test(staff)
-  || /\b(repo|repository|code|implementation|review|inspect|audit|test|build|file|sdk|integration)\b/i.test(task);
 // staffing gate (same logic as the Jira path): no staff with the role -> fail fast; role without the skill -> ask 1/2/3
 if (!process.argv.includes("--proceed")) {
   const st = await mcp("staffing_check", { company, request: task, staff, lang }).catch((e) => ({ kind: "ok", error: e.message }));
@@ -53,15 +47,15 @@ if (!process.argv.includes("--proceed")) {
   }
 }
 if (flag("--batch")) { const parts = task.split(";;").map((x) => x.trim()).filter(Boolean); const bb = await mcp("staff_brief", { company, role: staff, text: parts.join("\n"), max_skills: 2 }).catch(() => null);
-  const rs = await runBatch(parts.map((t) => ({ role: staff, kind: code ? "code" : "text", task: t })), { company, cwd: process.cwd(), noTools: !code, context: L.contextOf({ brief: bb, lang }), system: "Answer each task yourself now." });
+  const rs = await runBatch(parts.map((t) => ({ role: staff, kind: "code", task: t })), { company, cwd: process.cwd(), noTools: false, context: L.contextOf({ brief: bb, lang }), system: "Use the available tools only when the task requires them; answer the task yourself." });
   rs.forEach((x, n) => console.log(`${n + 1}. ${S.renderShort(x)}`)); process.exit(rs.some((x) => x.status === "blocked") ? 1 : 0); }
 let b = await mcp("staff_brief", { company, role: staff, text: task, max_skills: 2 }).catch(() => null);
 b = enrichBriefWithPackSkills(company, staff, b);
 b = enrichBriefWithLocalSkills(company, staff, b);
 function repoFor(co) { const here = process.cwd(); try { const c = localCompanies().find((x) => x.company === co); const rs = c?.repos ?? []; if (!rs.length || rs.some((r) => here === r || here.startsWith(r + "/"))) return here; return rs[0]; } catch { return here; } }
-const r = await runStaff({ company, role: staff, kind: code ? "code" : "text", noTools: !code, cwd: repoFor(company),
-  schema: code ? undefined : { type: "object", properties: { summary: { type: "string" }, steps: { type: "array", items: { type: "string" } } }, required: ["summary", "steps"] },
-  system: code ? "Implement the task in this repo, run the tests, summarise files changed." : "No tools in this run (ignore persona rules about tools, MCP, sessions or delegating to other staff): the user asked you directly, produce the deliverable yourself now.",
+const r = await runStaff({ company, role: staff, kind: "code", noTools: false, cwd: repoFor(company),
+  schema: { type: "object", properties: { summary: { type: "string" }, steps: { type: "array", items: { type: "string" } }, tests: { type: "string" }, changed_files: { type: "array", items: { type: "string" } } }, required: ["summary"] },
+  system: "Use repository and terminal tools when the task requires inspection or changes. Follow the task exactly; do not modify files for a read-only review.",
   context: L.contextOf({ brief: b, lang }),
   prompt: task, continue: flag("--continue") ? true : flag("--new") ? false : undefined });
 const tag = `${staff} - ${r.provider} · ${r.model ?? "default"} - ${r.effort ?? "default"}`;
