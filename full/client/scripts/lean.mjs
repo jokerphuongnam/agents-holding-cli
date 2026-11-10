@@ -73,6 +73,27 @@ export function codingDeveloper(saved = {}, assigned = null, devRoles = []) {
   const m = String(saved.tech_plan ?? "").match(/Developer:.*\(([\w-]+)\)/); if (m) return m[1];
   return "tech-lead";
 }
+// Local-only staffing overrides. The server owns workflow stages, while the
+// repo owner may split one stage across multiple staff with narrower scopes.
+// No scope/permission data is sent to or persisted by the server.
+export function staffingWorkers(settings = {}, issue = "", stage = "coding", fallbackRole = "tech-lead") {
+  const table = settings.task_staffing ?? settings.staffing ?? {};
+  const raw = table?.[issue]?.[stage] ?? table?.[String(issue).toUpperCase()]?.[stage] ?? settings[`${stage}_staffing`];
+  const rows = Array.isArray(raw) ? raw : Array.isArray(raw?.workers) ? raw.workers : null;
+  if (!rows?.length) return [{ role: fallbackRole || "tech-lead", scope: ".", id: `${stage}:default` }];
+  return rows.map((x, i) => ({
+    role: String(x.role ?? x.staff ?? fallbackRole ?? "tech-lead"),
+    scope: String(x.scope ?? "."),
+    id: String(x.id ?? `${stage}:${i + 1}`),
+    prompt: x.prompt ? String(x.prompt) : "",
+  }));
+}
+export function validateStaffScope(scope, repo) {
+  const s = String(scope || ".").trim();
+  if (!s || s === ".") return ".";
+  if (s.startsWith("/") || s.split(/[\\/]/).includes("..")) throw new Error(`staff scope must stay inside company repo: ${s}`);
+  return s.replace(/^\.\//, "").replace(/[\\/]$/, "") || ".";
+}
 export const reviewBackComment = (dev) => `${staffTag(staffName(dev))} ${T("review")}`;
 export const ENTER_ONLY = new Set(["planned", "in_review", "done"]);
 // grok --tools names: "Bash" = run_terminal_command ("run_terminal_command" itself is NOT accepted and silently loads ALL ~22 tools, ~9k tokens/turn)

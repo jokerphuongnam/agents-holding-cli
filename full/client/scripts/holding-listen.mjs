@@ -587,8 +587,9 @@ function spawnGrok(gargs, out, issue, sid, o = {}) {
   return new Promise((res) => {
     const env = o.env ?? (o.home ? { ...process.env, GROK_HOME: o.home } : { ...process.env, AGENTS_HOLDING_KEY: key });
     if (o.home) delete env.AGENTS_HOLDING_KEY; // lean runs need no server access
-    const w = POL.wrapLaunch({ co: company, role: o.role ?? "staff", bin: o.bin ?? grokBin, args: gargs, env, cwd: repo }); // unified staff policy + OS sandbox
-    const spawnOne = (wrapped) => spawn("nice", ["-n", "10", wrapped.bin, ...wrapped.args], { cwd: repo, env: wrapped.env, stdio: ["ignore", "pipe", "pipe"] });
+    const launchCwd = o.cwd ?? repo;
+    const w = POL.wrapLaunch({ co: company, role: o.role ?? "staff", bin: o.bin ?? grokBin, args: gargs, env, cwd: launchCwd }); // unified staff policy + OS sandbox
+    const spawnOne = (wrapped) => spawn("nice", ["-n", "10", wrapped.bin, ...wrapped.args], { cwd: launchCwd, env: wrapped.env, stdio: ["ignore", "pipe", "pipe"] });
     const ch = spawnOne(w);
     activeWorkers.add(ch.pid);
     let lastOut = Date.now(); // claude/codex have no grok events file: stdout activity counts as progress
@@ -634,7 +635,7 @@ function spawnGrok(gargs, out, issue, sid, o = {}) {
 
 // ---- lean run: scripts drive the stages, the model only writes text/code (see lean.mjs) ----
 let stageModels = {}; // flow per-stage models of the current run (next_action model/chain[].model), honored by leanModel
-async function leanModel(kind, issue, stage, prompt, role = null, context = null) {
+async function leanModel(kind, issue, stage, prompt, role = null, context = null, options = {}) {
   const sid = randomUUID(), out = join(logDir, `run-${Date.now()}.log`), buf = [];
   const text = kind !== "code", schema = kind === "tech" ? L.TECH_SCHEMA : kind === "habits" ? L.HABITS_SCHEMA : text ? L.TEXT_SCHEMA : L.CODE_SCHEMA, system = kind === "tech" ? L.TECH_SYSTEM : kind === "habits" ? L.HABITS_SYSTEM : text ? L.TEXT_SYSTEM : null;
   const rsv = L.resolveAgent({ cfg: { agent: runSettings?.agent, model: runSettings?.model, text_model: runSettings?.text_model, ...L.loadAgentCfg(homedir(), company) }, text, role, stageModel: stageModels[stage] ?? null });
@@ -660,12 +661,13 @@ async function leanModelOnce(kind, issue, stage, prompt, role, context, rsv, { s
   const prov = command ? (await import("./providers/command.mjs")).commandProvider(binding) : await P.getProvider(agent, homedir());
   log(`lean ${kind} call for ${issue} ${stage}${role ? ` staff ${role}` : ""} agent ${agent} session ${sid} ${model ?? "default model"}${effort ? ` effort ${effort}` : ""} prompt ${prompt.length} chars -> ${out}`);
   // AgentProvider protocol (providers/): built-in CLIs spawn via ctx.spawn; HTTP providers (openai-compatible, custom) run their own loop
-  const ctx = { spawn: (args, so = {}) => { if (so.env) delete so.env.AGENTS_HOLDING_KEY; return spawnGrok(args, out, issue, sid, { collect: buf, role, ...so }); },
+  const workerCwd = options.cwd ?? repo;
+  const ctx = { spawn: (args, so = {}) => { if (so.env) delete so.env.AGENTS_HOLDING_KEY; return spawnGrok(args, out, issue, sid, { collect: buf, role, cwd: workerCwd, ...so }); },
     stdout: () => Buffer.concat(buf).toString("utf8"), grokUsage: (s) => usageOf(s, leanHome), leanHome, logDir, log: (m) => log(`lean ${kind} ${issue}: ${m}`) };
   const t0 = Date.now();
   if (role) context = [context, POL.rulesText(POL.loadPolicy(homedir(), company, role))].filter(Boolean).join("\n\n");
   prompt = POL.redactText(prompt); if (context) context = POL.redactText(context);
-  const res = await prov.run({ prompt, system, context, schema, kind, text, cwd: repo, model, effort, sid, bin, company, role }, ctx).catch((e) => ({ result: {}, usage: null, exitCode: 1, error: e.message }));
+  const res = await prov.run({ prompt, system, context, schema, kind, text, cwd: workerCwd, model, effort, sid, bin, company, role }, ctx).catch((e) => ({ result: {}, usage: null, exitCode: 1, error: e.message }));
   const wall = Date.now() - t0, code = res.exitCode ?? 0;
   if (res.text) appendFileSync(out, res.text); // HTTP providers: keep the answer in the run log too
   const r = res.result, u = res.usage;
@@ -869,13 +871,24 @@ Jira: ${issue}` });
         log(`lean: ${rp} branch ${branch}: ${L.ensureBranch(rp, branch)}`);
         const files = filesOf(rp);
         const multi = runRepos.length > 1 ? `\nThis task spans repos ${runRepos.map(rname).join(", ")}; you are in ${rname(rp)}: change only what belongs here.` : "";
-        const r1 = await leanModel("code", issue, stage, L.codePrompt(iss, {  plan: (plan ?? "") + multi, techPlan: o.techPlan, approval, feedback: o.feedback, hints: L.fileHints(files, `${iss.summary} ${iss.description} ${plan ?? ""}`), qc: !!o.selfCheck?.[rp], preexisting: L.preexistingFails(L.loadPlan(st, issue).qc_baseline?.[rp] ?? o.baselines?.[rp]), review: !!o.review, branch }), o.dev, L.contextOf({ brief: await brief(o.dev), habits }));
-        if (r1.question && !r1.summary) { await record("question", r1.question); await say(o.who, `QUESTION (${rname(rp)})\n${r1.question}`, "question"); repo = runRepos[0]; return null; }
+        const workers = L.staffingWorkers(runSettings, issue, stage, o.dev);
+        const results = [];
+        for (const worker of workers) {
+          const scope = L.validateStaffScope(worker.scope, rp);
+          const scopeNote = scope === "." ? "You may work across the whole company repository." : `You may work only under ${scope}; do not modify files outside that scope.`;
+          const workerRole = worker.role || o.dev;
+          log(`lean: ${issue} ${stage} worker=${workerRole} scope=${scope}`);
+          const workerCwd = scope === "." ? rp : join(rp, scope);
+          const r1 = await leanModel("code", issue, stage, L.codePrompt(iss, { plan: (plan ?? "") + multi + `\n\nStaff worker scope: ${scopeNote}${worker.prompt ? `\nWorker assignment: ${worker.prompt}` : ""}`, techPlan: o.techPlan, approval, feedback: o.feedback, hints: L.fileHints(files, `${iss.summary} ${iss.description} ${plan ?? ""}`), qc: !!o.selfCheck?.[rp], preexisting: L.preexistingFails(L.loadPlan(st, issue).qc_baseline?.[rp] ?? o.baselines?.[rp]), review: !!o.review, branch }), workerRole, L.contextOf({ brief: await brief(workerRole), habits }), { cwd: workerCwd });
+          if (r1.question && !r1.summary) { await record("question", r1.question); await say(o.who, `QUESTION (${workerRole}/${rname(rp)})\n${r1.question}`, "question"); repo = runRepos[0]; return null; }
+          results.push({ ...r1, worker: workerRole, scope });
+        }
+        const r1 = results.reduce((a, x) => ({ ...a, ...x, summary: [a.summary, x.summary].filter(Boolean).join("\n"), tests: [a.tests, x.tests].filter(Boolean).join("\n") }), {});
         const sha = L.commitAll(rp, `${o.wip ? `WIP(${issue}) ${o.wip}: ` : `${issue}: `}${r1.commit_message || iss.summary || "agent change"}`);
         if (typeof sha === "string" && sha.startsWith("failed:")) { const e = new Error(`git staging/commit failed: ${sha}`); e.command = "git add -u --; git ls-files --others --exclude-standard; git add -- <eligible paths>; git commit"; e.agentOut = sha; e.agentCode = 1; throw e; }
         const h = o.host ? host(r1) : { msg: [] };
         wheres.push(`${runRepos.length > 1 ? rname(rp) + ": " : ""}Branch ${branch}${sha ? ` @ ${sha}` : " (no changes)"}${h.url ? ` PR ${h.url}${h.merged ? " (merged)" : ""}` : " (local, not pushed)"}${h.msg.length && !h.url ? ` - ${h.msg.join("; ")}` : ""}`);
-        if (!r) r = { ...r1, commit: sha }; else r = { ...r, summary: `${r.summary ?? ""}\n${r1.summary ?? ""}`, tests: [r.tests, r1.tests].filter(Boolean).join("\n"), tech_plan: [r.tech_plan, r1.tech_plan].filter(Boolean).join("\n") };
+        if (!r) r = { ...r1, commit: sha, workers: results }; else r = { ...r, summary: `${r.summary ?? ""}\n${r1.summary ?? ""}`, tests: [r.tests, r1.tests].filter(Boolean).join("\n"), tech_plan: [r.tech_plan, r1.tech_plan].filter(Boolean).join("\n"), workers: [...(r.workers ?? []), ...results] };
       }
       repo = runRepos[0]; return { ...r, where: wheres.join("\n") };
     };
