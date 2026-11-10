@@ -68,6 +68,10 @@ ah_refresh_package() {
     if [ -n "$newest" ] && { [ "$tag" = latest ] || [ "$newest" -gt "${tag#v}" ] 2>/dev/null; }; then
       tag="$newest"
       asset_url="https://github.com/jokerphuongnam/agents-holding-cli/releases/download/$tag/agents-holding-cli-$tag.tar.gz"
+      # The API asset URL was resolved from the old `latest` release above.
+      # Once tag resolution selects a newer numeric release, never download
+      # that stale asset by API URL.
+      asset_api_url=""
       echo "   resolved newest non-future tag from Git: $tag"
     fi
   fi
