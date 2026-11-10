@@ -76,22 +76,18 @@ export function codingDeveloper(saved = {}, assigned = null, devRoles = []) {
 // Local-only staffing overrides. The server owns workflow stages, while the
 // repo owner may split one stage across multiple staff with narrower scopes.
 // No scope/permission data is sent to or persisted by the server.
-export function staffingWorkers(settings = {}, issue = "", stage = "coding", fallbackRole = "tech-lead") {
-  // Staffing is company-local, never task-local: the task/Tech Lead selects
-  // work, while the company defines which staff may collaborate in a stage.
-  // Keep task_staffing as a legacy read-only fallback for old local configs.
-  const table = settings.staffing ?? settings.staffing_by_stage ?? {};
-  const raw = table?.[stage] ?? settings[`${stage}_staffing`] ?? settings.task_staffing?.[issue]?.[stage] ?? settings.task_staffing?.[String(issue).toUpperCase()]?.[stage];
-  const rows = Array.isArray(raw) ? raw : Array.isArray(raw?.workers) ? raw.workers : null;
+export function staffingWorkers(settings = {}, assignedRoles = [], fallbackRole = "tech-lead") {
+  // Workflow/staff assignment chooses the workers. Local config only maps a
+  // role to its filesystem scope; it never selects workers by task or stage.
   const scopes = settings.staff_scopes ?? settings.staff_scope ?? {};
-  const configured = rows?.length ? rows : (Array.isArray(raw?.roles) ? raw.roles.map((role) => ({ role })) : null);
-  if (!configured?.length) return [{ role: fallbackRole || "tech-lead", scope: String(scopes[fallbackRole] ?? "."), id: `${stage}:default` }];
+  const configured = Array.isArray(assignedRoles) && assignedRoles.length ? assignedRoles : null;
+  if (!configured?.length) return [{ role: fallbackRole || "tech-lead", scope: String(scopes[fallbackRole] ?? "."), id: "default" }];
   return configured.map((x, i) => {
     const role = String(typeof x === "string" ? x : x.role ?? x.staff ?? fallbackRole ?? "tech-lead");
     return {
     role,
-    scope: String((typeof x === "object" && x.scope) ?? scopes[role] ?? "."),
-    id: String((typeof x === "object" && x.id) ?? `${stage}:${i + 1}`),
+    scope: String((typeof x === "object" && x.scope != null ? x.scope : scopes[role]) ?? "."),
+    id: String((typeof x === "object" && x.id != null ? x.id : `worker:${i + 1}`)),
     prompt: typeof x === "object" && x.prompt ? String(x.prompt) : "",
   }; });
 }

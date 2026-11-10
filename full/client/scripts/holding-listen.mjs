@@ -871,7 +871,7 @@ Jira: ${issue}` });
         log(`lean: ${rp} branch ${branch}: ${L.ensureBranch(rp, branch)}`);
         const files = filesOf(rp);
         const multi = runRepos.length > 1 ? `\nThis task spans repos ${runRepos.map(rname).join(", ")}; you are in ${rname(rp)}: change only what belongs here.` : "";
-        const workers = L.staffingWorkers(runSettings, issue, stage, o.dev);
+        const workers = L.staffingWorkers(runSettings, o.workerRoles ?? [], o.dev);
         const results = [];
         for (const worker of workers) {
           const scope = L.validateStaffScope(worker.scope, rp);
@@ -909,7 +909,8 @@ Jira: ${issue}` });
       }
       const steps = review ? [sv.tech_plan ?? ""] : X.splitSteps(sv.tech_plan, Number(process.env.AH_CODE_STEPS ?? 3)), host1 = L.prSteps(na, seg).open || L.prSteps(na, seg).merge;
       let r = null;
-      if (steps.length === 1) r = await codeOnce(s0, { techPlan: sv.tech_plan, feedback: review ? na.review_feedback : fb, review, baselines, selfCheck, who, dev, host: host1 });
+      const workerRoles = sv.worker_roles ?? na.assigned_roles ?? [];
+      if (steps.length === 1) r = await codeOnce(s0, { techPlan: sv.tech_plan, feedback: review ? na.review_feedback : fb, review, baselines, selfCheck, who, dev, workerRoles, host: host1 });
       else { // sub-steps: one WIP commit each on feature/<KEY>, checkpoint + progress note after each; a rerun skips finished steps
         const ck = X.ckptLoad(st, issue) ?? {};
         let done = ck.stage === s0 && (ck.running || ck.failed) ? [...(ck.code_done ?? [])] : [];
@@ -926,7 +927,7 @@ Jira: ${issue}` });
         for (let i = 0; i < steps.length; i++) {
           if (done.includes(i)) continue;
           const last = i === steps.length - 1;
-          const ri = await codeOnce(s0, { techPlan: `${sv.tech_plan}\n\nDo ONLY sub-step ${i + 1}/${steps.length} now${done.length ? ` (steps ${done.map((d) => d + 1).join(", ")} are already committed)` : ""}:\n${steps[i]}`, feedback: fb, baselines, selfCheck: last ? selfCheck : {}, who, dev, host: last && host1, wip: last ? null : `${i + 1}/${steps.length}` });
+          const ri = await codeOnce(s0, { techPlan: `${sv.tech_plan}\n\nDo ONLY sub-step ${i + 1}/${steps.length} now${done.length ? ` (steps ${done.map((d) => d + 1).join(", ")} are already committed)` : ""}:\n${steps[i]}`, feedback: fb, baselines, selfCheck: last ? selfCheck : {}, who, dev, workerRoles, host: last && host1, wip: last ? null : `${i + 1}/${steps.length}` });
           if (!ri) return;
           parts.push(ri); done.push(i); X.ckptSave(st, issue, { stage: s0, code_done: done, last_commit: ri.commit ?? null });
           if (!last) await say(who, X.progressNote(L.getLang(), L.stageTitle(s0), steps, done));
