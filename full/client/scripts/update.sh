@@ -86,9 +86,16 @@ ah_refresh_package() {
     curl -fsSL "$compat" -o "$tmp/client.tar.gz" || { echo "   package download failed; keeping current scripts" >&2; rm -rf "$tmp"; return 1; }
   fi
   mkdir -p "$tmp/src" && tar xzf "$tmp/client.tar.gz" -C "$tmp/src"
+  # Releases may be archived with a single top-level directory (for example
+  # git archive --prefix=...). Normalize that layout before installing.
+  package_root="$tmp/src"
+  if [ ! -d "$package_root/full/client/scripts" ]; then
+    package_root="$(find "$tmp/src" -type d -path '*/full/client/scripts' -print -quit | sed 's#/full/client/scripts$##')"
+  fi
+  [ -d "$package_root/full/client/scripts" ] || { echo "   invalid client artifact: full/client/scripts is missing" >&2; rm -rf "$tmp"; return 1; }
   mkdir -p "$dest"
   rm -rf "$tmp/stage"; mkdir -p "$tmp/stage"
-  cp -R "$tmp/src/full/client/scripts/." "$tmp/stage/"
+  cp -R "$package_root/full/client/scripts/." "$tmp/stage/"
   if command -v rsync >/dev/null; then rsync -a --delete "$tmp/stage/" "$dest/scripts/"
   else rm -rf "$dest/scripts"; mkdir -p "$dest/scripts"; cp -R "$tmp/stage/." "$dest/scripts/"; fi
   chmod -R a+rX "$dest/scripts" 2>/dev/null || true

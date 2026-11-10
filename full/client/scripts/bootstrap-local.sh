@@ -30,6 +30,10 @@ asset_url="$(curl -fsSL -H 'Accept: application/vnd.github+json' "$endpoint" | a
 curl -fsSL "$asset_url" -o "$tmp/client.tar.gz"
 mkdir -p "$tmp/src" && tar xzf "$tmp/client.tar.gz" -C "$tmp/src"
 SRC="$tmp/src"
+if [ ! -d "$SRC/full/client/scripts" ]; then
+  SRC="$(find "$tmp/src" -type d -path '*/full/client/scripts' -print -quit | sed 's#/full/client/scripts$##')"
+fi
+[ -d "$SRC/full/client/scripts" ] || { echo "published artifact is missing full/client/scripts" >&2; exit 1; }
 mkdir -p "$DEST"
 rsync -a --delete --exclude .git "$SRC/full/client/scripts/" "$DEST/scripts/" 2>/dev/null \
   || { mkdir -p "$DEST/scripts"; cp -R "$SRC/full/client/scripts/." "$DEST/scripts/"; }
