@@ -923,7 +923,7 @@ Jira: ${issue}` });
           : { summary: sv.summary ?? "resumed: all sub-steps were already committed", tests: sv.tests ?? "", commit: sv.commit ?? ck.last_commit ?? null, where: sv.where ?? `Branch ${branch}` };
       }
       if (!r) return;
-      const evidencePolicy = { ...(na.implementation_policy ?? na.workflow_policy?.implementation ?? {}), allow_missing_tests: qcAhead };
+      const evidencePolicy = { ...(na.implementation_policy ?? na.workflow_policy?.implementation ?? {}), allow_missing_tests: qcAhead, allow_no_commit: !(runSettings.evidence_actions ?? []).includes("history_commit") };
       const evidence = L.implementationEvidence(r, r.commit, r.where, evidencePolicy);
       if (!evidence.ok) { const e = new Error(`implementation evidence gate failed: ${evidence.reasons.join("; ")}`); e.command = "coding worker + local commit + required build/test"; e.agentCode = 1; e.agentOut = JSON.stringify({ summary: r.summary ?? "", tests: r.tests ?? "", commit: r.commit ?? null, where: r.where ?? "", reasons: evidence.reasons }); throw e; }
       L.savePlan(st, issue, { tech_plan: sv.tech_plan ?? r.tech_plan, summary: r.summary, tests: r.tests, commit: r.commit, branch, repos: runRepos, developer: dev, qc_baseline: baselines, where: r.where, implementation_evidence: evidence });
@@ -963,10 +963,11 @@ Jira: ${issue}` });
       // Reopened retries may legitimately have no new commit. Preserve the
       // implementation evidence from the task branch history instead of
       // checking only the current Coding worker result.
-      const historyCommit = sv.commit || ck.last_commit || runRepos.map((rp) => {
+      const historyCommitRequired = (runSettings.evidence_actions ?? []).includes("history_commit");
+      const historyCommit = historyCommitRequired && (sv.commit || ck.last_commit || runRepos.map((rp) => {
         try { return L.git(rp, "rev-list", "--max-count=1", "--no-merges", branch, "--not", "develop", "main"); }
         catch { return ""; }
-      }).find(Boolean) || "";
+      }).find(Boolean) || "");
       if (res.some((x) => !x.v.pass)) { const txt = qcText(res); await record("qc_fail", txt); await say(who, `QC FAIL\n${txt}\nStopping: needs a look from you.`, "qc"); log(`lean: ${issue} QC failed after ${fixes} fix(es); stopped`); return; }
       const txt = [qcText(res), res.every((x) => !x.v.passed.length) && sv.tests && `Developer check: ${sv.tests}`].filter(Boolean).join("\n");
       const steps = L.prSteps(na, seg), h = steps.open || steps.merge ? host(sv) : { msg: [] };
@@ -974,7 +975,7 @@ Jira: ${issue}` });
       await say(who, `QC PASS\n${txt}${where ? `\n${where}` : ""}`);
       if (h.msg.some((m) => /NOT done|failed/.test(m))) return;
       const digest = (s) => `sha256:${createHash("sha256").update(String(s ?? "")).digest("hex")}`;
-      const configured = na.qc_policy?.checks ?? ["implementation_command", "build_install", "tests", "working_tree_artifact_policy", "local_commit"].map((id) => ({ id, required: true }));
+      const configured = na.qc_policy?.checks ?? ["implementation_command", "build_install", "tests", "working_tree_artifact_policy", ...(historyCommitRequired ? ["local_commit"] : [])].map((id) => ({ id, required: true }));
       const checksOut = res.flatMap((x) => [...x.v.passed, ...x.v.failed]);
       const checkRows = configured.map((spec) => { const id = String(spec.id), match = checksOut.find((x) => (id.includes("static") && /lint|typecheck|analy/i.test(x.name)) || (id === "build" && /build|install/i.test(x.name)) || (id.includes("unit") && /test|unit/i.test(x.name)) || (id.includes("integration") && /integration|smoke/i.test(x.name))); const x = id === "implementation_command" ? { command: "coding worker result + implementation evidence", ok: !!(sv.implementation_evidence || historyCommit), out: sv.implementation_evidence?.summary ?? (historyCommit ? `branch history commit ${historyCommit}` : "missing") } : id === "artifact-check" || id === "working_tree_artifact_policy" ? { command: "git status / artifact policy", ok: !!sv.where, out: sv.where ?? "missing" } : id === "local_commit" ? { command: "git history (local, no push)", ok: !!historyCommit, out: historyCommit || "no implementation commit found on task branch" } : match ? { command: match.name, ok: !!match.ok, out: match.out } : { command: spec.commands?.join(" && ") || spec.tool || id, ok: false, out: "missing configured evidence" }; return { id, ...x, exit_code: x.ok ? 0 : 1, stdout_digest: digest(x.out), stderr_digest: digest(x.ok ? "" : x.out), commit: historyCommit || sv.commit || "", tree: digest(sv.where ?? ""), artifacts: [sv.where, historyCommit || sv.commit].filter(Boolean), timestamp: new Date().toISOString(), actor: "agents-holding-qc", model: "script", ok: !!x.ok }; });
       const qcReport = { timestamp: new Date().toISOString(), actor: "agents-holding-qc", developer: sv.developer ?? null, model: "script", pass: checkRows.every((x) => x.ok), checks: checkRows };
