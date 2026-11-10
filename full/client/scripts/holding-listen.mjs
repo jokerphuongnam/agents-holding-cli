@@ -1073,8 +1073,22 @@ Jira: ${issue}` });
       const qcText = (res) => res.map((x) => `${runRepos.length > 1 ? rname(x.rp) + ": " : ""}${x.v.text}`).join("\n");
       for (const rp of runRepos) L.ensureBranch(rp, branch);
       let res = await runQc(), fixes = 0;
-      while (res.some((x) => !x.v.pass) && fixes < 3 && codingKey) {
-        const txt = qcText(res); await record("qc_fail", txt); await say(who, `QC FAIL\n${txt}\nBack to Coding for automatic remediation (attempt ${fixes + 1}/3).`);
+      // QC is a release gate. Do not silently stop after three remediation
+      // passes: long-running host/UI checks may expose a real regression that
+      // the Coding worker needs more than three iterations to repair. A limit
+      // is opt-in through workflow settings; 0 means keep the checkpoint alive
+      // and continue until the gate passes or an explicit user block occurs.
+      const maxRemediation = Math.max(0, Number(
+        na.qc_policy?.max_auto_remediation_attempts ??
+        na.workflow?.max_auto_remediation_attempts ??
+        runSettings.max_auto_remediation_attempts ?? 0
+      ) || 0);
+      const remediationAllowed = () => !maxRemediation || fixes < maxRemediation;
+      while (res.some((x) => !x.v.pass) && remediationAllowed() && codingKey) {
+        const txt = qcText(res);
+        const limitNote = maxRemediation ? ` (attempt ${fixes + 1}/${maxRemediation})` : ` (automatic remediation attempt ${fixes + 1})`;
+        await record("qc_fail", txt);
+        await say(who, `QC FAIL\n${txt}\nBack to Coding for automatic remediation${limitNote}.`);
         // QC remediation is an engineering loop; Reopened is a user-facing
         // post-Done state and may be user-only in Jira workflows.
         const recoveryKey = codingKey;
@@ -1112,7 +1126,7 @@ Jira: ${issue}` });
         // QC is an engineering gate, not a user gate. Keep the task in the
         // remediation checkpoint; the next reconcile/run retries Coding.
         if (codingKey) await advance(s0, codingKey).catch((e) => log(`lean: ${issue} QC remediation checkpoint failed: ${e.message}`));
-        log(`lean: ${issue} QC failed after ${fixes} automatic remediation attempt(s); kept in Coding`);
+        log(`lean: ${issue} QC failed after ${fixes} automatic remediation attempt(s); kept in Coding${maxRemediation ? ` (configured limit ${maxRemediation})` : " (automatic remediation remains enabled)"}`);
         return;
       }
       const txt = [qcText(res), res.every((x) => !x.v.passed.length) && sv.tests && `Developer check: ${sv.tests}`].filter(Boolean).join("\n");
