@@ -30,7 +30,7 @@ install_watchdog() { # always on (also at login), independent of the listener jo
 }
 running_pid() { launchctl print "$DOMAIN/$LABEL" 2>/dev/null | awk '/^\tpid = /{print $3; exit}'; }
 loaded() { launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; }
-process_ok() { local p="${1:-}"; [ -n "$p" ] && kill -0 "$p" 2>/dev/null && ps -p "$p" -o command= 2>/dev/null | grep -Eq 'run-listener|agents-holding-listener'; }
+process_ok() { local p="${1:-}"; [ -n "$p" ] && kill -0 "$p" 2>/dev/null && ps -p "$p" -o command= 2>/dev/null | grep -Eq 'run-listener|agents-holding-listener|Jira Listener|holding-listen\.mjs'; }
 heartbeat_fresh() {
   curl -fsS --max-time 2 "http://${AH_LISTENER_HOST:-127.0.0.1}:${AH_LISTENER_PORT:-8787}/health" >/dev/null 2>&1 || { local p; p="$(running_pid)"; process_ok "$p"; }
 }
