@@ -965,10 +965,22 @@ Jira: ${issue}` });
         L.savePlan(st, issue, { qc_checklist_posted: true, qc_checklist_marker: `<!-- agents-holding:qc-checklist:${issue} -->`, qc_checklist_fallback: "Jira comment edit API unavailable; marker is stable and checklist state is persisted in checkpoint." });
       }
       const codingKey = (na.flow_stages ?? []).includes("coding") ? "coding" : null;
-      const runQc = () => { const sv = L.loadPlan(st, issue); return runRepos.map((rp) => ({ rp, v: L.qcVerdict(sv.qc_baseline?.[rp] ?? null, L.runChecks(rp, L.detectChecks(rp))) })); };
+      const terminalLabel = (checks) => `terminal:${checks.map((c) => [c.cmd, ...(c.args ?? [])].join(" ")).join(" && ")}`.slice(0, 255);
+      const runQc = async () => {
+        const sv = L.loadPlan(st, issue);
+        const rows = [];
+        for (const rp of runRepos) {
+          const checks = L.detectChecks(rp);
+          const label = terminalLabel(checks);
+          if (jira && label !== "terminal:") await jira.labels(issue, [label]).catch((e) => log(`Jira terminal label failed: ${e.message}`));
+          try { rows.push({ rp, v: L.qcVerdict(sv.qc_baseline?.[rp] ?? null, L.runChecks(rp, checks)) }); }
+          finally { if (jira && label !== "terminal:") await jira.labels(issue, [], [label]).catch((e) => log(`Jira terminal label cleanup failed: ${e.message}`)); }
+        }
+        return rows;
+      };
       const qcText = (res) => res.map((x) => `${runRepos.length > 1 ? rname(x.rp) + ": " : ""}${x.v.text}`).join("\n");
       for (const rp of runRepos) L.ensureBranch(rp, branch);
-      let res = runQc(), fixes = 0;
+      let res = await runQc(), fixes = 0;
       while (res.some((x) => !x.v.pass) && fixes < 1 && codingKey) {
         const txt = qcText(res); await record("qc_fail", txt); await say(who, `QC FAIL\n${txt}\nBack to Coding for one fix.`);
         const recoveryKey = (na.flow_stages ?? []).includes("reopened") ? "reopened" : codingKey;
@@ -979,7 +991,7 @@ Jira: ${issue}` });
         L.savePlan(st, issue, { summary: `${sv.summary ?? ""}\nFix: ${r.summary ?? ""}`, commit: r.commit, where: r.where });
         await say(dwho, `FIX\n${r.summary ?? ""}\n${r.where}`);
         if (!(await advance(codingKey, s0))) return;
-        fixes++; res = runQc();
+        fixes++; res = await runQc();
       }
       const sv = L.loadPlan(st, issue);
       const ck = X.ckptLoad(st, issue) ?? {};
