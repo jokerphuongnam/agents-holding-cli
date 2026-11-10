@@ -165,7 +165,23 @@ if command -v launchctl >/dev/null 2>&1; then
   done
   if [ "$listener_was_active" = 1 ]; then
     echo "   listener active before update; stopping all scoped listeners for an atomic replace"
-    sleep 1
+    # The JS listener may defer SIGTERM until an active worker checkpoints.
+    # Do not race the replacement and leave its scoped port occupied.
+    for _ in $(seq 1 30); do
+      still=0
+      while IFS='|' read -r repo auto; do
+        [ -n "$repo" ] || continue
+        for p in "$bin"/com.agentsholding.jira-listener*.plist; do
+          [ -f "$p" ] || continue
+          r=$(/usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:AH_REPO_DIR' "$p" 2>/dev/null || true)
+          [ "$r" = "$repo" ] || continue
+          l=$(basename "$p" .plist)
+          launchctl print "$domain/$l" >/dev/null 2>&1 && still=1
+        done
+      done < "$listener_state"
+      [ "$still" = 0 ] && break
+      sleep 1
+    done
   fi
 fi
 restore_listener() {
