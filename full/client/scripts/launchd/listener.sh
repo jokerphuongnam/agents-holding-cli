@@ -173,8 +173,8 @@ cmd_autostart() {
 case "${1:-status}" in
   status) shift; cmd_status "$@" ;;
   start) shift; cmd_on "$@" ;;
-  stop) cmd_off "$@" ;;
-  autostart) shift; cmd_autostart "${1:-}" ;;
+  stop) shift; cmd_off "$@" ;;
+  autostart) shift; cmd_autostart "$@" ;;
   logs) shift; repo_arg=""; follow=0; while [ $# -gt 0 ]; do case "$1" in --repo) repo_arg="$2"; shift 2 ;; -f) follow=1; shift ;; *) shift ;; esac; done; [ -n "$repo_arg" ] && set_scope "$(cd "$repo_arg" && pwd)"; log="$(scoped_log)"; err="$(scoped_err)"; mkdir -p "$(dirname "$log")"; [ -f "$log" ] || { echo "no listener logs for this repo yet ($log); start it with: holding listener start"; exit 0; }; if [ "$follow" = 1 ]; then tail -f "$log"; else tail -n 30 "$log"; echo "--- $(basename "$err")"; tail -n 10 "$err" 2>/dev/null || true; fi ;;
   *) echo "usage: holding listener start [--repo DIR] | stop | autostart on|off | status | logs [-f]"; exit 2 ;;
 esac

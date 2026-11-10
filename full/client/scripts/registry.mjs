@@ -68,8 +68,11 @@ export function reconcile(reg, { fileExists = existsSync, readCompany = (p) => {
     p.path = resolve(p.path);
     if (!fileExists(p.path)) issues.push({ code: "missing_repo", path: p.path, message: `registered repo is missing: ${p.path}` });
     const configured = readCompany(p.path);
-    if (!configured) issues.push({ code: "missing_company_config", path: p.path, message: `${p.path} has no readable .agents/company.json` });
-    else {
+    // A registry entry is sufficient for routing.  .agents/company.json is
+    // optional local metadata and must not take a registered repo offline.
+    // This matters on machines where the repo is shared without its local
+    // Company OS metadata.
+    if (configured) {
       for (const b of p.boards ?? []) if (b.company !== configured) { repaired.push({ code: "company_identity", path: p.path, from: b.company, to: configured, project_key: b.project_key }); b.company = configured; }
     }
     for (const b of p.boards ?? []) {

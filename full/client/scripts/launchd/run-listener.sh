@@ -19,9 +19,22 @@ cd "$AH_REPO_DIR"
 if [ -z "${AH_COMPANY:-}" ] && [ -f "$AH_REPO_DIR/.agents/company.json" ]; then
   AH_COMPANY="$(node -e 'try{const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); process.stdout.write(String(j.company||""))}catch{}' "$AH_REPO_DIR/.agents/company.json")"
 fi
+# Registered repos are authoritative when local Company OS metadata is absent.
+# This is required for shared/clean checkouts: listener startup must not depend
+# on a repo-local .agents/company.json file.
+if [ -z "${AH_COMPANY:-}" ] && [ -f "$HOME/.config/agents-holding/projects.json" ]; then
+  AH_COMPANY="$(node -e '
+    try {
+      const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));
+      const path=require("path"); const repo=path.resolve(process.argv[2]);
+      const p=(j.projects||[]).find(x=>path.resolve(x.path||"")===repo);
+      process.stdout.write(String(p?.boards?.[0]?.company||p?.company||""));
+    } catch {}
+  ' "$HOME/.config/agents-holding/projects.json" "$AH_REPO_DIR")"
+fi
 export AH_COMPANY
 if [ -z "$AH_COMPANY" ]; then
-  echo "ERROR: no company scope in $AH_REPO_DIR/.agents/company.json" >&2
+  echo "ERROR: no company scope; register this repo with holding project add --repo DIR --company COMPANY" >&2
   exit 1
 fi
 # Resolve the Jira project from the local repo registration. This keeps the
