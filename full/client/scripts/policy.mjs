@@ -25,8 +25,8 @@ const readJ = (f, d) => { try { return JSON.parse(readFileSync(f, "utf8")); } ca
 function localStaffAccess(cwd, role) {
   let d = resolve(cwd);
   for (;;) {
-    const j = readJ(join(d, ".agents", "company.json"), null), a = j?.staff_access?.[role];
-    if (a) return a;
+    const j = readJ(join(d, ".agents", "company.json"), null), root = j?.staff_access;
+    if (root) return { company: root.company ?? {}, staff: root.staff?.[role] ?? root[role] ?? {} };
     const p = dirname(d); if (p === d) break; d = p;
   }
   return {};
@@ -110,7 +110,7 @@ const logDenied = (home, co, role, what) => { try { appendFileSync(join(stateDir
 export function wrapLaunch({ home = homedir(), co, role, bin, args, env = process.env, cwd = process.cwd(), platform = process.platform }) {
   if (!co || !role || env.AH_POLICY === "off") return { bin, args, env };
   const access = localStaffAccess(cwd, role), base = loadPolicy(home, co, role);
-  const p = { ...base, files: { ...(base.files ?? {}), deny: [...new Set(access.deny ?? [])] } };
+  const p = { ...base, files: { ...(base.files ?? {}), deny: [...new Set([...(access.company?.deny ?? []), ...(access.staff?.deny ?? [])])] } };
   const kind = basename(bin).replace(/\.exe$/, ""), nd = join(stateDir(home, co), "native", role); mkdirSync(nd, { recursive: true });
   const hookCmd = `${JSON.stringify(process.execPath)} ${JSON.stringify(join(here, "policy.mjs"))} hook`;
   const N = nativeConfigs(p, { home, co, role, hookCmd }); let a = [...args]; const e = { ...env, AH_COMPANY: co, AH_STAFF: role, AH_POLICY_CWD: cwd };
