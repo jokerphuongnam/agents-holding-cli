@@ -1034,6 +1034,8 @@ Jira: ${issue}` });
       }
       const sv = L.loadPlan(st, issue);
       const ck = X.ckptLoad(st, issue) ?? {};
+      const workerEvidence = [sv.tests, sv.summary, sv.where, sv.implementation_evidence].filter(Boolean).join("\n");
+      const executionBlocked = /(?:sandbox_apply|sandbox-exec|operation not permitted|permission denied|chưa chạy được|not run|không chạy)/i.test(workerEvidence);
       // Reopened retries may legitimately have no new commit. Preserve the
       // implementation evidence from the task branch history instead of
       // checking only the current Coding worker result.
@@ -1042,8 +1044,9 @@ Jira: ${issue}` });
         try { return L.git(rp, "rev-list", "--max-count=1", "--no-merges", branch, "--not", "develop", "main"); }
         catch { return ""; }
       }).find(Boolean) || "");
-      if (res.some((x) => !x.v.pass)) {
-        const txt = qcText(res); await record("qc_fail", txt);
+      if (res.some((x) => !x.v.pass) || executionBlocked) {
+        const txt = [qcText(res), executionBlocked && "QC execution evidence invalid: worker was blocked before running the requested checks."] .filter(Boolean).join("\n");
+        await record("qc_fail", txt);
         // QC is an engineering gate, not a user gate. Keep the task in the
         // remediation checkpoint; the next reconcile/run retries Coding.
         if (codingKey) await advance(s0, codingKey).catch((e) => log(`lean: ${issue} QC remediation checkpoint failed: ${e.message}`));

@@ -98,7 +98,13 @@ export function claudeArgs({ model, text, prompt, schema, system, codeTools = CL
     ...(model ? ["--model", model] : []), ...(effort ? ["--effort", effort] : []), ...(system ? ["--system-prompt", system] : []), ...(context ? ["--append-system-prompt", context] : []), "--json-schema", JSON.stringify(schema), prompt];
 }
 export function codexArgs({ model, text, prompt, schemaFile, system, effort, context }) {
-  return ["exec", "--json", "--skip-git-repo-check", "--ephemeral", "-s", text ? "read-only" : "workspace-write", "--output-schema", schemaFile,
+  // Holding's local policy is the authority for staff access.  Codex's
+  // workspace-write seatbelt can reject managed macOS company repos before
+  // the worker even starts (sandbox_apply: Operation not permitted).  Use
+  // full local access for implementation workers; denied paths are enforced
+  // by the generated Holding policy/native wrapper. Text-only stages remain
+  // read-only.
+  return ["exec", "--json", "--skip-git-repo-check", "--ephemeral", "-s", text ? "read-only" : "danger-full-access", "--output-schema", schemaFile,
     ...(model ? ["-m", model] : []), ...(effort || text ? ["-c", `model_reasoning_effort="${effort ?? "low"}"`] : []), ...(context || system ? ["-c", `developer_instructions=${JSON.stringify([system, context].filter(Boolean).join("\n\n"))}`] : []), prompt];
 }
 
