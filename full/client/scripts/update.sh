@@ -148,6 +148,7 @@ before_raw="$(ver_raw)"; before="$(ver)"
 listener_state="$(mktemp "${TMPDIR:-/tmp}/ah-listeners.XXXXXX")"
 listener_was_active=0
 listener_repo=""
+listener_pids=""
 if command -v launchctl >/dev/null 2>&1; then
   domain="gui/$(id -u)"; bin="$HOME/Library/Application Support/agents-holding"
   for plist in "$bin"/com.agentsholding.jira-listener*.plist; do
@@ -156,6 +157,10 @@ if command -v launchctl >/dev/null 2>&1; then
     [ -n "$repo" ] || continue
     lbl="$(basename "$plist" .plist)"; active=0; auto=0
     launchctl print "$domain/$lbl" >/dev/null 2>&1 && active=1
+    if [ "$active" = 1 ]; then
+      pid="$(launchctl print "$domain/$lbl" 2>/dev/null | awk '/^[[:space:]]*pid = / {print $3; exit}')"
+      [ -n "$pid" ] && listener_pids="$listener_pids $pid"
+    fi
     [ -f "$HOME/Library/LaunchAgents/$lbl.plist" ] && auto=1
     if [ "$active" = 1 ] || [ "$auto" = 1 ]; then
       printf '%s|%s\n' "$repo" "$auto" >> "$listener_state"
@@ -180,6 +185,12 @@ if command -v launchctl >/dev/null 2>&1; then
         done
       done < "$listener_state"
       [ "$still" = 0 ] && break
+      sleep 1
+    done
+    for _ in $(seq 1 30); do
+      alive=0
+      for pid in $listener_pids; do kill -0 "$pid" 2>/dev/null && alive=1; done
+      [ "$alive" = 0 ] && break
       sleep 1
     done
   fi
