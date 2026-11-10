@@ -76,7 +76,10 @@ export function nativeConfigs(p, { home, co, role, hookCmd }) {
 }
 export function seatbeltProfile(p, { home, cwd, allowRead = [] }) {
   const res = p.files.deny.map((g) => globRe(g, home, cwd));
-  return ["(version 1)", "(allow default)", ...res.map((r) => `(deny file-read* file-write* (regex #"${r.replace(/"/g, '\\"')}"))`),
+  // Company staff owns the company workspace by default. Explicit deny rules
+  // are still emitted after this scope and therefore remain authoritative.
+  const root = String(cwd).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  return ["(version 1)", "(allow default)", `(allow file-read* file-write* (subpath \"${root}\"))`, ...res.map((r) => `(deny file-read* file-write* (regex #"${r.replace(/"/g, '\\"')}"))`),
     ...allowRead.map((f) => `(allow file-read* (literal "${f}"))`)].join("\n") + "\n";
 }
 /** Files under dir (depth-limited) that a policy denies: for bubblewrap overlays and tests. */
