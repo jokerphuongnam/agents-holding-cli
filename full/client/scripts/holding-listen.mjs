@@ -800,6 +800,15 @@ async function leanRunInner(p, na, depth, vis) {
                 log(`lean: ${issue} ${from} -> ${to} rejected by Jira; continuing at ${r.stage ?? fallback}`);
                 return true;
               } catch (fallbackError) {
+                // Reconcile may already have moved the durable task back to
+                // Coding before this local retry arrives. Treat coding->coding
+                // as idempotent success instead of turning it into another
+                // workflow block.
+                if (fallback === "coding" && /cannot move coding -> coding/i.test(String(fallbackError.message))) {
+                  X.ckptSave(st, issue, { stage: "coding", done: [], workflow_blocked: null, failed: null, running: true });
+                  log(`lean: ${issue} ${from} -> ${to} already reconciled to coding; continuing`);
+                  return true;
+                }
                 log(`lean: ${issue} fallback ${from} -> ${fallback} failed: ${fallbackError.message}`);
               }
             }
