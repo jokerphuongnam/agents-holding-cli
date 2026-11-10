@@ -365,7 +365,7 @@ async function announceWaiting(issue, na, p) {
     const meta = await jira.meta(issue);
     if ((meta.labels ?? []).includes(WAITING_LABEL)) return;
     const reason = p.workflow_error ?? (na?.steps ?? []).filter(Boolean).join("\n") ?? `Waiting at ${na?.stage ?? "the current checkpoint"}.`;
-    const text = `${L.staffTag("ceo")} WORKFLOW WAITING\n${reason}\n\nCorrect the requested Jira action, then the listener will resume automatically from the checkpoint.`;
+    const text = `${L.staffTag("ceo")} WORKFLOW WAITING\n${reason}\n\nHow to continue:\n1. Complete the requested user action (for example: register/reconnect the terminal in this repo, run the exact command, or grant the required local permission).\n2. Comment on this ticket: HOLDING RESUME\n\nThe listener will clear the waiting checkpoint and resume automatically from ${na?.stage ?? "the current stage"}. Do not move the ticket manually unless the note explicitly asks for a status change.`;
     await jira.labels(issue, [WAITING_LABEL]);
     await jira.comment(issue, text);
     try { await mcp("inbox_post", { company, issue, kind: p.workflow_error ? "blocked" : "gate", need: "Jira workflow action required", body: text }); } catch (e) { log(`waiting inbox failed for ${issue}:`, e.message); }
