@@ -989,16 +989,22 @@ Jira: ${issue}` });
         L.savePlan(st, issue, { qc_checklist_posted: true, qc_checklist_marker: `<!-- agents-holding:qc-checklist:${issue} -->`, qc_checklist_fallback: "Jira comment edit API unavailable; marker is stable and checklist state is persisted in checkpoint." });
       }
       const codingKey = (na.flow_stages ?? []).includes("coding") ? "coding" : null;
-      const terminalLabel = (checks) => `terminal:${checks.map((c) => [c.cmd, ...(c.args ?? [])].join(" ")).join(" && ")}`.slice(0, 255);
+      // Jira labels cannot contain spaces, quotes, slashes, or shell syntax.
+      // Keep the label short and searchable; the exact command is preserved
+      // in the QC evidence/comment.
+      const terminalLabel = (checks) => {
+        const command = checks.map((c) => [c.cmd, ...(c.args ?? [])].join(" ")).join(" && ");
+        return `terminal-${command.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "")}`.slice(0, 255);
+      };
       const runQc = async () => {
         const sv = L.loadPlan(st, issue);
         const rows = [];
         for (const rp of runRepos) {
           const checks = L.detectChecks(rp);
           const label = terminalLabel(checks);
-          if (jira && label !== "terminal:") await jira.labels(issue, [label]).catch((e) => log(`Jira terminal label failed: ${e.message}`));
+          if (jira && label !== "terminal-") await jira.labels(issue, [label]).catch((e) => log(`Jira terminal label failed: ${e.message}`));
           try { rows.push({ rp, v: L.qcVerdict(sv.qc_baseline?.[rp] ?? null, L.runChecks(rp, checks)) }); }
-          finally { if (jira && label !== "terminal:") await jira.labels(issue, [], [label]).catch((e) => log(`Jira terminal label cleanup failed: ${e.message}`)); }
+          finally { if (jira && label !== "terminal-") await jira.labels(issue, [], [label]).catch((e) => log(`Jira terminal label cleanup failed: ${e.message}`)); }
         }
         return rows;
       };
