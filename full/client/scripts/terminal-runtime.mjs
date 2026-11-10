@@ -6,6 +6,13 @@ import { join } from "node:path";
 import { createConnection } from "node:net";
 
 const dir = join(homedir(), ".config/agents-holding/terminal-sessions");
+const timeMs = (v) => {
+  if (typeof v === "number" && Number.isFinite(v)) return v < 1e12 ? v * 1000 : v;
+  const n = Number(v);
+  if (Number.isFinite(n)) return n < 1e12 ? n * 1000 : n;
+  const d = Date.parse(String(v ?? ""));
+  return Number.isFinite(d) ? d : 0;
+};
 function sessions() {
   const out = {};
   try { Object.assign(out, JSON.parse(readFileSync(join(dir, "sessions.json"), "utf8"))); } catch {}
