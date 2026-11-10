@@ -9,7 +9,7 @@ for (const [name, r, sha, where] of [
   ["no-op has no commit", good, null, "Branch feature/X (no changes)"],
   ["missing output", {}, "abc123", "feature/X"],
   ["missing evidence", { summary: "changed" }, "abc123", ""],
-]) assert.equal(implementationEvidence(r, sha, where).ok, false, name);
+]) assert.equal(implementationEvidence(r, sha, where, { require_tests: true }).ok, false, name);
 assert.equal(implementationEvidence(good, "abc123", "feature/X", { allow_no_commit: true }).ok, true, "explicit custom policy can alter commit requirement");
 
 const env = { HOME: "/tmp/agents-holding-provider-test", AH_AGENT: "" };

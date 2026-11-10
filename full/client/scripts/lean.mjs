@@ -153,9 +153,10 @@ export function workChecklist(na = {}, { issue = "TASK", stage = na.stage, plan 
   return `${marker}\nWORK CHECKLIST — ${stage}\n${plan ? `Plan reference: ${String(plan).slice(0, 800)}\n` : ""}${steps.join("\n")}\nStatus: started → in progress → completed/blocked\nUpdate this checklist at start, after each step, on failure/blocker, and handoff. Recovery: ${na.qc_policy?.recovery_stage ?? na.release_policy?.target ?? "effective workflow policy"}.`;
 }
 /** Evidence gate for implementation -> the next quality/review stage.  A model
- * answer is not evidence: the worker must have produced a local commit and a
- * non-empty, successful verification report.  Flow definitions may relax the
- * exact command names, but never the requirement for an auditable result. */
+ * answer is not evidence: the worker must show what changed and where. Build
+ * and test execution belongs to the explicit QC terminal gate; Coding must not
+ * fail early merely because QC has not run yet. A flow may opt Coding into
+ * test evidence with require_tests=true. */
 export function implementationEvidence(result, commit, where = "", policy = {}) {
   const r = result && typeof result === "object" ? result : {};
   const sha = String(commit ?? "").trim();
@@ -168,9 +169,10 @@ export function implementationEvidence(result, commit, where = "", policy = {}) 
   const files = Array.isArray(r.changed_files) ? r.changed_files.filter((x) => String(x).trim()) : [];
   const evidence = String(r.implementation_evidence ?? "").trim();
   if (!policy.allow_no_commit && (!sha || /^failed:/i.test(sha)) && !files.length && !evidence) reasons.push("no implementation change evidence exists (commit or changed files required)");
+  const requireTests = policy.require_tests === true;
   const deferred = policy.allow_missing_tests && /(?:not\s+run|skipped|not\s+performed|chưa\s+chạy)/i.test(tests);
-  if (!tests && !policy.allow_missing_tests) reasons.push("build/test evidence is missing");
-  else if (failures.test(tests) && !deferred) reasons.push("build/test evidence reports failure or was not run");
+  if (requireTests && !tests && !policy.allow_missing_tests) reasons.push("build/test evidence is missing");
+  else if (requireTests && failures.test(tests) && !deferred) reasons.push("build/test evidence reports failure or was not run");
   if (!location) reasons.push("implementation location/evidence is missing");
   return { ok: reasons.length === 0, reasons, commit: sha || null, summary, tests, where: location };
 }
