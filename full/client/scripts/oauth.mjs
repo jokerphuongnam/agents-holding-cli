@@ -8,7 +8,20 @@ const BASE = () => (process.env.AH_MCP_URL ?? "https://mznrffnvmhmiudvfuquk.supa
 const svc = (p) => `agents-holding-oauth-${p}`;
 const poolSvc = (p) => `agents-holding-oauth-${p}-pool`;
 const activeSvc = (p) => `agents-holding-oauth-${p}-active`;
-const kc = (s) => { try { return execFileSync("security", ["find-generic-password", "-s", s, "-a", process.env.USER, "-w"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() || null; } catch { return null; } };
+const kc = (s) => {
+  try {
+    const raw = execFileSync("security", ["find-generic-password", "-s", s, "-a", process.env.USER, "-w"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    if (!raw) return null;
+    // macOS security may return generic-password data as a hex string.
+    // Decode only when the decoded payload is JSON/text; otherwise preserve
+    // ordinary plaintext Keychain values.
+    if (/^(?:[0-9a-f]{2})+$/i.test(raw)) {
+      const decoded = Buffer.from(raw, "hex").toString("utf8");
+      if (/^[\[{]/.test(decoded) || decoded.includes("access_token")) return decoded;
+    }
+    return raw;
+  } catch { return null; }
+};
 const kcDel = (s) => { try { execFileSync("security", ["delete-generic-password", "-s", s, "-a", process.env.USER], { stdio: "ignore" }); } catch {} };
 // For Atlassian, a site's name is not a user identity: multiple users can grant
 // the same 3LO app access to the same cloud site. Prefer Jira's stable accountId
