@@ -1058,7 +1058,14 @@ Jira: ${issue}` });
         // QC remediation is an engineering loop; Reopened is a user-facing
         // post-Done state and may be user-only in Jira workflows.
         const recoveryKey = codingKey;
-        if (!(await advance(s0, recoveryKey))) return;
+        // Some Jira workflows intentionally disallow QC -> Coding (and make
+        // Reopened user-only). Keep the Jira card in its current QC status,
+        // persist the Coding checkpoint, and run the remediation worker
+        // directly. The next successful QC can transition normally.
+        if (!(await advance(s0, recoveryKey))) {
+          log(`lean: ${issue} Jira did not allow ${s0} -> ${recoveryKey}; running Coding remediation from checkpoint`);
+          X.ckptSave(st, issue, { stage: codingKey, running: true, workflow_blocked: false, last_error: null });
+        }
         const sv = L.loadPlan(st, issue), dev = sv.developer ?? "tech-lead", dwho = L.stageStaff(na, codingKey, { kind: "code", developer: dev });
         const r = await codeOnce(codingKey, { techPlan: sv.tech_plan, dev, feedback: `QC failed, fix it:\n${res.filter((x) => !x.v.pass).map((x) => x.v.failed.map((f) => `${f.name}: ${f.out}`).join("\n")).join("\n")}`, who: dwho });
         if (!r) return;
@@ -1104,7 +1111,12 @@ Jira: ${issue}` });
         await record("qc_fail", failureText);
         await say(who, `QC FAIL\n${failureText}\nReturning to Coding for remediation.`);
         const recoveryKey = codingKey;
-        if (recoveryKey) await advance(s0, recoveryKey);
+        if (recoveryKey) {
+          if (!(await advance(s0, recoveryKey))) {
+            X.ckptSave(st, issue, { stage: codingKey, running: true, workflow_blocked: false, last_error: failureText });
+            log(`lean: ${issue} Jira did not allow ${s0} -> ${recoveryKey}; kept Coding checkpoint for next reconcile`);
+          }
+        }
         else log(`lean: ${issue} QC failed; no recovery stage configured`);
         return;
       }
