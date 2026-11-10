@@ -88,14 +88,13 @@ ah_refresh_package() {
   fi
   [ -n "$asset_url" ] || { echo "   no published client artifact found; keeping current scripts" >&2; rm -rf "$tmp"; return 1; }
   curl_fetch() { curl --fail --silent --show-error --location --retry 6 --retry-delay 2 --retry-all-errors "$@"; }
-  if ! { [ -n "$asset_api_url" ] && curl_fetch -H 'Accept: application/octet-stream' "$asset_api_url" -o "$tmp/client.tar.gz"; }; then
-    if curl_fetch "$asset_url" -o "$tmp/client.tar.gz"; then :
-    else
-    # Older releases used a v-prefixed tag and asset name; retain compatibility.
-    compat="${asset_url/$tag/v$tag}"
-    compat="${compat/agents-holding-cli-$tag.tar.gz/agents-holding-cli-v$tag.tar.gz}"
-    curl_fetch "$compat" -o "$tmp/client.tar.gz" || { echo "   package download failed; keeping current scripts" >&2; rm -rf "$tmp"; return 1; }
-    fi
+  # Always use the resolved browser download URL. The GitHub API asset URL can
+  # belong to the stale `latest` release and produces misleading 404s after
+  # numeric tag resolution.
+  if ! curl_fetch "$asset_url" -o "$tmp/client.tar.gz"; then
+    echo "   package download failed; keeping current scripts" >&2
+    rm -rf "$tmp"
+    return 1
   fi
   mkdir -p "$tmp/src" && tar xzf "$tmp/client.tar.gz" -C "$tmp/src"
   # Releases may be archived with a single top-level directory (for example
