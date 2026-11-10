@@ -881,14 +881,6 @@ Jira: ${issue}` });
     };
     if (seg.kind === "code") { // Coding: the card is already in Coding (moved by advance), now the developer codes
       const sv = L.loadPlan(st, issue);
-      const ck = X.ckptLoad(st, issue) ?? {};
-      // Reopened retries may legitimately have no new commit. Preserve the
-      // implementation evidence from the task branch history instead of
-      // checking only the current Coding worker result.
-      const historyCommit = sv.commit || ck.last_commit || runRepos.map((rp) => {
-        try { return L.git(rp, "rev-list", "--max-count=1", "--no-merges", branch, "--not", "develop", "main"); }
-        catch { return ""; }
-      }).find(Boolean) || "";
       // review feedback (In Review -> Coding): the SAME developer who coded it fixes it on the existing feature/<KEY> branch
       const review = !!na.review_feedback;
       const dev = sv.developer || (review && L.codingDeveloper(sv, na.assigned_role, devRoles)) || L.pickDeveloper(devRoles, null, na.assigned_role, `${iss.summary} ${iss.description}`);
@@ -967,6 +959,14 @@ Jira: ${issue}` });
         fixes++; res = runQc();
       }
       const sv = L.loadPlan(st, issue);
+      const ck = X.ckptLoad(st, issue) ?? {};
+      // Reopened retries may legitimately have no new commit. Preserve the
+      // implementation evidence from the task branch history instead of
+      // checking only the current Coding worker result.
+      const historyCommit = sv.commit || ck.last_commit || runRepos.map((rp) => {
+        try { return L.git(rp, "rev-list", "--max-count=1", "--no-merges", branch, "--not", "develop", "main"); }
+        catch { return ""; }
+      }).find(Boolean) || "";
       if (res.some((x) => !x.v.pass)) { const txt = qcText(res); await record("qc_fail", txt); await say(who, `QC FAIL\n${txt}\nStopping: needs a look from you.`, "qc"); log(`lean: ${issue} QC failed after ${fixes} fix(es); stopped`); return; }
       const txt = [qcText(res), res.every((x) => !x.v.passed.length) && sv.tests && `Developer check: ${sv.tests}`].filter(Boolean).join("\n");
       const steps = L.prSteps(na, seg), h = steps.open || steps.merge ? host(sv) : { msg: [] };
