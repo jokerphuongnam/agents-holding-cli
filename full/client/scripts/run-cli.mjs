@@ -31,7 +31,12 @@ async function mcp(name, args) {
 
 const cfg = L.loadAgentCfg(process.env.HOME, company);
 const lang = L.pickLang(cfg.lang, task); L.setLang(lang);
-const code = /-dev$|engineer|developer/.test(staff);
+// Repo/review work needs the provider tool loop even when the role is a
+// technical lead or a custom role such as int-tech-lead. Text-only staff must
+// stay tool-less, but repository verbs are an explicit signal for read-only
+// inspection and implementation tasks.
+const code = flag("--code") || /(^|[-_])(dev|developer|engineer|tech-lead|ios|android|backend|frontend|qa)([-_]|$)/i.test(staff)
+  || /\b(repo|repository|code|implementation|review|inspect|audit|test|build|file|sdk|integration)\b/i.test(task);
 // staffing gate (same logic as the Jira path): no staff with the role -> fail fast; role without the skill -> ask 1/2/3
 if (!process.argv.includes("--proceed")) {
   const st = await mcp("staffing_check", { company, request: task, staff, lang }).catch((e) => ({ kind: "ok", error: e.message }));
