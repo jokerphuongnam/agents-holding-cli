@@ -16,7 +16,7 @@ const args = process.argv.slice(2), cmd = args.shift(), val = (n) => { const i =
 try { for (const f of readdirSync(dir).filter((x) => x.startsWith("pty-") && x.endsWith(".json"))) { const s = JSON.parse(readFileSync(join(dir, f), "utf8")); if (s.session_id) db[s.session_id] = s; } } catch {}
 const shell = process.env.SHELL || "unknown", toolchain = (() => { try { return execFileSync("/usr/bin/env", ["bash", "-lc", "node --version; git --version"], { encoding: "utf8" }).trim(); } catch { return process.version; } })();
 const usage = () => { console.error("usage: holding terminal register [--company C] [--repo PATH] | dispatch <session-id> <command> | status [<session-id>] | unregister <session-id> | heartbeat <session-id> | approve <session-id> | cancel <session-id>"); process.exit(2); };
-export function selectAvailableTerminal(sessions, { company, repo } = {}) { return Object.values(sessions).filter((s) => s.status === "connected" && s.heartbeat_at && Date.now() - new Date(s.heartbeat_at).getTime() < 90000 && (!company || s.company === company) && (!repo || s.repo === repo)).sort((a, b) => new Date(b.heartbeat_at) - new Date(a.heartbeat_at))[0] ?? null; }
+export function selectAvailableTerminal(sessions, { company, repo } = {}) { return Object.values(sessions).filter((s) => s.status === "connected" && s.socket && existsSync(s.socket) && s.heartbeat_at && Date.now() - new Date(s.heartbeat_at).getTime() < 90000 && (!company || s.company === company) && (!repo || s.repo === repo)).sort((a, b) => new Date(b.heartbeat_at) - new Date(a.heartbeat_at))[0] ?? null; }
 export function terminalScopeMatches(session, { company, repo, parentCompany = null } = {}) { if (!session || session.status !== "connected") return false; if (repo && realpathSync(resolve(repo)) !== session.repo) return false; return !!(session.company === company || (parentCompany && session.company === parentCompany)); }
 if (cmd === "register") {
   const rp = val("--repo") || process.cwd(); let repoPath = rp;
@@ -54,7 +54,12 @@ if (cmd === "register") {
   console.log(JSON.stringify({ ...s, next: `holding terminal approve ${id}` }, null, 2));
 } else if (cmd === "status") {
   const xs = Object.values(db).filter((s) => !args[0] || s.session_id === args[0]); if (!xs.length) { console.log("no terminal sessions"); process.exit(0); }
-  for (const s of xs) { if (expired(s) && s.status === "connected") s.status = "expired"; console.log(`${s.session_id} ${s.status} repo=${s.repo} cwd=${s.cwd} user=${s.user_id} device=${s.device_id} expires=${s.expires_at}`); } save(db);
+  for (const s of xs) {
+    if (s.status === "connected" && s.socket && !existsSync(s.socket)) s.status = "disconnected";
+    if (expired(s) && s.status === "connected") s.status = "expired";
+    console.log(`${s.session_id} ${s.status} repo=${s.repo} cwd=${s.cwd} user=${s.user_id} device=${s.device_id} expires=${s.expires_at}`);
+  }
+  save(db);
 } else if (cmd === "approve" || cmd === "cancel") {
   const s = db[args[0]]; if (!s) { console.error("unknown session; ask CEO/chat for a fresh request"); process.exit(1); }
   if (expired(s)) { s.status = "expired"; save(db); console.error("session expired; request a fresh token from CEO/chat"); process.exit(1); }

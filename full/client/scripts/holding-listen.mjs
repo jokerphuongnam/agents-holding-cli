@@ -28,7 +28,18 @@ const AH_CLIENT_VERSION = (() => { try { return readFileSync_AH(new URL("./VERSI
 
 const args = process.argv.slice(2);
 const opt = (n, d) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : d; };
-const onlyRepo = opt("--repo") ? resolve(opt("--repo")) : null;
+const repoArg = opt("--repo");
+// Accept a repo path, a registered repo name, or the current repo name.  In
+// particular, from .../Nailly, `--repo Nailly` must not become
+// .../Nailly/Nailly.
+const onlyRepo = repoArg ? (() => {
+  const raw = String(repoArg);
+  const direct = resolve(raw);
+  if (existsSync(direct)) return direct;
+  const cwd = resolve(process.cwd());
+  if (basename(cwd) === raw) return cwd;
+  return direct;
+})() : null;
 let repo = onlyRepo ?? process.cwd(); // current run's repo (one run at a time; set per run by useCtx)
 let runRepos = [repo];
 const once = args.includes("--once");
