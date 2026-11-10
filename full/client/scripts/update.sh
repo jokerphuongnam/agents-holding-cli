@@ -83,13 +83,14 @@ ah_refresh_package() {
     [ -n "$tag" ] && asset_url="https://github.com/jokerphuongnam/agents-holding-cli/releases/download/$tag/agents-holding-cli-$tag.tar.gz"
   fi
   [ -n "$asset_url" ] || { echo "   no published client artifact found; keeping current scripts" >&2; rm -rf "$tmp"; return 1; }
-  if ! { [ -n "$asset_api_url" ] && curl -fsSL -H 'Accept: application/octet-stream' "$asset_api_url" -o "$tmp/client.tar.gz"; }; then
-    if curl -fsSL "$asset_url" -o "$tmp/client.tar.gz"; then :
+  curl_fetch() { curl --fail --silent --show-error --location --retry 6 --retry-delay 2 --retry-all-errors "$@"; }
+  if ! { [ -n "$asset_api_url" ] && curl_fetch -H 'Accept: application/octet-stream' "$asset_api_url" -o "$tmp/client.tar.gz"; }; then
+    if curl_fetch "$asset_url" -o "$tmp/client.tar.gz"; then :
     else
     # Older releases used a v-prefixed tag and asset name; retain compatibility.
     compat="${asset_url/$tag/v$tag}"
     compat="${compat/agents-holding-cli-$tag.tar.gz/agents-holding-cli-v$tag.tar.gz}"
-    curl -fsSL "$compat" -o "$tmp/client.tar.gz" || { echo "   package download failed; keeping current scripts" >&2; rm -rf "$tmp"; return 1; }
+    curl_fetch "$compat" -o "$tmp/client.tar.gz" || { echo "   package download failed; keeping current scripts" >&2; rm -rf "$tmp"; return 1; }
     fi
   fi
   mkdir -p "$tmp/src" && tar xzf "$tmp/client.tar.gz" -C "$tmp/src"
