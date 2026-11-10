@@ -67,7 +67,7 @@ ah_refresh_package() {
     newest="$(git ls-remote --tags --refs "$url" 2>/dev/null | awk -F/ -v today="$today" '$NF ~ /^(v)?[0-9]{10}$/ {v=$NF; sub(/^v/,"",v); if (substr(v,1,8) <= today) print v}' | sort -n | tail -1)"
     if [ -n "$newest" ] && { [ "$tag" = latest ] || [ "$newest" -gt "${tag#v}" ] 2>/dev/null; }; then
       tag="$newest"
-      asset_url="https://github.com/jokerphuongnam/agents-holding-cli/releases/download/$tag/agents-holding-cli-$tag.tar.gz"
+      asset_url="https://github.com/jokerphuongnam/agents-holding-cli/releases/download/v$tag/agents-holding-cli-v$tag.tar.gz"
       # The API asset URL was resolved from the old `latest` release above.
       # Once tag resolution selects a newer numeric release, never download
       # that stale asset by API URL.
@@ -84,7 +84,7 @@ ah_refresh_package() {
       tag="$(git ls-remote --tags --refs "$url" 2>/dev/null | awk -F/ -v today="$today" '$NF ~ /^(v)?[0-9]{10}$/ {v=$NF; sub(/^v/,"",v); if (substr(v,1,8) <= today) print v}' | sort -n | tail -1)"
       [ -n "$tag" ] && echo "   API unavailable; resolved tag directly: $tag"
     fi
-    [ -n "$tag" ] && asset_url="https://github.com/jokerphuongnam/agents-holding-cli/releases/download/$tag/agents-holding-cli-$tag.tar.gz"
+      [ -n "$tag" ] && asset_url="https://github.com/jokerphuongnam/agents-holding-cli/releases/download/v$tag/agents-holding-cli-v$tag.tar.gz"
   fi
   [ -n "$asset_url" ] || { echo "   no published client artifact found; keeping current scripts" >&2; rm -rf "$tmp"; return 1; }
   curl_fetch() { curl --fail --silent --show-error --location --retry 6 --retry-delay 2 --retry-all-errors "$@"; }
