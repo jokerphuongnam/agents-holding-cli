@@ -1260,9 +1260,13 @@ async function reconcile(company, sinceIso, forceActive = false) {
     let n = 0;
     for (const b of boards) {
       const jql = forceActive
-        ? `project = "${b.project_key}" AND statusCategory != Done AND (labels = "ah-agent-owned" OR status in ("Reopened", "Coding", "QC", "In Review")) ORDER BY updated ASC`
+        ? `project = "${b.project_key}" ORDER BY updated ASC`
         : X.jqlSince(b.project_key, since);
-      const res = await jira.search(jql, ["status", "updated", "summary", "description", "labels", "assignee", "comment"]);
+      const raw = await jira.search(jql, ["status", "updated", "summary", "description", "labels", "assignee", "comment"]);
+      const res = forceActive ? raw.filter((i) => {
+        const s = String(i.fields?.status?.name ?? "").toLowerCase();
+        return (i.fields?.labels ?? []).includes("ah-agent-owned") || ["reopened", "coding", "qc", "in review"].includes(s);
+      }) : raw;
       const replay = (forceActive
         ? res.map((i) => ({ key: i.key, status: i.fields?.status?.name ?? "", updated: i.fields?.updated ?? "" }))
         : X.replayTodo(res, seen)).sort((a, z) => {
@@ -1293,6 +1297,14 @@ async function reconcile(company, sinceIso, forceActive = false) {
           recoveryWakeStatus.set(recoveryKey, String(x.status ?? ""));
           log(`reconcile ${x.key}: dispatching recovered Coding action`);
           wake({ company, issue: x.key, event: "jira_startup_scan", stage: "coding", updated: x.updated });
+        }
+        // A persisted QC checkpoint is not QC evidence. After a listener
+        // restart, replay the QC runner once for an active QC card even when
+        // reconcile_issue reports `already applied`.
+        const qcRecovery = forceActive && /^qc$/i.test(String(x.status ?? ""));
+        if (qcRecovery) {
+          log(`reconcile ${x.key}: dispatching recovered QC action`);
+          wake({ company, issue: x.key, event: "jira_startup_scan", stage: "qc", updated: x.updated });
         }
       }
     }
