@@ -1020,8 +1020,8 @@ Jira: ${issue}` });
       const qcText = (res) => res.map((x) => `${runRepos.length > 1 ? rname(x.rp) + ": " : ""}${x.v.text}`).join("\n");
       for (const rp of runRepos) L.ensureBranch(rp, branch);
       let res = await runQc(), fixes = 0;
-      while (res.some((x) => !x.v.pass) && fixes < 1 && codingKey) {
-        const txt = qcText(res); await record("qc_fail", txt); await say(who, `QC FAIL\n${txt}\nBack to Coding for one fix.`);
+      while (res.some((x) => !x.v.pass) && fixes < 3 && codingKey) {
+        const txt = qcText(res); await record("qc_fail", txt); await say(who, `QC FAIL\n${txt}\nBack to Coding for automatic remediation (attempt ${fixes + 1}/3).`);
         const recoveryKey = (na.flow_stages ?? []).includes("reopened") ? "reopened" : codingKey;
         if (!(await advance(s0, recoveryKey))) return;
         const sv = L.loadPlan(st, issue), dev = sv.developer ?? "tech-lead", dwho = L.stageStaff(na, codingKey, { kind: "code", developer: dev });
@@ -1042,7 +1042,14 @@ Jira: ${issue}` });
         try { return L.git(rp, "rev-list", "--max-count=1", "--no-merges", branch, "--not", "develop", "main"); }
         catch { return ""; }
       }).find(Boolean) || "");
-      if (res.some((x) => !x.v.pass)) { const txt = qcText(res); await record("qc_fail", txt); await say(who, `QC FAIL\n${txt}\nStopping: needs a look from you.`, "qc"); log(`lean: ${issue} QC failed after ${fixes} fix(es); stopped`); return; }
+      if (res.some((x) => !x.v.pass)) {
+        const txt = qcText(res); await record("qc_fail", txt);
+        // QC is an engineering gate, not a user gate. Keep the task in the
+        // remediation checkpoint; the next reconcile/run retries Coding.
+        if (codingKey) await advance(s0, codingKey).catch((e) => log(`lean: ${issue} QC remediation checkpoint failed: ${e.message}`));
+        log(`lean: ${issue} QC failed after ${fixes} automatic remediation attempt(s); kept in Coding`);
+        return;
+      }
       const txt = [qcText(res), res.every((x) => !x.v.passed.length) && sv.tests && `Developer check: ${sv.tests}`].filter(Boolean).join("\n");
       const steps = L.prSteps(na, seg), h = steps.open || steps.merge ? host(sv) : { msg: [] };
       const where = [sv.where, ...h.msg].filter(Boolean).join("\n");
