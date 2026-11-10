@@ -1058,7 +1058,7 @@ Jira: ${issue}` });
             }
             rows.push({ rp, v: L.qcVerdict(null, results) });
           }
-          finally { if (jira && label !== "terminal-") await jira.labels(issue, [], [label]).catch((e) => log(`Jira terminal label cleanup failed: ${e.message}`)); }
+          finally { /* Keep the terminal label as durable QC evidence; remove it when the QC stage is closed. */ }
         }
         return rows;
       };

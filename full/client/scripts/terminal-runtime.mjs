@@ -34,7 +34,9 @@ export function selectAvailableTerminal({ company, repo } = {}) {
 // A terminal check may legitimately run for hours (large integration suites,
 // device/UI tests). `timeoutMs=0` means no wall-clock timeout; disconnect and
 // an explicit non-zero exit still fail immediately.
-export function dispatchTerminal(session, command, timeoutMs = 0) {
+const terminalQueues = new Map();
+const terminalInflight = new Map();
+function dispatchTerminalNow(session, command, timeoutMs = 0) {
   return new Promise((resolve) => {
     if (!session?.socket || !session?.token) return resolve({ status: "blocked", reason: "registered terminal is unavailable" });
     const socket = createConnection(session.socket), chunks = [];
@@ -50,4 +52,22 @@ export function dispatchTerminal(session, command, timeoutMs = 0) {
     socket.on("error", (e) => finish({ status: "blocked", reason: `terminal IPC disconnected: ${e.message}` }));
     socket.on("close", () => finish(completion ?? { status: "blocked", reason: "terminal closed without completion" }));
   });
+}
+
+// Serialize work per PTY and coalesce identical requests. A busy terminal is
+// a queue condition, not a task failure; different commands wait, while an
+// identical command shares the existing result.
+export function dispatchTerminal(session, command, timeoutMs = 0) {
+  const key = `${session?.socket ?? "missing"}\n${command}`;
+  if (terminalInflight.has(key)) return terminalInflight.get(key);
+  const socketKey = session?.socket ?? "missing";
+  const prior = terminalQueues.get(socketKey) ?? Promise.resolve();
+  const run = prior.catch(() => {}).then(() => dispatchTerminalNow(session, command, timeoutMs));
+  terminalInflight.set(key, run);
+  terminalQueues.set(socketKey, run);
+  run.finally(() => {
+    if (terminalInflight.get(key) === run) terminalInflight.delete(key);
+    if (terminalQueues.get(socketKey) === run) terminalQueues.delete(socketKey);
+  }).catch(() => {});
+  return run;
 }
