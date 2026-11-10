@@ -492,6 +492,7 @@ async function useCtx(p) {
   try {
     const localCompany = JSON.parse(readFileSync(join(repo, ".agents", "company.json"), "utf8"));
     if (localCompany.git?.branch_prefix) runSettings = { ...runSettings, branch_prefix: localCompany.git.branch_prefix };
+    if (localCompany.staff_access) runSettings = { ...runSettings, staff_access: localCompany.staff_access };
   } catch {}
   if (jira) {
     try {

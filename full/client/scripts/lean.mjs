@@ -79,14 +79,14 @@ export function codingDeveloper(saved = {}, assigned = null, devRoles = []) {
 export function staffingWorkers(settings = {}, assignedRoles = [], fallbackRole = "tech-lead") {
   // Workflow/staff assignment chooses the workers. Local config only maps a
   // role to its filesystem scope; it never selects workers by task or stage.
-  const scopes = settings.staff_scopes ?? settings.staff_scope ?? {};
+  const access = settings.staff_access ?? {};
   const configured = Array.isArray(assignedRoles) && assignedRoles.length ? assignedRoles : null;
-  if (!configured?.length) return [{ role: fallbackRole || "tech-lead", scope: String(scopes[fallbackRole] ?? "."), id: "default" }];
+  if (!configured?.length) return [{ role: fallbackRole || "tech-lead", scope: String(access[fallbackRole]?.scope ?? "."), id: "default" }];
   return configured.map((x, i) => {
     const role = String(typeof x === "string" ? x : x.role ?? x.staff ?? fallbackRole ?? "tech-lead");
     return {
     role,
-    scope: String((typeof x === "object" && x.scope != null ? x.scope : scopes[role]) ?? "."),
+    scope: String((typeof x === "object" && x.scope != null ? x.scope : access[role]?.scope) ?? "."),
     id: String((typeof x === "object" && x.id != null ? x.id : `worker:${i + 1}`)),
     prompt: typeof x === "object" && x.prompt ? String(x.prompt) : "",
   }; });

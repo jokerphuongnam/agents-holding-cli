@@ -22,6 +22,15 @@ const here = dirname(fileURLToPath(import.meta.url));
 export const stateDir = (home, co) => join(home, ".config/agents-holding/state", co);
 export const cachePath = (home, co) => join(stateDir(home, co), "policy.json");
 const readJ = (f, d) => { try { return JSON.parse(readFileSync(f, "utf8")); } catch { return d; } };
+function localStaffAccess(cwd, role) {
+  let d = resolve(cwd);
+  for (;;) {
+    const j = readJ(join(d, ".agents", "company.json"), null), a = j?.staff_access?.[role];
+    if (a) return a;
+    const p = dirname(d); if (p === d) break; d = p;
+  }
+  return {};
+}
 
 /** Cached effective policy for a staff. Missing -> role defaults are written (new staff, or existing staff on first launch). */
 export function loadPolicy(home, co, role) {
@@ -80,7 +89,7 @@ export function seatbeltProfile(p, { home, cwd, allowRead = [] }) {
   // are still emitted after this scope and therefore remain authoritative.
   const root = String(cwd).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
   return ["(version 1)", "(allow default)", `(allow file-read* file-write* (subpath \"${root}\"))`, ...res.map((r) => `(deny file-read* file-write* (regex #"${r.replace(/"/g, '\\"')}"))`),
-    ...allowRead.map((f) => `(allow file-read* (literal "${f}"))`)].join("\n") + "\n";
+    ].join("\n") + "\n";
 }
 /** Files under dir (depth-limited) that a policy denies: for bubblewrap overlays and tests. */
 export function deniedFiles(p, dir, home, depth = 4) {
@@ -100,7 +109,9 @@ const logDenied = (home, co, role, what) => { try { appendFileSync(join(stateDir
 /** Prepare one staff launch: write native configs, add CLI flags, wrap in the OS sandbox, set env for the hook. Returns {bin,args,env}. */
 export function wrapLaunch({ home = homedir(), co, role, bin, args, env = process.env, cwd = process.cwd(), platform = process.platform }) {
   if (!co || !role || env.AH_POLICY === "off") return { bin, args, env };
-  const p = loadPolicy(home, co, role), kind = basename(bin).replace(/\.exe$/, ""), nd = join(stateDir(home, co), "native", role); mkdirSync(nd, { recursive: true });
+  const access = localStaffAccess(cwd, role), base = loadPolicy(home, co, role);
+  const p = { ...base, files: { ...(base.files ?? {}), deny: [...new Set(access.deny ?? [])] } };
+  const kind = basename(bin).replace(/\.exe$/, ""), nd = join(stateDir(home, co), "native", role); mkdirSync(nd, { recursive: true });
   const hookCmd = `${JSON.stringify(process.execPath)} ${JSON.stringify(join(here, "policy.mjs"))} hook`;
   const N = nativeConfigs(p, { home, co, role, hookCmd }); let a = [...args]; const e = { ...env, AH_COMPANY: co, AH_STAFF: role, AH_POLICY_CWD: cwd };
   if (kind === "claude") { const f = join(nd, "claude-settings.json"); writeFileSync(f, JSON.stringify(N.claude, null, 2)); a.push("--settings", f); }
