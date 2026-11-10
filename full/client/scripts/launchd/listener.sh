@@ -42,6 +42,19 @@ plist_repo() { [ -f "$1" ] || return 0; /usr/libexec/PlistBuddy -c "Print :Envir
 scope_tag() { printf '%s' "$1" | shasum -a 256 | cut -c1-16; }
 scoped_log() { local r="$(plist_repo "$MASTER")"; [ -z "$r" ] && r="$(plist_repo "$AUTO")"; [ -n "$r" ] && echo "$LOG_DIR/jira-listener-$(scope_tag "$r").log" || echo "$LOG"; }
 scoped_err() { local r="$(plist_repo "$MASTER")"; [ -z "$r" ] && r="$(plist_repo "$AUTO")"; [ -n "$r" ] && echo "$LOG_DIR/jira-listener-$(scope_tag "$r").err.log" || echo "$ERR"; }
+registry_has_repo() {
+  local target="$1" registry="$HOME/.config/agents-holding/projects.json"
+  [ -f "$registry" ] || return 1
+  python3 - "$registry" "$target" <<'PY'
+import json, os, sys
+try:
+    data = json.load(open(sys.argv[1]))
+    target = os.path.realpath(sys.argv[2])
+    print("yes" if any(os.path.realpath(str(p.get("path", ""))) == target for p in data.get("projects", [])) else "no")
+except Exception:
+    print("no")
+PY
+}
 
 write_plist() { # $1 repo
   mkdir -p "$BIN_DIR" "$LOG_DIR" "$HOME/Library/LaunchAgents"
@@ -93,7 +106,9 @@ cmd_on() {
   [ -z "$repo" ] && [ -f "$PWD/.agents/company.json" ] && repo="$PWD"
   [ -z "$repo" ] && { echo "error: which repo? run: holding listener start --repo /path/to/company-repo (the folder with .agents/company.json)"; exit 2; }
   repo="$(cd "$repo" && pwd)"
-  [ -f "$repo/.agents/company.json" ] || { echo "error: $repo/.agents/company.json not found (run /ceo in that repo first)"; exit 2; }
+  if [ ! -f "$repo/.agents/company.json" ] && [ "$(registry_has_repo "$repo")" != "yes" ]; then
+    echo "error: $repo is not registered as a company repo (run /ceo there or holding project add --repo DIR)"; exit 2
+  fi
   write_plist "$repo"
   install_watchdog
   [ "$OLD_AUTO" = 1 ] && cp "$MASTER" "$AUTO"   # migrated: keep autostart ON
