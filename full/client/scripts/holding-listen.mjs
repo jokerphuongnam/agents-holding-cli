@@ -1045,7 +1045,8 @@ Jira: ${issue}` });
                 if (c.runner !== "local") {
                   if (!terminal) result = { name: c.name, ok: false, out: `no live registered terminal for company=${company} repo=${rp}; waiting for terminal reconnect` };
                   else {
-                    const ev = await dispatchTerminal(terminal, command);
+                    const timeoutSeconds = Number(spec.timeout_seconds ?? spec.timeout ?? 0);
+                    const ev = await dispatchTerminal(terminal, command, timeoutSeconds > 0 ? timeoutSeconds * 1000 : 0);
                     result = { name: c.name, ok: ev.status === "completed" && ev.exit_code === 0, out: ev.status === "completed" ? `${ev.stdout ?? ""}${ev.stderr ?? ""}`.slice(-1500) : ev.reason ?? "terminal did not complete" };
                   }
                 } else result = L.runChecks(rp, [c])[0];

@@ -31,13 +31,16 @@ export function selectAvailableTerminal({ company, repo } = {}) {
     .sort((a, b) => timeMs(b.heartbeat_at) - timeMs(a.heartbeat_at))[0] ?? null;
 }
 
-export function dispatchTerminal(session, command, timeoutMs = 10 * 60 * 1000) {
+// A terminal check may legitimately run for hours (large integration suites,
+// device/UI tests). `timeoutMs=0` means no wall-clock timeout; disconnect and
+// an explicit non-zero exit still fail immediately.
+export function dispatchTerminal(session, command, timeoutMs = 0) {
   return new Promise((resolve) => {
     if (!session?.socket || !session?.token) return resolve({ status: "blocked", reason: "registered terminal is unavailable" });
     const socket = createConnection(session.socket), chunks = [];
     let completion = null, settled = false;
     const finish = (v) => { if (settled) return; settled = true; clearTimeout(timer); try { socket.destroy(); } catch {} resolve(v); };
-    const timer = setTimeout(() => finish({ status: "blocked", reason: "terminal command timed out" }), timeoutMs);
+    const timer = timeoutMs > 0 ? setTimeout(() => finish({ status: "blocked", reason: "terminal command timed out" }), timeoutMs) : null;
     socket.on("data", (b) => {
       const raw = b.toString(); chunks.push(raw);
       for (const line of raw.split("\n")) { try { const x = JSON.parse(line); if (x.event === "completion") completion = x; } catch {} }
