@@ -21,6 +21,7 @@ import * as XT from "./crossteam.mjs";
 import { client as jiraRaw } from "./jira.mjs";
 import * as JR from "./jira-rules.mjs";
 import * as ME from "./mirror-executor.mjs";
+import { selectAvailableTerminal, dispatchTerminal } from "./terminal-runtime.mjs";
 import { atlassianToken } from "./attach.mjs";
 import { readFileSync as readFileSync_AH } from "node:fs";
 const AH_CLIENT_VERSION = (() => { try { return readFileSync_AH(new URL("./VERSION", import.meta.url), "utf8").trim(); } catch { return "0"; } })();
@@ -945,8 +946,9 @@ Jira: ${issue}` });
       const baselines = { ...(sv.qc_baseline ?? {}) }, selfCheck = {};
       for (const rp of runRepos) {
         L.ensureBranch(rp, branch);
-        const checks = qcAhead ? L.detectChecks(rp) : [];
-        if (checks.length && !baselines[rp]) { baselines[rp] = L.runChecks(rp, checks).map(({ name, ok }) => ({ name, ok })); log(`lean: ${issue} QC baseline ${rname(rp)}: ${baselines[rp].map((x) => `${x.name}=${x.ok ? "ok" : "fail"}`).join(", ")}`); }
+        // Never create a local baseline for QC terminal checks. A pre-existing
+        // failure is still a failed quality gate: In Review must only receive
+        // a fresh successful terminal transcript.
         selfCheck[rp] = L.needsSelfCheck(baselines[rp]); // no script check at all -> the developer runs the cheapest check itself (a failing baseline is ignored, not looped on)
       }
       const steps = review ? [sv.tech_plan ?? ""] : X.splitSteps(sv.tech_plan, Number(process.env.AH_CODE_STEPS ?? 3)), host1 = L.prSteps(na, seg).open || L.prSteps(na, seg).merge;
@@ -1009,10 +1011,32 @@ Jira: ${issue}` });
         const sv = L.loadPlan(st, issue);
         const rows = [];
         for (const rp of runRepos) {
-          const checks = L.detectChecks(rp);
+          const configuredChecks = na.qc_policy?.checks ?? [];
+          const detected = L.detectChecks(rp);
+          const checks = configuredChecks.length
+            ? configuredChecks.map((spec) => {
+                const id = String(spec.id ?? spec.name ?? "check");
+                const command = spec.command ?? (spec.commands ?? []).join(" && ");
+                return command ? { name: id, cmd: "bash", args: ["-lc", command], runner: spec.runner ?? "registered_terminal" } : detected.find((c) => c.name === id) ?? { name: id, cmd: "bash", args: ["-lc", id], runner: spec.runner ?? "registered_terminal" };
+              })
+            : detected.map((c) => ({ ...c, runner: "registered_terminal" }));
           const label = terminalLabel(checks);
           if (jira && label !== "terminal-") await jira.labels(issue, [label]).catch((e) => log(`Jira terminal label failed: ${e.message}`));
-          try { rows.push({ rp, v: L.qcVerdict(sv.qc_baseline?.[rp] ?? null, L.runChecks(rp, checks)) }); }
+          try {
+            const terminal = selectAvailableTerminal({ company, repo: rp });
+            const results = [];
+            for (const c of checks) {
+              const command = [c.cmd, ...(c.args ?? [])].join(" ");
+              if (c.runner !== "local") {
+                if (!terminal) results.push({ name: c.name, ok: false, out: "registered terminal unavailable; run holding terminal register in this repo" });
+                else {
+                  const ev = await dispatchTerminal(terminal, command);
+                  results.push({ name: c.name, ok: ev.status === "completed" && ev.exit_code === 0, out: ev.status === "completed" ? `${ev.stdout ?? ""}${ev.stderr ?? ""}`.slice(-1500) : ev.reason ?? "terminal did not complete" });
+                }
+              } else results.push(...L.runChecks(rp, [c]));
+            }
+            rows.push({ rp, v: L.qcVerdict(null, results) });
+          }
           finally { if (jira && label !== "terminal-") await jira.labels(issue, [], [label]).catch((e) => log(`Jira terminal label cleanup failed: ${e.message}`)); }
         }
         return rows;
@@ -1022,7 +1046,9 @@ Jira: ${issue}` });
       let res = await runQc(), fixes = 0;
       while (res.some((x) => !x.v.pass) && fixes < 3 && codingKey) {
         const txt = qcText(res); await record("qc_fail", txt); await say(who, `QC FAIL\n${txt}\nBack to Coding for automatic remediation (attempt ${fixes + 1}/3).`);
-        const recoveryKey = (na.flow_stages ?? []).includes("reopened") ? "reopened" : codingKey;
+        // QC remediation is an engineering loop; Reopened is a user-facing
+        // post-Done state and may be user-only in Jira workflows.
+        const recoveryKey = codingKey;
         if (!(await advance(s0, recoveryKey))) return;
         const sv = L.loadPlan(st, issue), dev = sv.developer ?? "tech-lead", dwho = L.stageStaff(na, codingKey, { kind: "code", developer: dev });
         const r = await codeOnce(codingKey, { techPlan: sv.tech_plan, dev, feedback: `QC failed, fix it:\n${res.filter((x) => !x.v.pass).map((x) => x.v.failed.map((f) => `${f.name}: ${f.out}`).join("\n")).join("\n")}`, who: dwho });
@@ -1068,7 +1094,7 @@ Jira: ${issue}` });
         const failureText = `QC evidence gate failed: ${failed}`;
         await record("qc_fail", failureText);
         await say(who, `QC FAIL\n${failureText}\nReturning to Coding for remediation.`);
-        const recoveryKey = (na.flow_stages ?? []).includes("reopened") ? "reopened" : codingKey;
+        const recoveryKey = codingKey;
         if (recoveryKey) await advance(s0, recoveryKey);
         else log(`lean: ${issue} QC failed; no recovery stage configured`);
         return;
