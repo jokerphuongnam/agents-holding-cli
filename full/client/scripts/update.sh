@@ -144,29 +144,41 @@ if [ "${1:-}" = "--check" ]; then
 fi
 
 before_raw="$(ver_raw)"; before="$(ver)"
-listener_was_active=0; listener_was_autostart=0; listener_repo=""
+listener_state="$(mktemp "${TMPDIR:-/tmp}/ah-listeners.XXXXXX")"
+listener_was_active=0
 if command -v launchctl >/dev/null 2>&1; then
-  lbl=com.agentsholding.jira-listener; domain="gui/$(id -u)"
-  launchctl print "$domain/$lbl" >/dev/null 2>&1 && listener_was_active=1
-  [ -f "$HOME/Library/LaunchAgents/$lbl.plist" ] && listener_was_autostart=1
-  if [ "$listener_was_active" = 1 ] || [ "$listener_was_autostart" = 1 ]; then
-    listener_repo="$(/usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:AH_REPO_DIR' "$HOME/Library/Application Support/agents-holding/$lbl.plist" 2>/dev/null || true)"
-    echo "   listener active before update; stopping it for an atomic replace"
-    # The update owns the stop/start window. Preserve the login plist so an
-    # interrupted update cannot silently turn a previously enabled autostart off.
-    bash "$here/launchd/listener.sh" stop --preserve-autostart >/dev/null 2>&1 || { echo "ERROR: could not stop the Jira Listener safely; update aborted" >&2; exit 1; }
+  domain="gui/$(id -u)"; bin="$HOME/Library/Application Support/agents-holding"
+  for plist in "$bin"/com.agentsholding.jira-listener*.plist; do
+    [ -f "$plist" ] || continue
+    repo="$(/usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:AH_REPO_DIR' "$plist" 2>/dev/null || true)"
+    [ -n "$repo" ] || continue
+    lbl="$(basename "$plist" .plist)"; active=0; auto=0
+    launchctl print "$domain/$lbl" >/dev/null 2>&1 && active=1
+    [ -f "$HOME/Library/LaunchAgents/$lbl.plist" ] && auto=1
+    if [ "$active" = 1 ] || [ "$auto" = 1 ]; then
+      printf '%s|%s\n' "$repo" "$auto" >> "$listener_state"
+      listener_was_active=1
+      launchctl bootout "$domain/$lbl" >/dev/null 2>&1 || true
+    fi
+  done
+  if [ "$listener_was_active" = 1 ]; then
+    echo "   listener active before update; stopping all scoped listeners for an atomic replace"
+    sleep 1
   fi
 fi
 restore_listener() {
   [ "$listener_was_active" = 1 ] || return 0
-  local script="$here/launchd/listener.sh"
+  local script="$here/launchd/listener.sh" repo auto
   [ -x "$script" ] || script="${AH_INSTALL_DIR:-$HOME/.agents-holding}/scripts/launchd/listener.sh"
-  echo "   restoring Jira Listener after update" >&2
-  if ! bash "$script" start --repo "$listener_repo" >/dev/null 2>&1; then
-    echo "ERROR: holding update could not restore a healthy Jira Listener" >&2
-    return 1
-  fi
-  if [ "$listener_was_autostart" = 1 ]; then bash "$script" autostart on >/dev/null 2>&1 || return 1; fi
+  echo "   restoring scoped Jira Listeners after update" >&2
+  while IFS='|' read -r repo auto; do
+    [ -n "$repo" ] || continue
+    if ! bash "$script" start --repo "$repo" >/dev/null 2>&1; then
+      echo "ERROR: holding update could not restore listener for $repo" >&2
+      return 1
+    fi
+    [ "$auto" = 1 ] && bash "$script" autostart on --repo "$repo" >/dev/null 2>&1 || true
+  done < "$listener_state"
 }
 if [ "$listener_was_active" = 1 ]; then
   update_rc=0
@@ -200,11 +212,10 @@ echo "4/4 Jira Listener"
 lbl=com.agentsholding.jira-listener
 if [ "$listener_was_active" = 1 ]; then
   [ -n "$listener_repo" ] || listener_repo="$PWD"
-  if bash "$here/launchd/listener.sh" start --repo "$listener_repo"; then
-    [ "$listener_was_autostart" = 1 ] && bash "$here/launchd/listener.sh" autostart on >/dev/null || true
+  if restore_listener; then
     echo "   restarted and ready"
   else
-    echo "ERROR: listener update completed but restart/readiness failed; autostart was $([ "$listener_was_autostart" = 1 ] && echo on || echo off). Run: holding listener start --repo '$listener_repo'" >&2
+    echo "ERROR: listener update completed but one or more scoped listeners failed to restart" >&2
     exit 1
   fi
 elif command -v systemctl >/dev/null && systemctl --user is-active -q agents-holding-listener 2>/dev/null; then systemctl --user restart agents-holding-listener && echo "   restarted";

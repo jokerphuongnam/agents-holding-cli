@@ -40,6 +40,13 @@ ready_for_start() {
 }
 plist_repo() { [ -f "$1" ] || return 0; /usr/libexec/PlistBuddy -c "Print :EnvironmentVariables:AH_REPO_DIR" "$1" 2>/dev/null || true; }
 scope_tag() { printf '%s' "$1" | shasum -a 256 | cut -c1-16; }
+set_scope() {
+  local r="$1" tag
+  tag="$(scope_tag "$r")"
+  LABEL="com.agentsholding.jira-listener.$tag"
+  MASTER="$BIN_DIR/$LABEL.plist"
+  AUTO="$HOME/Library/LaunchAgents/$LABEL.plist"
+}
 scoped_log() { local r="$(plist_repo "$MASTER")"; [ -z "$r" ] && r="$(plist_repo "$AUTO")"; [ -n "$r" ] && echo "$LOG_DIR/jira-listener-$(scope_tag "$r").log" || echo "$LOG"; }
 scoped_err() { local r="$(plist_repo "$MASTER")"; [ -z "$r" ] && r="$(plist_repo "$AUTO")"; [ -n "$r" ] && echo "$LOG_DIR/jira-listener-$(scope_tag "$r").err.log" || echo "$ERR"; }
 registry_has_repo() {
@@ -60,8 +67,8 @@ write_plist() { # $1 repo
   mkdir -p "$BIN_DIR" "$LOG_DIR" "$HOME/Library/LaunchAgents"
   install -m 755 "$SERVER_DIR/scripts/launchd/run-listener.sh" "$BIN_DIR/run-listener.sh"
   local tag; tag="$(scope_tag "$1")"
-  sed -e "s#__SERVER_DIR__#$SERVER_DIR#g" -e "s#__REPO_DIR__#$1#g" -e "s#__HOME__#$HOME#g" -e "s#__BIN_DIR__#$BIN_DIR#g" -e "s#__LOG_FILE__#$LOG_DIR/jira-listener-$tag.log#g" -e "s#__ERR_FILE__#$LOG_DIR/jira-listener-$tag.err.log#g" \
-    "$SERVER_DIR/scripts/launchd/$LABEL.plist.template" > "$MASTER.tmp"
+  sed -e "s#__LABEL__#$LABEL#g" -e "s#__SERVER_DIR__#$SERVER_DIR#g" -e "s#__REPO_DIR__#$1#g" -e "s#__HOME__#$HOME#g" -e "s#__BIN_DIR__#$BIN_DIR#g" -e "s#__LOG_FILE__#$LOG_DIR/jira-listener-$tag.log#g" -e "s#__ERR_FILE__#$LOG_DIR/jira-listener-$tag.err.log#g" \
+    "$SERVER_DIR/scripts/launchd/com.agentsholding.jira-listener.plist.template" > "$MASTER.tmp"
   plutil -lint -s "$MASTER.tmp" && mv "$MASTER.tmp" "$MASTER"
 }
 
@@ -85,7 +92,9 @@ if [ "$MIGRATED" = 1 ] && [ "${1:-status}" = status ]; then # keep it running + 
 fi
 
 cmd_status() {
-  local pid repo last log err
+  local pid repo last log err repo_arg=""
+  while [ $# -gt 0 ]; do case "$1" in --repo) repo_arg="$2"; shift 2 ;; *) shift ;; esac; done
+  [ -n "$repo_arg" ] && set_scope "$(cd "$repo_arg" && pwd)"
   log="$(scoped_log)"; err="$(scoped_err)"
   repo="$(plist_repo "$MASTER")"; [ -z "$repo" ] && repo="$(plist_repo "$AUTO")"
   pid="$(running_pid)"; if process_ok "$pid" && heartbeat_fresh; then echo "Jira Listener: ON  (running and heartbeat fresh, PID $pid)"; elif loaded; then echo "Jira Listener: DEGRADED (launchd loaded but listener process/heartbeat is not healthy${pid:+, PID $pid})"; else printf '\033[1;31m🔴 Jira Listener is off — all Jira automation is stopped until you start it:\n   %s\033[0m\n   (Jira Listener keeps all Jira automation running.)\n' "$START_CMD"; fi
@@ -106,6 +115,7 @@ cmd_on() {
   [ -z "$repo" ] && [ -f "$PWD/.agents/company.json" ] && repo="$PWD"
   [ -z "$repo" ] && { echo "error: which repo? run: holding listener start --repo /path/to/company-repo (the folder with .agents/company.json)"; exit 2; }
   repo="$(cd "$repo" && pwd)"
+  set_scope "$repo"
   if [ ! -f "$repo/.agents/company.json" ] && [ "$(registry_has_repo "$repo")" != "yes" ]; then
     echo "error: $repo is not registered as a company repo (run /ceo there or holding project add --repo DIR)"; exit 2
   fi
@@ -131,8 +141,9 @@ cmd_on() {
 }
 
 cmd_off() {
-  local preserve=0
-  [ "${2:-}" = "--preserve-autostart" ] && preserve=1
+  local preserve=0 repo_arg=""; shift || true
+  while [ $# -gt 0 ]; do case "$1" in --preserve-autostart) preserve=1; shift ;; --repo) repo_arg="$2"; shift 2 ;; *) shift ;; esac; done
+  [ -n "$repo_arg" ] && set_scope "$(cd "$repo_arg" && pwd)"
   [ "$preserve" = 0 ] && rm -f "$AUTO"
   launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
   sleep 1
@@ -146,8 +157,11 @@ cmd_off() {
 
 poke() { local pid; pid="$(running_pid)"; [ -n "$pid" ] && kill -USR1 "$pid" 2>/dev/null || true; } # Jira Listener re-sends its heartbeat
 cmd_autostart() {
-  case "${1:-}" in
-    on) loaded || { echo "error: the Jira Listener is off. Turn it on first: holding listener start   (then: holding listener autostart on)"; exit 1; }
+  local action="${1:-}" repo=""; shift || true
+  while [ $# -gt 0 ]; do case "$1" in --repo) repo="$2"; shift 2 ;; *) echo "unknown option $1"; exit 2 ;; esac; done
+  [ -n "$repo" ] && set_scope "$(cd "$repo" && pwd)"
+  case "$action" in
+    on) loaded || { echo "error: the Jira Listener is off. Turn it on first: holding listener start --repo DIR"; exit 1; }
         rm -f "$AUTOSTART_DISABLED"
         [ -f "$MASTER" ] || write_plist "$(plist_repo "$AUTO")"
         mkdir -p "$(dirname "$AUTO")"; cp "$MASTER" "$AUTO"; install_watchdog; poke; echo "autostart ON (starts at login)." ;;
@@ -157,10 +171,10 @@ cmd_autostart() {
 }
 
 case "${1:-status}" in
-  status) cmd_status ;;
+  status) shift; cmd_status "$@" ;;
   start) shift; cmd_on "$@" ;;
-  stop) shift; cmd_off "$@" ;;
+  stop) cmd_off "$@" ;;
   autostart) shift; cmd_autostart "${1:-}" ;;
-  logs) shift; log="$(scoped_log)"; err="$(scoped_err)"; mkdir -p "$(dirname "$log")"; [ -f "$log" ] || { echo "no listener logs for this repo yet ($log); start it with: holding listener start"; exit 0; }; if [ "${1:-}" = "-f" ]; then tail -f "$log"; else tail -n 30 "$log"; echo "--- $(basename "$err")"; tail -n 10 "$err" 2>/dev/null || true; fi ;;
+  logs) shift; repo_arg=""; follow=0; while [ $# -gt 0 ]; do case "$1" in --repo) repo_arg="$2"; shift 2 ;; -f) follow=1; shift ;; *) shift ;; esac; done; [ -n "$repo_arg" ] && set_scope "$(cd "$repo_arg" && pwd)"; log="$(scoped_log)"; err="$(scoped_err)"; mkdir -p "$(dirname "$log")"; [ -f "$log" ] || { echo "no listener logs for this repo yet ($log); start it with: holding listener start"; exit 0; }; if [ "$follow" = 1 ]; then tail -f "$log"; else tail -n 30 "$log"; echo "--- $(basename "$err")"; tail -n 10 "$err" 2>/dev/null || true; fi ;;
   *) echo "usage: holding listener start [--repo DIR] | stop | autostart on|off | status | logs [-f]"; exit 2 ;;
 esac

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>Label</key><string>com.agentsholding.jira-listener</string>
+  <key>Label</key><string>__LABEL__</string>
   <key>ProgramArguments</key><array><string>/bin/bash</string><string>__BIN_DIR__/run-listener.sh</string></array>
   <key>EnvironmentVariables</key><dict>
     <key>AH_SERVER_DIR</key><string>__SERVER_DIR__</string>
