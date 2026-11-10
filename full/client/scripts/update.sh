@@ -95,7 +95,23 @@ ah_refresh_package() {
   [ -d "$package_root/full/client/scripts" ] || { echo "   invalid client artifact: full/client/scripts is missing" >&2; rm -rf "$tmp"; return 1; }
   mkdir -p "$dest"
   rm -rf "$tmp/stage"; mkdir -p "$tmp/stage"
-  cp -R "$package_root/full/client/scripts/." "$tmp/stage/"
+  if ! cp -R "$package_root/full/client/scripts/." "$tmp/stage/"; then
+    echo "   invalid client artifact: could not stage client scripts; keeping current scripts" >&2
+    rm -rf "$tmp"
+    return 1
+  fi
+  for required in holding update.sh launchd/listener.sh holding-listen.mjs; do
+    [ -f "$tmp/stage/$required" ] || {
+      echo "   invalid client artifact: missing full/client/scripts/$required; keeping current scripts" >&2
+      rm -rf "$tmp"
+      return 1
+    }
+  done
+  [ -s "$tmp/stage/VERSION" ] || {
+    echo "   invalid client artifact: missing VERSION; keeping current scripts" >&2
+    rm -rf "$tmp"
+    return 1
+  }
   if command -v rsync >/dev/null; then rsync -a --delete "$tmp/stage/" "$dest/scripts/"
   else rm -rf "$dest/scripts"; mkdir -p "$dest/scripts"; cp -R "$tmp/stage/." "$dest/scripts/"; fi
   chmod -R a+rX "$dest/scripts" 2>/dev/null || true
