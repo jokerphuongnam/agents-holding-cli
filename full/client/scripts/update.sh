@@ -39,7 +39,7 @@ behind_label() {
 }
 
 ah_refresh_package() {
-  local dest="${AH_INSTALL_DIR:-$HOME/.agents-holding}" url tag tmp endpoint asset_url
+  local dest="${AH_INSTALL_DIR:-$HOME/.agents-holding}" url tag tmp endpoint asset_url asset_api_url
   url="${AH_FREE_REPO:-https://github.com/jokerphuongnam/agents-holding-cli.git}"
   if [ -n "${AH_VERSION:-}" ]; then
     tag="${AH_VERSION#v}"
@@ -51,7 +51,11 @@ ah_refresh_package() {
   tmp="$(mktemp -d "${TMPDIR:-/tmp}/ah-update.XXXXXX")"
   endpoint="https://api.github.com/repos/jokerphuongnam/agents-holding-cli/releases/latest"
   [ "$tag" != latest ] && endpoint="https://api.github.com/repos/jokerphuongnam/agents-holding-cli/releases/tags/$tag"
-  asset_url="$(curl -fsSL -H 'Accept: application/vnd.github+json' "$endpoint" 2>/dev/null | awk -F'"' '$2=="browser_download_url" && $4 ~ /agents-holding-cli-.*\.tar\.gz$/ {print $4; exit}')" || true
+  release_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' "$endpoint" 2>/dev/null || true)"
+  asset_url="$(printf '%s' "$release_json" | jq -r '.assets[]? | select(.name | endswith(".tar.gz")) | .browser_download_url' 2>/dev/null | head -1)"
+  asset_api_url="$(printf '%s' "$release_json" | jq -r '.assets[]? | select(.name | endswith(".tar.gz")) | .url' 2>/dev/null | head -1)"
+  [ -n "$asset_url" ] || asset_url="$(printf '%s' "$release_json" | awk -F'"' '$2=="browser_download_url" && $4 ~ /agents-holding-cli-.*\.tar\.gz$/ {print $4; exit}')"
+  [ -n "$asset_api_url" ] || asset_api_url="$(printf '%s' "$release_json" | awk -F'"' '$2=="url" && $4 ~ /releases\/assets\// {print $4; exit}')"
   # Do not trust GitHub's `latest` pointer: older numeric releases may remain
   # marked latest. Always compare against the newest non-future tag when Git is
   # available, then download that exact release asset.
@@ -79,11 +83,14 @@ ah_refresh_package() {
     [ -n "$tag" ] && asset_url="https://github.com/jokerphuongnam/agents-holding-cli/releases/download/$tag/agents-holding-cli-$tag.tar.gz"
   fi
   [ -n "$asset_url" ] || { echo "   no published client artifact found; keeping current scripts" >&2; rm -rf "$tmp"; return 1; }
-  if ! curl -fsSL "$asset_url" -o "$tmp/client.tar.gz"; then
+  if ! { [ -n "$asset_api_url" ] && curl -fsSL -H 'Accept: application/octet-stream' "$asset_api_url" -o "$tmp/client.tar.gz"; }; then
+    if curl -fsSL "$asset_url" -o "$tmp/client.tar.gz"; then :
+    else
     # Older releases used a v-prefixed tag and asset name; retain compatibility.
     compat="${asset_url/$tag/v$tag}"
     compat="${compat/agents-holding-cli-$tag.tar.gz/agents-holding-cli-v$tag.tar.gz}"
     curl -fsSL "$compat" -o "$tmp/client.tar.gz" || { echo "   package download failed; keeping current scripts" >&2; rm -rf "$tmp"; return 1; }
+    fi
   fi
   mkdir -p "$tmp/src" && tar xzf "$tmp/client.tar.gz" -C "$tmp/src"
   # Releases may be archived with a single top-level directory (for example
