@@ -6,13 +6,6 @@ import { join } from "node:path";
 import { createConnection } from "node:net";
 
 const dir = join(homedir(), ".config/agents-holding/terminal-sessions");
-const timeMs = (v) => {
-  if (typeof v === "number" && Number.isFinite(v)) return v < 1e12 ? v * 1000 : v;
-  const n = Number(v);
-  if (Number.isFinite(n)) return n < 1e12 ? n * 1000 : n;
-  const d = Date.parse(String(v ?? ""));
-  return Number.isFinite(d) ? d : 0;
-};
 function sessions() {
   const out = {};
   try { Object.assign(out, JSON.parse(readFileSync(join(dir, "sessions.json"), "utf8"))); } catch {}
@@ -27,7 +20,7 @@ function sessions() {
 export function selectAvailableTerminal({ company, repo } = {}) {
   return Object.values(sessions()).filter((s) => s.status === "connected" && s.socket && s.token &&
     (!company || s.company === company) && (!repo || s.repo === repo) &&
-    (!s.heartbeat_at || Date.now() - timeMs(s.heartbeat_at) < 90000))
+    existsSync(s.socket))
     .sort((a, b) => timeMs(b.heartbeat_at) - timeMs(a.heartbeat_at))[0] ?? null;
 }
 
