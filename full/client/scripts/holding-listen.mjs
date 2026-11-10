@@ -318,6 +318,11 @@ async function comms(issue, text, kind = null) {
 }
 const WAITING_LABEL = "ah-awaiting-user";
 const USER_RECOVERY_EVENTS = new Set(["user_move", "user_comment", "review_feedback", "work_started", "user_approved", "staff_chosen", "staffing_choice", "staffing_retry", "manual"]);
+// A Jira status snapshot is itself a recovery signal.  The listener must not
+// require a second manual transition after a QC/reopened failure: the current
+// Jira card status is authoritative and reconcile/startup scans are designed
+// precisely to recover missed events.
+const STATUS_RECOVERY_EVENTS = new Set(["jira_startup_scan", "reconcile", "jira_reconcile", "status_sync", "jira_status_sync"]);
 async function clearWaitingSignal(issue, event) {
   if (!jira || !USER_RECOVERY_EVENTS.has(event)) return;
   const coState = L.stateDir(homedir(), company);
@@ -539,7 +544,10 @@ async function run(p, depth = 0) {
     }
   }
   if (na && !(await ensureAgentOwnedAssignment(issue, na))) return;
-  if ((na?.waiting || p.workflow_error) && p.event !== "manual") { await announceWaiting(issue, na, p); log(`waiting ${issue}: ${na?.stage ?? "workflow-invalid"}`); return; }
+  // Reconcile is not a passive notification: it is the recovery path after a
+  // missed Jira event.  Let the local runner continue from the reconciled
+  // checkpoint even when the previous next_action response carried waiting.
+  if ((na?.waiting || p.workflow_error) && p.event !== "manual" && !STATUS_RECOVERY_EVENTS.has(p.event)) { await announceWaiting(issue, na, p); log(`waiting ${issue}: ${na?.stage ?? "workflow-invalid"}`); return; }
   if (lean && na) return leanRun(p, na, depth);
   const model = process.env.AH_MODEL || na?.model || null;
   const chainTxt = na?.chain?.length ? ` Chain these stages in this run: ${na.chain.map((c) => c.name).join(" -> ")}.` : "";
@@ -720,7 +728,7 @@ async function leanRun(p, na, depth = 0) {
 }
 async function leanRunInner(p, na, depth, vis) {
   const issue = na.issue ?? p.issue ?? p.task_id; const st = L.stateDir(homedir(), company); const saved = L.loadPlan(st, issue);
-  const recoveredByReconcile = saved.workflow_blocked && p.event === "jira_startup_scan" && na.stage && na.stage !== saved.workflow_blocked.from;
+  const recoveredByReconcile = saved.workflow_blocked && STATUS_RECOVERY_EVENTS.has(p.event) && na.stage;
   if (saved.workflow_blocked && !USER_RECOVERY_EVENTS.has(p.event) && !recoveredByReconcile) {
     log(`lean: ${issue} waiting for user workflow action (${saved.workflow_blocked.from} -> ${saved.workflow_blocked.to})`);
     return;
