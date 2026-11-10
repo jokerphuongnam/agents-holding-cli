@@ -5,6 +5,7 @@ export PATH="$HOME/.grok/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 export GROK_BIN="${GROK_BIN:-$HOME/.grok/bin/grok}"
 export AH_MCP_URL="${AH_MCP_URL:-https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp}"
 export AH_RUNNER_SCRIPT="${AH_RUNNER_SCRIPT:-$HOME/.agents-holding/scripts/holding-listen.mjs}"
+export AH_LISTENER_BIND="${AH_LISTENER_BIND:-127.0.0.1:${AH_LISTENER_PORT:-8787}}"
 if [ -z "${AGENTS_HOLDING_KEY:-}" ]; then
   for svc in agents-holding-license agents-holding-test-license; do
     AGENTS_HOLDING_KEY="$(security find-generic-password -s "$svc" -a "${USER:-$(id -un)}" -w 2>/dev/null || true)"
@@ -62,6 +63,12 @@ if [ -f "$HOME/.config/agents-holding/jira.json" ] && ! grep -q '"oauth"[[:space
   fi
 fi
 export AH_JIRA_BASE_URL AH_JIRA_EMAIL AH_JIRA_TOKEN
+# The native Rust listener currently supports Jira API-token Basic Auth. OAuth
+# credentials are handled by the JS listener, which refreshes the Keychain token
+# and uses Atlassian's cloud API correctly.
+if [ -f "$HOME/.config/agents-holding/jira.json" ] && grep -q '"oauth"[[:space:]]*:[[:space:]]*true' "$HOME/.config/agents-holding/jira.json"; then
+  exec node "$AH_RUNNER_SCRIPT" --repo "$AH_REPO_DIR"
+fi
 # Prefer the native listener when the update package installed it.
 AH_RUST_BIN="${AH_RUST_LISTENER_BIN:-$HOME/.agents-holding/bin/agents-holding-listener}"
 if [ ! -x "$AH_RUST_BIN" ] && [ -x "$HOME/.agents-holding/scripts/install-rust-listener.sh" ]; then

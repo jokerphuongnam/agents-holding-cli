@@ -6,6 +6,7 @@
   <key>EnvironmentVariables</key><dict>
     <key>AH_SERVER_DIR</key><string>__SERVER_DIR__</string>
     <key>AH_REPO_DIR</key><string>__REPO_DIR__</string>
+    <key>AH_LISTENER_PORT</key><string>__PORT__</string>
     <key>HOME</key><string>__HOME__</string>
   </dict>
   <key>WorkingDirectory</key><string>__HOME__</string>

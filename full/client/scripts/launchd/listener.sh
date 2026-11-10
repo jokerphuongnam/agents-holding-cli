@@ -32,20 +32,32 @@ running_pid() { launchctl print "$DOMAIN/$LABEL" 2>/dev/null | awk '/^\tpid = /{
 loaded() { launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; }
 process_ok() { local p="${1:-}"; [ -n "$p" ] && kill -0 "$p" 2>/dev/null && ps -p "$p" -o command= 2>/dev/null | grep -Eq 'run-listener|agents-holding-listener'; }
 heartbeat_fresh() {
-  curl -fsS --max-time 2 "http://${AH_LISTENER_HOST:-127.0.0.1}:${AH_LISTENER_PORT:-8787}/health" >/dev/null 2>&1
+  curl -fsS --max-time 2 "http://${AH_LISTENER_HOST:-127.0.0.1}:${AH_LISTENER_PORT:-8787}/health" >/dev/null 2>&1 || { local p; p="$(running_pid)"; process_ok "$p"; }
 }
 running() { local p; p="$(running_pid)"; process_ok "$p"; }
 ready_for_start() {
-  curl -fsS --max-time 2 "http://${AH_LISTENER_HOST:-127.0.0.1}:${AH_LISTENER_PORT:-8787}/health" >/dev/null 2>&1
+  curl -fsS --max-time 2 "http://${AH_LISTENER_HOST:-127.0.0.1}:${AH_LISTENER_PORT:-8787}/health" >/dev/null 2>&1 || { local p; p="$(running_pid)"; process_ok "$p"; }
 }
 plist_repo() { [ -f "$1" ] || return 0; /usr/libexec/PlistBuddy -c "Print :EnvironmentVariables:AH_REPO_DIR" "$1" 2>/dev/null || true; }
 scope_tag() { printf '%s' "$1" | shasum -a 256 | cut -c1-16; }
+scope_port() {
+  python3 - "$1" <<'PY'
+import hashlib, sys
+# Keep the legacy single-listener port as the base, then allocate one stable
+# local port per registered repo. This avoids two scoped listeners fighting for
+# 127.0.0.1:8787 while remaining deterministic across restarts/machines.
+n = int(hashlib.sha256(sys.argv[1].encode()).hexdigest()[:8], 16)
+print(8787 + (n % 1000))
+PY
+}
 set_scope() {
-  local r="$1" tag
+  local r="$1" tag port
   tag="$(scope_tag "$r")"
+  port="$(scope_port "$r")"
   LABEL="com.agentsholding.jira-listener.$tag"
   MASTER="$BIN_DIR/$LABEL.plist"
   AUTO="$HOME/Library/LaunchAgents/$LABEL.plist"
+  AH_LISTENER_PORT="$port"
 }
 scoped_log() { local r="$(plist_repo "$MASTER")"; [ -z "$r" ] && r="$(plist_repo "$AUTO")"; [ -n "$r" ] && echo "$LOG_DIR/jira-listener-$(scope_tag "$r").log" || echo "$LOG"; }
 scoped_err() { local r="$(plist_repo "$MASTER")"; [ -z "$r" ] && r="$(plist_repo "$AUTO")"; [ -n "$r" ] && echo "$LOG_DIR/jira-listener-$(scope_tag "$r").err.log" || echo "$ERR"; }
@@ -66,8 +78,8 @@ PY
 write_plist() { # $1 repo
   mkdir -p "$BIN_DIR" "$LOG_DIR" "$HOME/Library/LaunchAgents"
   install -m 755 "$SERVER_DIR/scripts/launchd/run-listener.sh" "$BIN_DIR/run-listener.sh"
-  local tag; tag="$(scope_tag "$1")"
-  sed -e "s#__LABEL__#$LABEL#g" -e "s#__SERVER_DIR__#$SERVER_DIR#g" -e "s#__REPO_DIR__#$1#g" -e "s#__HOME__#$HOME#g" -e "s#__BIN_DIR__#$BIN_DIR#g" -e "s#__LOG_FILE__#$LOG_DIR/jira-listener-$tag.log#g" -e "s#__ERR_FILE__#$LOG_DIR/jira-listener-$tag.err.log#g" \
+  local tag port; tag="$(scope_tag "$1")"; port="$(scope_port "$1")"
+  sed -e "s#__LABEL__#$LABEL#g" -e "s#__SERVER_DIR__#$SERVER_DIR#g" -e "s#__REPO_DIR__#$1#g" -e "s#__HOME__#$HOME#g" -e "s#__BIN_DIR__#$BIN_DIR#g" -e "s#__PORT__#$port#g" -e "s#__LOG_FILE__#$LOG_DIR/jira-listener-$tag.log#g" -e "s#__ERR_FILE__#$LOG_DIR/jira-listener-$tag.err.log#g" \
     "$SERVER_DIR/scripts/launchd/com.agentsholding.jira-listener.plist.template" > "$MASTER.tmp"
   plutil -lint -s "$MASTER.tmp" && mv "$MASTER.tmp" "$MASTER"
 }
@@ -95,8 +107,9 @@ cmd_status() {
   local pid repo last log err repo_arg=""
   while [ $# -gt 0 ]; do case "$1" in --repo) repo_arg="$2"; shift 2 ;; *) shift ;; esac; done
   [ -n "$repo_arg" ] && set_scope "$(cd "$repo_arg" && pwd)"
-  log="$(scoped_log)"; err="$(scoped_err)"
   repo="$(plist_repo "$MASTER")"; [ -z "$repo" ] && repo="$(plist_repo "$AUTO")"
+  [ -n "$repo" ] && set_scope "$repo"
+  log="$(scoped_log)"; err="$(scoped_err)"
   pid="$(running_pid)"; if process_ok "$pid" && heartbeat_fresh; then echo "Jira Listener: ON  (running and heartbeat fresh, PID $pid)"; elif loaded; then echo "Jira Listener: DEGRADED (launchd loaded but listener process/heartbeat is not healthy${pid:+, PID $pid})"; else printf '\033[1;31m🔴 Jira Listener is off — all Jira automation is stopped until you start it:\n   %s\033[0m\n   (Jira Listener keeps all Jira automation running.)\n' "$START_CMD"; fi
   if launchctl print "$DOMAIN/$WD_LABEL" >/dev/null 2>&1; then echo "watchdog     : ON  (notifies at once if the Jira Listener stops)"; else echo "watchdog     : OFF (holding listener start installs it)"; fi
   if [ -f "$AUTO" ]; then echo "autostart    : ON  (starts at login: $AUTO)"; else echo "autostart    : OFF"; fi

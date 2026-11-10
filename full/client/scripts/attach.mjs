@@ -43,7 +43,12 @@ function apiTokenBases(cfg, tk) {
 /** Resolve Atlassian access without prompting. OAuth Keychain first, else API token from jira.json + Keychain. */
 export async function atlassianToken(home = homedir(), selector = {}) {
   const O = await import("./oauth.mjs");
-  const t = await O.token("atlassian", selector);
+  // A legacy active-account marker can point at a token without accessible
+  // Jira resources. Prefer the connected site from jira.json so OAuth always
+  // resolves to a cloud-scoped token instead of falling back to Basic Auth.
+  let sel = { ...selector };
+  if (!sel.site) { try { sel.site = JSON.parse(readFileSync(join(home, ".config/agents-holding/jira.json"), "utf8")).site; } catch {} }
+  const t = await O.token("atlassian", sel);
   if (t?.access_token && (t.cloud_id || t.resources?.length)) { syncJiraConfig(t, home); return oauthBases(t); }
   try {
     const cfg = JSON.parse(readFileSync(join(home, ".config/agents-holding/jira.json"), "utf8"));

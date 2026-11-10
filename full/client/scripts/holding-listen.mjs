@@ -118,7 +118,7 @@ function creditBlock(msg) {
 function creditOk() {
   if (!credit.blocked) return; credit.blocked = null; log("credits available again: Jira Listener resumes");
   L.writeStatus(homedir(), { credit: { blocked: false, msg: "", since: null } });
-  for (const c of companyList) reconcile(c).catch((e) => log("reconcile failed:", e.message));
+  for (const c of companyList) reconcile(c, undefined, true).catch((e) => log("reconcile failed:", e.message));
 }
 async function mcp(name, a) {
   if (server.down?.cause === "quota" && Date.now() < (server.down.until ?? 0)) throw new X.ServerError(server.down);
@@ -795,6 +795,14 @@ async function leanRunInner(p, na, depth, vis) {
           // commonly QC -> Reopened). Mark the issue as waiting instead of
           // allowing reconcile/comments to start another Coding/QC loop.
           if (/Reopened can only be entered by the user|workflow.*reject|transition.*not allowed/i.test(String(e.message))) {
+            if (to === "coding" && jira) {
+              try {
+                await jira.transition(issue, "Coding");
+                X.ckptSave(st, issue, { stage: "coding", done: [], workflow_blocked: null, failed: null, running: true });
+                log(`lean: ${issue} ${from} -> coding restored Jira status directly after workflow rejection`);
+                return true;
+              } catch (jiraError) { log(`lean: ${issue} direct Jira Coding recovery failed: ${jiraError.message}`); }
+            }
             // Reopened is a user-only Jira status in some company workflows.
             // It is not a reason to freeze the local workflow: QC failure is
             // already recorded, so continue from Coding (or the configured
@@ -1242,7 +1250,8 @@ setInterval(() => {
 // Replay real Jira changes missed during an outage (listener or server down): issues updated since the last seen event,
 // one reconcile_issue per (issue, status, updated), deduped locally and on the server. Reads Jira only; never writes Jira events.
 const reconciling = {};
-async function reconcile(company, sinceIso) {
+const recoveryWakeStatus = new Map();
+async function reconcile(company, sinceIso, forceActive = false) {
   if (!jira || reconciling[company]) return; reconciling[company] = true;
   try {
     const stc = L.readStatus(homedir())?.companies?.[company] ?? {};
@@ -1250,8 +1259,13 @@ async function reconcile(company, sinceIso) {
     const st = L.stateDir(homedir(), company), seen = X.replaySeen(st), boards = registry.projects.flatMap((p) => p.boards).filter((b) => b.company === company);
     let n = 0;
     for (const b of boards) {
-      const res = await jira.search(X.jqlSince(b.project_key, since), ["status", "updated", "summary", "description", "labels", "assignee", "comment"]);
-      const replay = X.replayTodo(res, seen).sort((a, z) => {
+      const jql = forceActive
+        ? `project = "${b.project_key}" AND statusCategory != Done AND (labels = "ah-agent-owned" OR status in ("Reopened", "Coding", "QC", "In Review")) ORDER BY updated ASC`
+        : X.jqlSince(b.project_key, since);
+      const res = await jira.search(jql, ["status", "updated", "summary", "description", "labels", "assignee", "comment"]);
+      const replay = (forceActive
+        ? res.map((i) => ({ key: i.key, status: i.fields?.status?.name ?? "", updated: i.fields?.updated ?? "" }))
+        : X.replayTodo(res, seen)).sort((a, z) => {
         const af = res.find((i) => i.key === a.key)?.fields ?? {}, zf = res.find((i) => i.key === z.key)?.fields ?? {};
         const priority = (f) => (f.labels ?? []).includes("agent-working") ? 0 : 1;
         return priority(af) - priority(zf);
@@ -1273,13 +1287,16 @@ async function reconcile(company, sinceIso) {
         // prevents duplicate runs if a webhook arrives at the same time.
         const recovered = /^(reopened|coding)$/i.test(String(x.status ?? ""))
           && String(r.stage_after ?? "").toLowerCase() === "coding";
-        if (!r.duplicate && r.replayed && recovered) {
+        const recoveryKey = `${company}/${x.key}`;
+        const shouldWake = recovered && recoveryWakeStatus.get(recoveryKey) !== String(x.status ?? "");
+        if (!r.duplicate && r.replayed && shouldWake) {
+          recoveryWakeStatus.set(recoveryKey, String(x.status ?? ""));
           log(`reconcile ${x.key}: dispatching recovered Coding action`);
           wake({ company, issue: x.key, event: "jira_startup_scan", stage: "coding", updated: x.updated });
         }
       }
     }
-    log(`reconcile ${company}: ${n} change(s) since ${since}`);
+    log(`reconcile ${company}: ${n} change(s) ${forceActive ? "from active recovery scan" : `since ${since}`}`);
     L.writeStatus(homedir(), { companies: { [company]: { reconciled_at: new Date().toISOString(), reconciled: n } } });
   } finally { reconciling[company] = false; }
 }
@@ -1339,7 +1356,7 @@ async function connect(company) {
   };
   ws.onmessage = (m) => {
     const msg = JSON.parse(m.data); lastRx[company] = Date.now();
-    if (msg.event === "phx_reply" && msg.topic === topic) { log("join", msg.payload.status, "company", company); if (msg.payload.status === "ok") { joined.add(company); backoffs[company] = 1000; heartbeat(); rt("joined"); if (!joinedOnce[company]) { joinedOnce[company] = true; reconcile(company).catch((e) => log("reconcile failed:", e.message)); } if (downNotified[company]) { downNotified[company] = false; L.desktopNotify(homedir(), "agents-holding", `Listener reconnected (${company})`); reconcile(company).catch((e) => log("reconcile failed:", e.message)); } } else { joined.delete(company); heartbeat("starting"); rt(`join ${msg.payload.status}`); } }
+    if (msg.event === "phx_reply" && msg.topic === topic) { log("join", msg.payload.status, "company", company); if (msg.payload.status === "ok") { joined.add(company); backoffs[company] = 1000; heartbeat(); rt("joined"); if (!joinedOnce[company]) { joinedOnce[company] = true; reconcile(company, undefined, true).catch((e) => log("reconcile failed:", e.message)); } if (downNotified[company]) { downNotified[company] = false; L.desktopNotify(homedir(), "agents-holding", `Listener reconnected (${company})`); reconcile(company, undefined, true).catch((e) => log("reconcile failed:", e.message)); } } else { joined.delete(company); heartbeat("starting"); rt(`join ${msg.payload.status}`); } }
     if (msg.event === "broadcast" && msg.payload?.event === "next_action") {
       const raw = msg.payload.payload ?? {};
       // Realtime topics are company-scoped, but a stale/misrouted server
