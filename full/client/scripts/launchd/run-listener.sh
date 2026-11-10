@@ -53,7 +53,7 @@ fi
 export AH_JIRA_PROJECT
 # The native recovery scan uses the same local Jira Keychain integration as
 # the CLI. Keep the token in process memory only; jira.json contains no secret.
-if [ -f "$HOME/.config/agents-holding/jira.json" ]; then
+if [ -f "$HOME/.config/agents-holding/jira.json" ] && ! grep -q '"oauth"[[:space:]]*:[[:space:]]*true' "$HOME/.config/agents-holding/jira.json"; then
   AH_JIRA_BASE_URL="${AH_JIRA_BASE_URL:-$(node -e 'try{const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(String(j.site||""))}catch{}' "$HOME/.config/agents-holding/jira.json")}"
   AH_JIRA_EMAIL="${AH_JIRA_EMAIL:-$(node -e 'try{const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(String(j.email||""))}catch{}' "$HOME/.config/agents-holding/jira.json")}"
   jira_service="$(node -e 'try{const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(String(j.keychain_service||"agents-holding-atlassian"))}catch{process.stdout.write("agents-holding-atlassian")}' "$HOME/.config/agents-holding/jira.json")"
