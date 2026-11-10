@@ -1027,13 +1027,22 @@ Jira: ${issue}` });
             const results = [];
             for (const c of checks) {
               const command = [c.cmd, ...(c.args ?? [])].join(" ");
-              if (c.runner !== "local") {
-                if (!terminal) results.push({ name: c.name, ok: false, out: "registered terminal unavailable; run holding terminal register in this repo" });
-                else {
-                  const ev = await dispatchTerminal(terminal, command);
-                  results.push({ name: c.name, ok: ev.status === "completed" && ev.exit_code === 0, out: ev.status === "completed" ? `${ev.stdout ?? ""}${ev.stderr ?? ""}`.slice(-1500) : ev.reason ?? "terminal did not complete" });
-                }
-              } else results.push(...L.runChecks(rp, [c]));
+              const spec = configuredChecks.find((x) => String(x.id ?? x.name ?? "") === String(c.name)) ?? {};
+              const attempts = Math.max(1, Math.min(10, Number(spec.retry?.max_attempts ?? spec.max_attempts ?? 1) || 1));
+              let result = null;
+              for (let attempt = 1; attempt <= attempts; attempt++) {
+                if (c.runner !== "local") {
+                  if (!terminal) result = { name: c.name, ok: false, out: "registered terminal unavailable; run holding terminal register in this repo" };
+                  else {
+                    const ev = await dispatchTerminal(terminal, command);
+                    result = { name: c.name, ok: ev.status === "completed" && ev.exit_code === 0, out: ev.status === "completed" ? `${ev.stdout ?? ""}${ev.stderr ?? ""}`.slice(-1500) : ev.reason ?? "terminal did not complete" };
+                  }
+                } else result = L.runChecks(rp, [c])[0];
+                if (result.ok || attempt === attempts) break;
+                const delay = Math.max(0, Math.min(300, Number(spec.retry?.backoff_seconds ?? 0) || 0));
+                if (delay) await new Promise((resolve) => setTimeout(resolve, delay * 1000));
+              }
+              results.push(result);
             }
             rows.push({ rp, v: L.qcVerdict(null, results) });
           }
