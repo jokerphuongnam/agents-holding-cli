@@ -146,6 +146,7 @@ fi
 before_raw="$(ver_raw)"; before="$(ver)"
 listener_state="$(mktemp "${TMPDIR:-/tmp}/ah-listeners.XXXXXX")"
 listener_was_active=0
+listener_repo=""
 if command -v launchctl >/dev/null 2>&1; then
   domain="gui/$(id -u)"; bin="$HOME/Library/Application Support/agents-holding"
   for plist in "$bin"/com.agentsholding.jira-listener*.plist; do
