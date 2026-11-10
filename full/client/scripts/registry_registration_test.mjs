@@ -9,7 +9,9 @@ R.addBoard(reg, { path: "/work/child", site: "https://jira.example", project_key
 R.addBoard(reg, { path: "/work/missing", site: "https://jira.example", project_key: "OPS", company: "ops" });
 let checked = R.reconcile(reg, { fileExists: (p) => p !== "/work/missing", readCompany: (p) => ({ "/work/parent": "parent", "/work/child": "child" }[p] ?? null) });
 assert.ok(checked.issues.some((x) => x.code === "missing_repo"));
-assert.ok(checked.issues.some((x) => x.code === "missing_company_config"));
+// A registered repo may intentionally omit local .agents/company.json;
+// registry identity is sufficient for routing on shared/clean machines.
+assert.ok(!checked.issues.some((x) => x.code === "missing_company_config"));
 assert.equal(R.route(reg, { company: "parent", issue: "MAR-1", site: "https://jira.example" }).repos[0].path, "/work/parent");
 assert.equal(R.route(reg, { company: "child", issue: "NAIL-1", site: "https://jira.example" }).repos[0].path, "/work/child");
 R.addBoard(reg, { path: "/work/other", site: "https://jira.example", project_key: "MAR", company: "parent" });
