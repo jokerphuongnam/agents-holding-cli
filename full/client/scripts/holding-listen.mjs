@@ -1043,7 +1043,7 @@ Jira: ${issue}` });
               let result = null;
               for (let attempt = 1; attempt <= attempts; attempt++) {
                 if (c.runner !== "local") {
-                  if (!terminal) result = { name: c.name, ok: false, out: "registered terminal unavailable; run holding terminal register in this repo" };
+                  if (!terminal) result = { name: c.name, ok: false, out: `no live registered terminal for company=${company} repo=${rp}; waiting for terminal reconnect` };
                   else {
                     const ev = await dispatchTerminal(terminal, command);
                     result = { name: c.name, ok: ev.status === "completed" && ev.exit_code === 0, out: ev.status === "completed" ? `${ev.stdout ?? ""}${ev.stderr ?? ""}`.slice(-1500) : ev.reason ?? "terminal did not complete" };

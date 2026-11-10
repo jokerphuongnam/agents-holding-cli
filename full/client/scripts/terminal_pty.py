@@ -25,12 +25,26 @@ def main():
     if pid == 0:
         os.chdir(repo); os.environ['PS1'] = ''
         shell = os.environ.get('SHELL', '/bin/sh'); os.execvp(shell, [shell, '-i'])
-    srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); srv.bind(str(sock)); os.chmod(sock, 0o600); srv.listen(8); srv.setblocking(False)
+    def open_server():
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.bind(str(sock)); os.chmod(sock, 0o600); s.listen(8); s.setblocking(False)
+        meta['socket'] = str(sock); meta['status'] = 'connected'; meta['heartbeat_at'] = time.time()
+        state.write_text(json.dumps(meta)); os.chmod(state, 0o600)
+        return s
+    srv = open_server()
     clients = []; jobs = {}; active_job = None
     try:
         print(json.dumps({'session_id': sid, 'status': 'connected', 'repo': repo, 'socket': str(sock),
                           'message': 'PTY registered; this terminal remains attached. Run terminal dispatch from another shell.'}), flush=True)
         while True:
+            # The PTY process can outlive an interrupted shell/UI. Recreate the
+            # endpoint so Holding can reconnect without asking the developer to
+            # register the terminal again.
+            if not sock.exists():
+                try: srv.close()
+                except OSError: pass
+                try: srv = open_server(); print(json.dumps({'event': 'socket_reconnected', 'socket': str(sock)}), flush=True)
+                except OSError: time.sleep(1); continue
             ready, _, _ = select.select([master, srv, sys.stdin], [], [], 1)
             if master in ready:
                 try: data = os.read(master, 65536)
