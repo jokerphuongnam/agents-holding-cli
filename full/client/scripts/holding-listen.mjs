@@ -662,7 +662,7 @@ async function leanModel(kind, issue, stage, prompt, role = null, context = null
   const lang = L.getLang(), stp = L.stateDir(homedir(), company);
   try {
     const { value, used } = await X.runWithFallback(cmds, async (cm, { resume }) => {
-      try { return { ok: true, value: await leanModelOnce(kind, issue, stage, resume ? `${prompt}\n\n${L.resumeHint(L.loadPlan(stp, issue), X.ckptLoad(stp, issue))}` : prompt, role, context, cm.rsv, { sid, out, buf, text, schema, system }) }; }
+      try { return { ok: true, value: await leanModelOnce(kind, issue, stage, resume ? `${prompt}\n\n${L.resumeHint(L.loadPlan(stp, issue), X.ckptLoad(stp, issue))}` : prompt, role, context, cm.rsv, { sid, out, buf, text, schema, system, options }) }; }
       catch (e) { if (!e.agentOut) throw e; return { ok: false, out: e.agentOut, code: e.agentCode, kind: cliKind(cm.rsv) }; }
     }, {
       onRetry: async (cm, c, ms) => { log(`lean ${kind} ${issue}: ${cm.label} ${c.cause}${ms ? `; backoff ${Math.round(ms / 1000)}s` : "; retrying fresh from the checkpoint"}`); X.ckptSave(stp, issue, { last_error: c.cause }); },
@@ -672,7 +672,7 @@ async function leanModel(kind, issue, stage, prompt, role = null, context = null
     return value;
   } catch (e) { if (e.agent) e.cmd = cmds.at(-1).label; throw e; }
 }
-async function leanModelOnce(kind, issue, stage, prompt, role, context, rsv, { sid, out, buf, text, schema, system }) {
+async function leanModelOnce(kind, issue, stage, prompt, role, context, rsv, { sid, out, buf, text, schema, system, options = {} }) {
   buf.length = 0;
   const { agent, model, effort, bin, command, binding } = rsv;
   const prov = command ? (await import("./providers/command.mjs")).commandProvider(binding) : await P.getProvider(agent, homedir());
