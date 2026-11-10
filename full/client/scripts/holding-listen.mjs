@@ -10,7 +10,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync, openSync, closeSync, unlinkSync } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { homedir, hostname } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import * as L from "./lean.mjs";
 import { enrichBriefWithPackSkills, enrichBriefWithLocalSkills } from "./pack-skills.mjs";
 import * as P from "./providers/index.mjs";
@@ -597,7 +597,15 @@ function spawnGrok(gargs, out, issue, sid, o = {}) {
     const env = o.env ?? (o.home ? { ...process.env, GROK_HOME: o.home } : { ...process.env, AGENTS_HOLDING_KEY: key });
     if (o.home) delete env.AGENTS_HOLDING_KEY; // lean runs need no server access
     const launchCwd = o.cwd ?? repo;
-    const w = POL.wrapLaunch({ co: company, role: o.role ?? "staff", bin: o.bin ?? grokBin, args: gargs, env, cwd: launchCwd }); // unified staff policy + OS sandbox
+    // Codex already enforces the local Holding policy through its generated
+    // rules/hook.  The extra macOS seatbelt is unusable for repos under
+    // protected folders on some managed Macs and makes the worker report a
+    // false "no implementation" result before it can run build/test. Keep
+    // native deny rules, but disable only that outer wrapper for Codex.
+    const launchEnv = basename(o.bin ?? grokBin).replace(/\.exe$/, "") === "codex"
+      ? { ...env, AH_SANDBOX: "off" }
+      : env;
+    const w = POL.wrapLaunch({ co: company, role: o.role ?? "staff", bin: o.bin ?? grokBin, args: gargs, env: launchEnv, cwd: launchCwd }); // unified staff policy + OS sandbox
     const spawnOne = (wrapped) => spawn("nice", ["-n", "10", wrapped.bin, ...wrapped.args], { cwd: launchCwd, env: wrapped.env, stdio: ["ignore", "pipe", "pipe"] });
     const ch = spawnOne(w);
     activeWorkers.add(ch.pid);
@@ -775,14 +783,30 @@ async function leanRunInner(p, na, depth, vis) {
           // commonly QC -> Reopened). Mark the issue as waiting instead of
           // allowing reconcile/comments to start another Coding/QC loop.
           if (/Reopened can only be entered by the user|workflow.*reject|transition.*not allowed/i.test(String(e.message))) {
-            // Keep Jira at the last valid stage even when the next recovery
-            // transition is user-only.  Previously the internal state moved
-            // to QC, the QC->Reopened request was rejected, and the board was
-            // left at the older Coding status because this path returned
-            // before the normal Jira mirror call.
+            // Reopened is a user-only Jira status in some company workflows.
+            // It is not a reason to freeze the local workflow: QC failure is
+            // already recorded, so continue from Coding (or the configured
+            // earlier technical stage) and let the next Jira reconciliation
+            // mirror the actual card status. Reopened remains available for
+            // an explicit user action later in the flow.
+            const fallback = to === "reopened"
+              ? ((na.flow_stages ?? []).includes("coding") ? "coding" : ((na.flow_stages ?? []).includes("pre_coding") ? "pre_coding" : null))
+              : null;
+            if (fallback) {
+              try {
+                const r = await mcp("advance", { company, task: issue, to_stage: fallback, listener_jira: true });
+                await jiraOps(issue);
+                X.ckptSave(st, issue, { stage: r.stage ?? fallback, done: [], workflow_blocked: null, failed: null, running: true });
+                log(`lean: ${issue} ${from} -> ${to} rejected by Jira; continuing at ${r.stage ?? fallback}`);
+                return true;
+              } catch (fallbackError) {
+                log(`lean: ${issue} fallback ${from} -> ${fallback} failed: ${fallbackError.message}`);
+              }
+            }
+            // Only persist a real block if there is no safe technical
+            // fallback. Never loop on a user-only Reopened transition.
             try { await jiraOps(issue); } catch (mirrorError) { log(`JIRA mirror after blocked transition failed for ${issue}:`, mirrorError.message); }
-            L.savePlan(st, issue, { workflow_blocked: { from, to, reason: String(e.message), at: new Date().toISOString() } });
-            await announceWaiting(issue, { ...na, stage: from, waiting: true, steps: [String(e.message)] }, { ...p, workflow_error: `Jira blocked ${from} → ${to}. User action required: ${String(e.message)}` });
+            if (to !== "reopened") L.savePlan(st, issue, { workflow_blocked: { from, to, reason: String(e.message), at: new Date().toISOString() } });
           }
           return false;
         }
