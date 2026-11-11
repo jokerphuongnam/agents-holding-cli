@@ -45,7 +45,7 @@ function dispatchTerminalNow(session, command, timeoutMs = 0) {
     const timer = timeoutMs > 0 ? setTimeout(() => finish({ status: "blocked", reason: "terminal command timed out" }), timeoutMs) : null;
     socket.on("data", (b) => {
       const raw = b.toString(); chunks.push(raw);
-      for (const line of raw.split("\n")) { try { const x = JSON.parse(line); if (x.event === "completion") completion = x; } catch {} }
+      for (const line of raw.split("\n")) { try { const x = JSON.parse(line); if (x.event === "completion") completion = x; if (x.ok === false && /terminal (?:already running|is busy)/i.test(String(x.error ?? ""))) finish({ status: "busy", reason: x.error, active_job: x.active_job, active_command: x.active_command }); } catch {} }
       if (completion) finish(completion);
     });
     socket.on("connect", () => socket.write(JSON.stringify({ op: "dispatch", token: session.token, command }) + "\n"));
@@ -62,7 +62,17 @@ export function dispatchTerminal(session, command, timeoutMs = 0) {
   if (terminalInflight.has(key)) return terminalInflight.get(key);
   const socketKey = session?.socket ?? "missing";
   const prior = terminalQueues.get(socketKey) ?? Promise.resolve();
-  const run = prior.catch(() => {}).then(() => dispatchTerminalNow(session, command, timeoutMs));
+  const run = prior.catch(() => {}).then(async () => {
+    // The PTY is the authority for cross-process work. If another listener
+    // invocation already owns this command, wait for that job instead of
+    // turning a legitimate queue condition into a QC failure or launching a
+    // duplicate command. The next dispatch reuses the same registered PTY.
+    for (;;) {
+      const result = await dispatchTerminalNow(session, command, timeoutMs);
+      if (result.status !== "busy") return result;
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+  });
   terminalInflight.set(key, run);
   terminalQueues.set(socketKey, run);
   run.finally(() => {
