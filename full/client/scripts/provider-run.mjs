@@ -23,7 +23,7 @@ export async function runStaff({ home = homedir(), company, role, kind = "text",
   // history is accepted only to be dropped: staff never get the chat history (subagent.mjs).
   let sess = null;
   if (opt) { const sl = S.slimBrief(prompt, { cwd, history }); prompt = [sl.text, S.fileRefs([...files, ...sl.files], cwd)].filter(Boolean).join("\n\n");
-    ({ system, context } = S.stablePrefix(system, context)); schema = schema ?? S.SUMMARY_SCHEMA; sess = S.sessionFor(home, { company, role, cwd, kind }, prompt, { continue: cont }); }
+    ({ system, context } = S.stablePrefix(system, context)); schema = schema ?? S.SUMMARY_SCHEMA; sess = S.sessionFor(home, { company, role, cwd, kind }, prompt, { continue: cont, contextHash: S.contextHash(system, context) }); }
   if (company && role) { const pol = POL.loadPolicy(home, company, role); context = [context, POL.rulesText(pol)].filter(Boolean).join("\n\n"); }
   prompt = POL.redactText(prompt); if (context) context = POL.redactText(context); if (system) system = POL.redactText(system);
   const cfg = L.loadAgentCfg(home, company), text = kind !== "code";
@@ -35,7 +35,7 @@ export async function runStaff({ home = homedir(), company, role, kind = "text",
   const buf = [], sid = sess?.sid ?? randomUUID(), logDir = join(home, ".config/agents-holding/logs"); mkdirSync(logDir, { recursive: true });
   const ctx = { spawn: simpleSpawn(cwd, buf, { company, role }), stdout: () => Buffer.concat(buf).toString("utf8"), leanHome: r.agent === "grok" ? L.leanGrokHome(home) : null, logDir, log: () => {} };
   const res = await prov.run({ prompt, system, context, schema, kind, text, cwd, model: r.model, effort: r.effort, sid, resume: !!sess?.resume, bin: r.bin, noTools }, ctx).catch((e) => ({ result: {}, exitCode: 1, error: e.message }));
-  if (opt && !res.error && (prov.supportsResume ?? false)) S.rememberSession(home, { company, role, cwd, kind }, sid);
+  if (opt && !res.error && (prov.supportsResume ?? false)) S.rememberSession(home, { company, role, cwd, kind }, sid, Date.now(), S.contextHash(system, context));
   return { ...res, ...(opt ? { short: S.shortResult(res.error ? { ...res.result, error: res.error } : res.result) } : {}), reused: !!sess?.resume && (prov.supportsResume ?? false), provider: r.agent, model: r.model, effort: r.effort };
 }
 /** Several small same-type tasks -> as few staff calls as possible; returns one short result per task, in input order. */

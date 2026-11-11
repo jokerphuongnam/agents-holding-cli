@@ -6,7 +6,7 @@
 // 7 batch: small same-type tasks go to one call and are split back per task.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, isAbsolute, relative } from "node:path";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 export const optOn = (env = process.env) => env.AH_SUBAGENT_OPT !== "0";
 
@@ -60,15 +60,17 @@ const sessFile = (home) => join(home, ".config/agents-holding/state/subagents.js
 const keyOf = ({ company, role, cwd, kind }) => [company, role, cwd, kind === "code" ? "code" : "text"].join("|");
 function loadS(home) { try { return JSON.parse(readFileSync(sessFile(home), "utf8")); } catch { return {}; } }
 /** -> { sid, resume }: resume=true only for a follow-up within the TTL on the same staff/company/repo/kind. */
+export const contextHash = (system = "", context = "") => createHash("sha256").update(`${String(system)}\n\u0000${String(context)}`).digest("hex");
 export function sessionFor(home, k, task, o = {}, now = Date.now()) {
   const s = loadS(home), prev = s[keyOf(k)];
-  if (prev && now - prev.at < REUSE_TTL_MS && isFollowUp(task, o)) return { sid: prev.sid, resume: true };
+  if (prev && now - prev.at < REUSE_TTL_MS && (!o.contextHash || prev.contextHash === o.contextHash) && isFollowUp(task, o)) return { sid: prev.sid, resume: true };
   return { sid: randomUUID(), resume: false };
 }
-export function rememberSession(home, k, sid, now = Date.now()) {
+export function rememberSession(home, k, sid, now = Date.now(), contextHashValue = null) {
   const s = loadS(home); for (const [kk, v] of Object.entries(s)) if (now - v.at > REUSE_TTL_MS) delete s[kk];
-  s[keyOf(k)] = { sid, at: now }; mkdirSync(join(home, ".config/agents-holding/state"), { recursive: true }); writeFileSync(sessFile(home), JSON.stringify(s), { mode: 0o600 });
+  s[keyOf(k)] = { sid, at: now, ...(contextHashValue ? { contextHash: contextHashValue } : {}) }; mkdirSync(join(home, ".config/agents-holding/state"), { recursive: true }); writeFileSync(sessFile(home), JSON.stringify(s), { mode: 0o600 });
 }
+export function forgetSession(home, k) { const s = loadS(home); delete s[keyOf(k)]; mkdirSync(join(home, ".config/agents-holding/state"), { recursive: true }); writeFileSync(sessFile(home), JSON.stringify(s), { mode: 0o600 }); }
 
 // ---- 7. batch small same-type tasks ----
 export const BATCH_SMALL = 400, BATCH_MAX = 6;
