@@ -134,9 +134,13 @@ export async function token(provider, selector = {}, f = fetch) {
     catch { await new Promise((resolve) => setTimeout(resolve, 250)); }
   }
   try {
-    if (!owner) return null;
+    if (!owner) {
+      const latest = load(provider, selector);
+      if (latest?.access_token && latest.access_token !== t.access_token) return latest;
+      return null;
+    }
     const latest = load(provider, selector);
-    if (latest?.access_token && latest !== t &&
+    if (latest?.access_token &&
         (latest.access_token !== t.access_token || latest.refresh_token !== t.refresh_token)) return latest;
     const n = await post("/refresh", { provider, refresh_token: latest?.refresh_token ?? t.refresh_token }, f);
     const m = { ...latest, ...n }; save(provider, m); return m;

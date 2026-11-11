@@ -1211,8 +1211,13 @@ async function jiraOps(issue) {
         authHdr = "Basic " + Buffer.from(`${jiraCfg.email}:${tok}`).toString("base64");
         base = `${jiraCfg.site.replace(/\/$/, "")}/rest/api/3`;
       } else { log(`JIRA: not connected; cannot move ${o.issue} (holding jira connect)`); continue; }
-      const api = async (m, path, body) => { const r = await fetch(`${base}/issue/${encodeURIComponent(o.issue)}${path}`, { method: m,
-        headers: { Authorization: authHdr, "Content-Type": "application/json", Accept: "application/json" }, body: body && JSON.stringify(body) });
+      const api = async (m, path, body) => { const url = `${base}/issue/${encodeURIComponent(o.issue)}${path}`;
+        let r = await fetch(url, { method: m, headers: { Authorization: authHdr, "Content-Type": "application/json", Accept: "application/json" }, body: body && JSON.stringify(body) });
+        if ((r.status === 401 || r.status === 403) && typeof A?.refreshAuth === "function") {
+          await A.refreshAuth(); authHdr = A.auth();
+          r = await fetch(url, { method: m, headers: { Authorization: authHdr, "Content-Type": "application/json", Accept: "application/json" }, body: body && JSON.stringify(body) });
+          if (r.ok) log(`Jira OAuth refreshed and retried ${m} ${path.split("?")[0]}`);
+        }
         if (r.status === 401 || r.status === 403) throw new Error(`JIRA_AUTH_EXPIRED (${r.status})`);
         if (!r.ok) { let detail = ""; try { detail = JSON.stringify(await r.json()); } catch {} throw new Error(`JIRA_API_${r.status}${detail ? `: ${detail}` : ""}`); }
         return r;

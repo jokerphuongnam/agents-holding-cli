@@ -329,8 +329,14 @@ export function jiraToken(cfg) {
 export function jiraClient(cfg, { dry, log }) {
   const site = (cfg?.jira ?? cfg?.site)?.replace(/\/$/, "");
   const auth = () => { if (typeof cfg?.auth === "function") return cfg.auth(); const t = jiraToken(cfg); return t ? "Basic " + Buffer.from(`${cfg.email}:${t}`).toString("base64") : null; }; // token only in memory, per call
-  const req = async (m, path, body) => { const a = auth(); if (!a) throw new Error("no Jira credentials available (holding jira connect)");
-    const r = await fetch(`${site}${cfg?.jira ? path : `/rest/api/3${path}`}`, { method: m, headers: { Authorization: a, "Content-Type": "application/json", Accept: "application/json" }, body: body && JSON.stringify(body) });
+  const req = async (m, path, body) => { let a = auth(); if (!a) throw new Error("no Jira credentials available (holding jira connect)");
+    const url = `${site}${cfg?.jira ? path : `/rest/api/3${path}`}`;
+    let r = await fetch(url, { method: m, headers: { Authorization: a, "Content-Type": "application/json", Accept: "application/json" }, body: body && JSON.stringify(body) });
+    if ((r.status === 401 || r.status === 403) && typeof cfg?.refreshAuth === "function") {
+      await cfg.refreshAuth(); a = auth();
+      r = await fetch(url, { method: m, headers: { Authorization: a, "Content-Type": "application/json", Accept: "application/json" }, body: body && JSON.stringify(body) });
+      if (r.ok && log) log(`Jira OAuth refreshed and retried ${m} ${path.split("?")[0]}`);
+    }
     if (!r.ok) { if (r.status === 401 || r.status === 403) throw new Error(`JIRA_AUTH_EXPIRED: Jira rejected the listener credentials (HTTP ${r.status}). Run \`holding jira connect --switch\` to refresh OAuth, then \`holding listener restart\`.`); throw new Error(`Jira ${m} ${path.split("?")[0]} -> ${r.status}`); } return r.status === 204 ? null : r.json(); };
   return {
     async issue(key) { return req("GET", `/issue/${encodeURIComponent(key)}?fields=summary,description,comment`); },

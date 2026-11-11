@@ -24,12 +24,20 @@ function oauthBases(t, resourceId = process.env.AH_JIRA_CLOUD_ID, resourceUrl = 
   const resources = Array.isArray(t.resources) ? t.resources : [];
   const selected = resources.find((r) => (resourceId && r.id === resourceId) || (resourceUrl && String(r.url).replace(/\/$/, "") === String(resourceUrl).replace(/\/$/, ""))) ?? resources[0] ?? t;
   const cloud = selected.id ?? t.cloud_id;
+  const state = { token: t };
   return {
     jira: `https://api.atlassian.com/ex/jira/${cloud}/rest/api/3`,
     agile: `https://api.atlassian.com/ex/jira/${cloud}/rest/agile/1.0`,
     wiki: `https://api.atlassian.com/ex/confluence/${cloud}/wiki/rest/api`,
     site: selected.url ?? t.site, cloud_id: cloud, account: t.account, kind: "oauth",
-    auth: () => `Bearer ${t.access_token}`,
+    auth: () => `Bearer ${state.token.access_token}`,
+    refreshAuth: async () => {
+      const O = await import("./oauth.mjs");
+      const fresh = await O.token("atlassian", { site: selected.url ?? t.site, cloud_id: cloud, force_refresh: true });
+      if (!fresh?.access_token) throw new Error("JIRA_AUTH_EXPIRED: OAuth refresh failed; reconnect Jira once with holding jira connect --switch");
+      state.token = fresh;
+      return state.token.access_token;
+    },
   };
 }
 function apiTokenBases(cfg, tk) {
@@ -49,7 +57,7 @@ export async function atlassianToken(home = homedir(), selector = {}) {
   let sel = { ...selector };
   if (!sel.site) { try { sel.site = JSON.parse(readFileSync(join(home, ".config/agents-holding/jira.json"), "utf8")).site; } catch {} }
   const t = await O.token("atlassian", sel);
-  if (t?.access_token && (t.cloud_id || t.resources?.length)) { syncJiraConfig(t, home); return oauthBases(t); }
+  if (t?.access_token && (t.cloud_id || t.resources?.length)) { syncJiraConfig(t, home); return oauthBases(t, sel.cloud_id, sel.site); }
   try {
     const cfg = JSON.parse(readFileSync(join(home, ".config/agents-holding/jira.json"), "utf8"));
     const tk = jiraToken(cfg);
