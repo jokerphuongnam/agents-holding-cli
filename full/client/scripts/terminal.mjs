@@ -53,7 +53,11 @@ if (cmd === "register") {
   const id = `term-${randomUUID()}`, s = { session_id: id, token, status: "connected", user_id: process.env.USER ?? "unknown", device_id: deviceId() || `device-${hostname()}`, device_host: hostname(), repo, cwd: process.cwd(), linked_at: new Date().toISOString(), expires_at: new Date(Date.now() + 900000).toISOString(), consent: "pending" }; db[id] = s; save(db);
   console.log(JSON.stringify({ ...s, next: `holding terminal approve ${id}` }, null, 2));
 } else if (cmd === "status") {
-  const xs = Object.values(db).filter((s) => !args[0] || s.session_id === args[0]); if (!xs.length) { console.log("no terminal sessions"); process.exit(0); }
+  const id = args.find((x) => !x.startsWith("-")) ?? null;
+  const company = val("--company"), repoArg = val("--repo");
+  let repoFilter = null; try { repoFilter = repoArg ? realpathSync(resolve(repoArg)) : null; } catch {}
+  const xs = Object.values(db).filter((s) => (!id || s.session_id === id) && (!company || s.company === company) && (!repoFilter || s.repo === repoFilter));
+  if (!xs.length) { console.log("no terminal sessions"); process.exit(0); }
   for (const s of xs) {
     if (s.status === "connected" && s.socket && !existsSync(s.socket)) s.status = "disconnected";
     if (expired(s) && s.status === "connected") s.status = "expired";
