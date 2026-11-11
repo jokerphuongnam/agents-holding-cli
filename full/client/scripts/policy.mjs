@@ -24,9 +24,20 @@ export const cachePath = (home, co) => join(stateDir(home, co), "policy.json");
 const readJ = (f, d) => { try { return JSON.parse(readFileSync(f, "utf8")); } catch { return d; } };
 function localStaffAccess(cwd, role) {
   let d = resolve(cwd);
+  const find = (tree, target, inherited = {}) => {
+    for (const [name, node] of Object.entries(tree ?? {})) {
+      if (!node || typeof node !== "object") continue;
+      const p = { ...inherited, ...(node.permissions ?? {}) };
+      if (name === target) return p;
+      const hit = find(node.members, target, p); if (hit) return hit;
+    }
+    return null;
+  };
   for (;;) {
     const j = readJ(join(d, ".agents", "company.json"), null), root = j?.staff_access;
     if (root) return { company: root.company ?? {}, staff: root.staff?.[role] ?? root[role] ?? {} };
+    const tree = j?.staffs ?? j?.staff;
+    if (tree) return { company: j?.permissions ?? {}, staff: find(tree, role) ?? {} };
     const p = dirname(d); if (p === d) break; d = p;
   }
   return {};

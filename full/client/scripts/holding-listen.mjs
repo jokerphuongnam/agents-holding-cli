@@ -743,6 +743,16 @@ async function leanModel(kind, issue, stage, prompt, role = null, context = null
   }, text, role, stageModel: stageModels[stage] ?? null });
   const localStaff = rsv.binding ?? {};
   if (localStaff.skills?.length) context = [context, `LOCAL STAFF SKILLS (${role}): ${localStaff.skills.map((s) => typeof s === "string" ? s : `${s.provider ?? "local"}/${s.name ?? s.id ?? "skill"}`).join(", ")}`].filter(Boolean).join("\n\n");
+  if (localStaff.skills?.length) {
+    const skillText = localStaff.skills.map((s) => typeof s === "string" ? { provider: "local", name: s } : s).map((s) => {
+      if (s.provider !== "local" || !s.name) return null;
+      for (const visibility of ["public", "private", "dependencies"]) {
+        try { const p = join(repo, ".agents", "custom", "skills", visibility, s.name, "SKILL.md"); if (existsSync(p)) return `${s.name}: ${readFileSync(p, "utf8").slice(0, 4000)}`; } catch {}
+      }
+      return `${s.name}: local skill file not found`;
+    }).filter(Boolean);
+    if (skillText.length) context = [context, `LOCAL SKILL CONTENT:\n${skillText.join("\n\n")}`].filter(Boolean).join("\n\n");
+  }
   if (localStaff.description) context = [context, `LOCAL STAFF DESCRIPTION (${role}): ${typeof localStaff.description === "string" ? localStaff.description : JSON.stringify(localStaff.description)}`].filter(Boolean).join("\n\n");
   if (localStaff.responsibilities?.length) context = [context, `LOCAL STAFF RESPONSIBILITIES (${role}): ${localStaff.responsibilities.join("; ")}`].filter(Boolean).join("\n\n");
   if (localStaff.parent) context = [context, `LOCAL STAFF MANAGER: ${localStaff.parent}`].filter(Boolean).join("\n\n");
