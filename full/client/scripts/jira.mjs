@@ -48,7 +48,12 @@ export function client(A, fetchFn = fetch) {
   return async (m, path, body) => {
     if (!A?.auth) throw new Error("no Jira token (holding jira connect)");
     const url = path.startsWith("@agile") ? `${A.agile || (A.site.replace(/\/$/, "") + "/rest/agile/1.0")}${path.slice(6)}` : `${A.jira}${path}`;
-    const r = await fetchFn(url, { method: m, headers: { Authorization: A.auth(), "Content-Type": "application/json", Accept: "application/json" }, body: body && JSON.stringify(body) });
+    const init = { method: m, headers: { Authorization: A.auth(), "Content-Type": "application/json", Accept: "application/json" }, body: body && JSON.stringify(body) };
+    let r = await fetchFn(url, init);
+    if ((r.status === 401 || r.status === 403) && typeof A.refreshAuth === "function") {
+      await A.refreshAuth();
+      r = await fetchFn(url, { ...init, headers: { ...init.headers, Authorization: A.auth() } });
+    }
     if (!r.ok) { let d = ""; try { const j = await r.json(); d = (j.errorMessages ?? []).concat(Object.values(j.errors ?? {})).join("; "); } catch {} throw new Error(`Jira ${m} ${path.split("?")[0]} -> ${r.status}${d ? `: ${d}` : ""}`); }
     return r.status === 204 ? null : r.json();
   };
