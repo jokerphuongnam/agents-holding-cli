@@ -550,6 +550,11 @@ async function useCtx(p) {
     const localCompany = JSON.parse(readFileSync(join(repo, ".agents", "company.json"), "utf8"));
     if (localCompany.git?.branch_prefix) runSettings = { ...runSettings, branch_prefix: localCompany.git.branch_prefix };
     if (localCompany.staff_access) runSettings = { ...runSettings, staff_access: localCompany.staff_access };
+    // Project-local QC rules are an intentional override for the listener
+    // bound to this repo. Keep them with the company config so every machine
+    // gets the same terminal gate after checkout/update.
+    if (localCompany.qc_policy) runSettings = { ...runSettings, qc_policy: localCompany.qc_policy };
+    else if (localCompany.flow?.qc) runSettings = { ...runSettings, qc_policy: localCompany.flow.qc };
   } catch {}
   if (jira) {
     try {
@@ -594,6 +599,10 @@ async function run(p, depth = 0) {
       log("next_action failed:", msg);
       return;
     }
+  }
+  if (na && runSettings.qc_policy) {
+    na = { ...na, qc_policy: { ...(na.qc_policy ?? {}), ...runSettings.qc_policy,
+      checks: runSettings.qc_policy.checks ?? na.qc_policy?.checks } };
   }
   if (na && !(await ensureAgentOwnedAssignment(issue, na))) return;
   // Reconcile is not a passive notification: it is the recovery path after a
@@ -1152,7 +1161,11 @@ Jira: ${issue}` });
       const sv = L.loadPlan(st, issue);
       const ck = X.ckptLoad(st, issue) ?? {};
       const workerEvidence = [sv.tests, sv.summary, sv.where, sv.implementation_evidence].filter(Boolean).join("\n");
-      const executionBlocked = /(?:sandbox_apply|sandbox-exec|operation not permitted|permission denied|chưa chạy được|not run|không chạy)/i.test(workerEvidence);
+      // Old Coding evidence is historical context, not the QC result. Once a
+      // configured terminal check has produced a result, only that fresh
+      // result decides the gate; otherwise an old "not run" note can make
+      // every later QC attempt fail forever.
+      const executionBlocked = !res.length && /(?:sandbox_apply|sandbox-exec|operation not permitted|permission denied|chưa chạy được|not run|không chạy)/i.test(workerEvidence);
       // Reopened retries may legitimately have no new commit. Preserve the
       // implementation evidence from the task branch history instead of
       // checking only the current Coding worker result.
@@ -1166,7 +1179,13 @@ Jira: ${issue}` });
         await record("qc_fail", txt);
         // QC is an engineering gate, not a user gate. Keep the task in the
         // remediation checkpoint; the next reconcile/run retries Coding.
-        if (codingKey) await advance(s0, codingKey).catch((e) => log(`lean: ${issue} QC remediation checkpoint failed: ${e.message}`));
+        if (codingKey) {
+          const moved = await advance(s0, codingKey).catch((e) => { log(`lean: ${issue} QC remediation checkpoint failed: ${e.message}`); return false; });
+          if (!moved) {
+            X.ckptSave(st, issue, { stage: codingKey, running: false, workflow_blocked: false, failed: null, last_error: txt });
+            log(`lean: ${issue} QC failure persisted as Coding checkpoint; Jira remains ${s0} until workflow permits the move`);
+          }
+        }
         log(`lean: ${issue} QC failed after ${fixes} automatic remediation attempt(s); kept in Coding${maxRemediation ? ` (configured limit ${maxRemediation})` : " (automatic remediation remains enabled)"}`);
         return;
       }
