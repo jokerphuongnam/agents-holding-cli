@@ -49,7 +49,10 @@ const logDir = join(homedir(), "Library/Logs/agents-holding");
 mkdirSync(logDir, { recursive: true });
 const logFile = join(logDir, "jira-listener.log");
 process.title = "Jira Listener";
-const runTimeoutMs = Number(process.env.AH_RUN_TIMEOUT_MIN ?? 15) * 60 * 1000; // hard cap per agent run
+// Coding/QC may legitimately spend a long time in host-native builds. Keep a
+// safety cap, but do not kill normal Marlin integration work after 15 minutes.
+// Projects can still override this with AH_RUN_TIMEOUT_MIN.
+const runTimeoutMs = Number(process.env.AH_RUN_TIMEOUT_MIN ?? 60) * 60 * 1000; // hard cap per agent run
 const stallMs = Number(process.env.AH_STALL_MIN ?? 5) * 60 * 1000;            // no session activity -> loud warning
 const log = (...m) => { const l = `${new Date().toISOString()} ${m.join(" ")}`; appendFileSync(logFile, l + "\n"); console.log(l); };
 
