@@ -41,9 +41,9 @@ export function flattenStaffs(tree = {}, inherited = {}, parent = null, out = {}
   for (const [role, raw] of Object.entries(tree ?? {})) {
     if (!raw || typeof raw !== "object") continue;
     const { members, ...own } = raw;
-    const entry = { ...inherited, ...own, ...(parent ? { parent } : {}) };
+    const entry = { ...own, ...(own.command ? {} : inherited.command ? { command: inherited.command } : {}), ...(parent ? { parent } : {}) };
     out[role] = entry;
-    flattenStaffs(members, entry, role, out);
+    flattenStaffs(members, { command: entry.command }, role, out);
   }
   return out;
 }
