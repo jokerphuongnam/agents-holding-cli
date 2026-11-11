@@ -274,6 +274,20 @@ if (!jira) log("Jira client: not ready (holding jira connect or Atlassian OAuth 
 // they post the item and exit; the answer (Jira comment, /ceo or holding inbox reply) re-triggers the task from its checkpoint.
 const commMode = {};
 const WORKFLOW_FAILURE_LABEL = "ah-workflow-failed";
+const TRANSIENT_LABELS = new Set(["agent-working", "ah-awaiting-user", "ah-assignment-required", WORKFLOW_FAILURE_LABEL, "ah-blocked", "ah-registration-required"]);
+async function normalizeTaskLabels(issue, { keepWaiting = false } = {}) {
+  if (!jira || dryJira) return;
+  try {
+    const current = await jira.meta(issue);
+    const remove = (current.labels ?? []).filter((label) =>
+      TRANSIENT_LABELS.has(label) || /^terminal-/.test(label)
+    ).filter((label) => !(keepWaiting && label === WAITING_LABEL));
+    if (remove.length) {
+      await jira.labels(issue, [], [...new Set(remove)]);
+      log(`JIRA: cleaned transient labels ${issue}: ${remove.join(", ")}`);
+    }
+  } catch (e) { log(`Jira label cleanup failed for ${issue}: ${e.message}`); }
+}
 const mirrorCache = new Map();
 const mirrorSeen = new Set();
 const mirrorClients = new Map();
@@ -746,6 +760,7 @@ async function leanModelOnce(kind, issue, stage, prompt, role, context, rsv, { s
 // macOS notifications (holding notify on|off), local status file for `holding status`.
 async function leanRun(p, na, depth = 0) {
   const issue = na.issue ?? p.issue ?? p.task_id; const vis = { labeled: false, started: new Set(), stage: na.stage, staff: L.stageStaff(na, na.stage), worked: false };
+  await normalizeTaskLabels(issue, { keepWaiting: !!na.waiting });
   try { const r = await leanRunInner(p, na, depth, vis);
     { const stp = L.stateDir(homedir(), company), ck = X.ckptLoad(stp, issue); if (ck?.blocked || ck?.failed) { X.ckptSave(stp, issue, { blocked: null, failed: null }); if (jira) await jira.labels(issue, [], [X.BLOCKED_LABEL, WORKFLOW_FAILURE_LABEL]).catch(() => {}); } }
     if (vis.worked && depth === 0) { L.desktopNotify(homedir(), `agents-holding: ${issue}`, `Finished ${L.stageTitle(vis.stage)}`); L.writeStatus(homedir(), { last_run: { issue, result: `ok (${vis.stage})`, at: new Date().toISOString() } }); }
