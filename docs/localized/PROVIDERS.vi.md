@@ -66,6 +66,11 @@ Với cấu hình repository, binding bền vững của staff nằm trong `comm
 `{max_turns}`. `command` là nguồn sự thật; nếu staff đã có command thì không
 được tự fallback sang provider khác.
 
+Metadata của staff là Unicode text tự do, không giới hạn ngôn ngữ. `description`,
+`responsibilities`, tên skill và nội dung skill có thể dùng bất kỳ ngôn ngữ nào
+hoặc trộn nhiều ngôn ngữ. Chỉ các field điều khiển như `command`, `members`,
+`permissions` và provider ID bị ràng buộc bởi schema.
+
 ```json
 {
   "staffs": {

@@ -108,6 +108,11 @@ back to another provider.
 Repo-local `staffs` and `providers` take precedence over machine-local company
 state. Secrets remain in Keychain/environment only.
 
+Staff metadata is Unicode text and language-agnostic. `description`,
+`responsibilities`, and skill names/summaries may use any language or a mix of
+languages. Only control fields such as `command`, `members`, `permissions`,
+and provider IDs are schema-constrained.
+
 **Resolution order** (the same order is used everywhere: lean runs, `holding staff run`, `/staff run`, `/staff list`):
 
 1. An explicit staff `command` binding is executed exactly as configured.
