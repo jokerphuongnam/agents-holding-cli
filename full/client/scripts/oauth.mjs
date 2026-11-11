@@ -116,7 +116,10 @@ export async function connect(provider, { log = console.log, timeoutMs = 300000,
 export async function token(provider, selector = {}, f = fetch) {
   if (typeof selector === "function") { f = selector; selector = {}; }
   const t = load(provider, selector); if (!t?.access_token) return null;
-  if (Date.now() < (t.expires_at ?? 0)) return t;
+  // Atlassian can revoke/rotate an access token before its advertised expiry.
+  // Callers that receive a real 401 can force the refresh-token path instead
+  // of requiring the developer to reconnect in a browser.
+  if (!selector.force_refresh && Date.now() < (t.expires_at ?? 0)) return t;
   if (!t.refresh_token) return null;
   try { const n = await post("/refresh", { provider, refresh_token: t.refresh_token }, f); const m = { ...t, ...n }; save(provider, m); return m; } catch { return null; }
 }

@@ -398,6 +398,14 @@ async function refreshJiraRoute() {
     if (!auth || !site) throw new Error("no local Jira credential");
     const r = await fetch(`${site}/rest/api/3/myself`, { headers: { Authorization: auth, Accept: "application/json" } });
     if (r.status === 401 || r.status === 403) {
+      // Refresh a revoked/rotated OAuth access token once before declaring the
+      // listener disconnected. Expiry timestamps are not authoritative for
+      // Atlassian tokens, which may be invalidated early.
+      const fresh = await atlassianToken(homedir(), { force_refresh: true });
+      if (fresh?.jira) {
+        const retry = await fetch(`${fresh.jira}/myself`, { headers: { Authorization: fresh.auth(), Accept: "application/json" } });
+        if (retry.ok) { listenerJira = true; log("local Jira OAuth token refreshed after authorization rejection"); return listenerJira; }
+      }
       listenerJira = false;
       log(`local Jira credential rejected (HTTP ${r.status}); ${mcpJiraFallback ? "agent Atlassian MCP fallback enabled" : "MCP fallback disabled"}`);
     } else if (r.ok) listenerJira = true;
