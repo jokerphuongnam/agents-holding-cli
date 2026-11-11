@@ -554,7 +554,9 @@ async function useCtx(p) {
     if (localCompany.git?.branch_prefix) runSettings = { ...runSettings, branch_prefix: localCompany.git.branch_prefix };
     if (localCompany.staff_access) runSettings = { ...runSettings, staff_access: localCompany.staff_access };
     if (localCompany.providers) runSettings = { ...runSettings, providers: localCompany.providers };
-    if (localCompany.staff) runSettings = { ...runSettings, staff: localCompany.staff };
+    // Staff launch commands are local-only. Never copy or trust a server roster
+    // here: a company may contain private/personal roles that must not leak into
+    // another checkout. Spawn resolution reads repo .agents/company.json below.
     // Project-local QC rules are an intentional override for the listener
     // bound to this repo. Keep them with the company config so every machine
     // gets the same terminal gate after checkout/update.
@@ -722,10 +724,15 @@ async function leanModel(kind, issue, stage, prompt, role = null, context = null
   const sid = randomUUID(), out = join(logDir, `run-${Date.now()}.log`), buf = [];
   const text = kind !== "code", schema = kind === "tech" ? L.TECH_SCHEMA : kind === "habits" ? L.HABITS_SCHEMA : text ? L.TEXT_SCHEMA : L.CODE_SCHEMA, system = kind === "tech" ? L.TECH_SYSTEM : kind === "habits" ? L.HABITS_SYSTEM : text ? L.TEXT_SYSTEM : null;
   const localCfg = L.loadAgentCfg(homedir(), company);
+  let repoStaff = {};
+  try { repoStaff = JSON.parse(readFileSync(join(repo, ".agents", "company.json"), "utf8")).staff ?? {}; } catch {}
   const rsv = L.resolveAgent({ cfg: {
     ...localCfg,
     ...runSettings,
-    staff: { ...(localCfg.staff ?? {}), ...(runSettings.staff ?? {}) },
+    // Deliberately exclude runSettings.staff: server workflow settings may
+    // describe roles, but must never provide executable staff bindings. The
+    // only executable binding is the local repo's staff.<role>.command.
+    staff: { ...(localCfg.staff ?? {}), ...repoStaff },
     providers: { ...(localCfg.providers ?? {}), ...(runSettings.providers ?? {}) },
   }, text, role, stageModel: stageModels[stage] ?? null });
   const CM = await import("./providers/command.mjs");
