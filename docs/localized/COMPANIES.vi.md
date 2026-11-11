@@ -69,3 +69,13 @@ Mọi công ty có thể có cột riêng (`/flow edit`). Ví dụ (test promoti
 Ready Testing on Develop → Verified on Develop (mở PR vào `develop`) → Ready Testing on Integration → Verified on Integration (mở PR từ nhánh feature vào `main`) → Blocked → Done.
 PR chỉ mở khi auto-PR bật cho công ty đó (`holding company config <c> set auto-pr on`).
 Lưu ý: kéo thẻ sang Done khi PR `main` merge chưa tự động; hãy tự kéo sang Done sau khi merge.
+
+### Tự động dọn artifact
+Workflow đọc `artifact_policy` trong repo. Khi bật
+`cleanup_unrequested_files`, Coding lưu cây thư mục trước khi chạy và xoá các
+file Markdown mới, chưa được track, không thuộc task. `cleanup_paths` dùng để
+khai báo các file đã track nhưng cần xoá; các file này được commit riêng với
+message `chore(<issue>): remove workflow artifacts` trước khi task vào In
+Review. Các path được bảo vệ sẽ không bị xoá. Nhờ vậy branch vẫn có audit rõ
+ràng và khi squash merge vào `develop`/`main` thì file rác không đi theo,
+không cần rewrite lịch sử.

@@ -1030,6 +1030,12 @@ Jira: ${issue}` });
         repo = rp;
         log(`lean: ${rp} branch ${branch}: ${L.ensureBranch(rp, branch)}`);
         const files = filesOf(rp);
+        let artifactBaseline = [];
+        try {
+          const tracked = L.git(rp, "ls-files").split("\n").filter(Boolean);
+          const untracked = execFileSync("git", ["ls-files", "--others", "--exclude-standard", "-z"], { cwd: rp, encoding: "utf8" }).split("\0").filter(Boolean);
+          artifactBaseline = [...new Set([...tracked, ...untracked])];
+        } catch {}
         const multi = runRepos.length > 1 ? `\nThis task spans repos ${runRepos.map(rname).join(", ")}; you are in ${rname(rp)}: change only what belongs here.` : "";
         const workers = L.staffingWorkers(runSettings, o.workerRoles ?? [], o.dev);
         const results = [];
@@ -1044,8 +1050,23 @@ Jira: ${issue}` });
           results.push({ ...r1, worker: workerRole, scope });
         }
         const r1 = results.reduce((a, x) => ({ ...a, ...x, summary: [a.summary, x.summary].filter(Boolean).join("\n"), tests: [a.tests, x.tests].filter(Boolean).join("\n") }), {});
+        // Remove newly-created unrequested artifacts before the implementation
+        // commit. Explicit cleanup_paths are committed separately below so
+        // the branch history clearly records the workflow cleanup.
+        const cleanupPolicy = runSettings.artifact_policy ? { ...runSettings.artifact_policy, cleanup_paths: [] } : null;
+        const cleanup = L.cleanupUnrequestedArtifacts(rp, { baseline: artifactBaseline, policy: cleanupPolicy });
+        if (cleanup.removed.length) {
+          log(`lean: ${issue} artifact cleanup removed ${cleanup.removed.join(", ")}`);
+          r1.summary = [r1.summary, `Workflow artifact cleanup removed: ${cleanup.removed.join(", ")}`].filter(Boolean).join("\n");
+        }
         const sha = L.commitAll(rp, `${o.wip ? `WIP(${issue}) ${o.wip}: ` : `${issue}: `}${r1.commit_message || iss.summary || "agent change"}`);
         if (typeof sha === "string" && sha.startsWith("failed:")) { const e = new Error(`git staging/commit failed: ${sha}`); e.command = "git add -u --; git ls-files --others --exclude-standard; git add -- <eligible paths>; git commit"; e.agentOut = sha; e.agentCode = 1; throw e; }
+        const explicitCleanup = L.cleanupUnrequestedArtifacts(rp, { baseline: artifactBaseline, policy: runSettings.artifact_policy });
+        if (explicitCleanup.removed.length) {
+          const cleanupSha = L.commitAll(rp, `chore(${issue}): remove workflow artifacts`);
+          if (typeof cleanupSha === "string" && cleanupSha.startsWith("failed:")) { const e = new Error(`artifact cleanup commit failed: ${cleanupSha}`); e.command = "git add -u --; git commit"; throw e; }
+          r1.summary = [r1.summary, `Workflow cleanup commit ${cleanupSha || "(no changes)"}: ${explicitCleanup.removed.join(", ")}`].filter(Boolean).join("\n");
+        }
         const h = o.host ? host(r1) : { msg: [] };
         wheres.push(`${runRepos.length > 1 ? rname(rp) + ": " : ""}Branch ${branch}${sha ? ` @ ${sha}` : " (no changes)"}${h.url ? ` PR ${h.url}${h.merged ? " (merged)" : ""}` : " (local, not pushed)"}${h.msg.length && !h.url ? ` - ${h.msg.join("; ")}` : ""}`);
         if (!r) r = { ...r1, commit: sha, workers: results }; else r = { ...r, summary: `${r.summary ?? ""}\n${r1.summary ?? ""}`, tests: [r.tests, r1.tests].filter(Boolean).join("\n"), tech_plan: [r.tech_plan, r1.tech_plan].filter(Boolean).join("\n"), workers: [...(r.workers ?? []), ...results] };

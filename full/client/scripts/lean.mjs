@@ -427,6 +427,40 @@ export function commitAll(repo, msg) {
     if (!eligible.length) return null;
     git(repo, "commit", "-q", "-m", msg); return git(repo, "rev-parse", "--short", "HEAD"); } catch (e) { return "failed: " + e.message.split("\n")[0]; }
 }
+/**
+ * Workflow artifact cleanup.  Coding agents must not create documentation or
+ * migration notes just to satisfy the commit gate.  Explicit cleanup_paths
+ * are safe for already-tracked junk; newly-created Markdown is removed only
+ * when the company enables cleanup_unrequested_files and was not present at
+ * the Coding checkpoint.
+ */
+export function cleanupUnrequestedArtifacts(repo, { baseline = [], policy = {} } = {}) {
+  if (!policy || policy.cleanup_unrequested_files !== true) return { removed: [], skipped: [] };
+  const root = repo;
+  const before = new Set(baseline);
+  const protectedPaths = new Set((policy.cleanup_protected_paths ?? ["README.md", ".agents"]).map(String));
+  const ext = new Set((policy.cleanup_extensions ?? [".md", ".markdown"]).map((x) => String(x).toLowerCase()));
+  const explicit = (policy.cleanup_paths ?? []).map(String);
+  const removed = [], skipped = [];
+  const relSafe = (p) => p && !p.startsWith("/") && !p.split("/").includes("..") && !p.startsWith(".git/");
+  const protectedPath = (p) => protectedPaths.has(p) || [...protectedPaths].some((x) => x.endsWith("/") && p.startsWith(x));
+  const remove = (p) => {
+    if (!relSafe(p) || protectedPath(p)) { skipped.push(p); return; }
+    try { rmSync(join(root, p), { recursive: true, force: true }); removed.push(p); } catch { skipped.push(p); }
+  };
+  for (const p of explicit) {
+    if (!relSafe(p)) { skipped.push(p); continue; }
+    try { if (existsSync(join(root, p))) remove(p); } catch { skipped.push(p); }
+  }
+  let untracked = [];
+  try { untracked = execFileSync("git", ["ls-files", "--others", "--exclude-standard", "-z"], { cwd: root, encoding: "utf8" }).split("\0").filter(Boolean); } catch {}
+  for (const p of untracked) {
+    if (before.has(p) || protectedPath(p)) continue;
+    const lower = p.toLowerCase();
+    if ([...ext].some((x) => lower.endsWith(x))) remove(p);
+  }
+  return { removed, skipped };
+}
 export const stateDir = (home, company) => { const d = join(home, ".config/agents-holding/state", company); mkdirSync(d, { recursive: true, mode: 0o700 }); return d; };
 export const loadPlan = (dir, issue) => { try { return JSON.parse(readFileSync(join(dir, `${issue}.json`), "utf8")); } catch { return {}; } };
 export const savePlan = (dir, issue, o) => writeFileSync(join(dir, `${issue}.json`), JSON.stringify({ ...loadPlan(dir, issue), ...o, at: new Date().toISOString() }, null, 1), { mode: 0o600 });

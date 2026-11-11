@@ -82,3 +82,13 @@ Any company can have its own extra columns (`/flow edit`). Example (test promoti
 Ready Testing on Develop → Verified on Develop (opens a PR into `develop`) → Ready Testing on Integration → Verified on Integration (opens a PR from the feature branch into `main`) → Blocked → Done.
 PRs open only when auto-PR is on for that company (`holding company config <c> set auto-pr on`).
 Note: moving the card to Done when the `main` PR merges is not automatic yet; move it to Done yourself after the merge.
+
+### Automatic artifact cleanup
+The workflow reads the repository's local `artifact_policy`. When
+`cleanup_unrequested_files` is enabled, Coding records the pre-run tree and
+removes newly-created, untracked Markdown files that were not part of the
+task. `cleanup_paths` may list known tracked files to remove; those deletions
+are committed as a separate `chore(<issue>): remove workflow artifacts`
+commit before the task reaches In Review. Protected paths are never removed.
+This keeps the feature branch auditable and lets a later squash merge exclude
+the cleanup files from `develop`/`main` without rewriting history.
