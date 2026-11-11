@@ -54,7 +54,11 @@ if (cmd === "register") {
   const id = `term-${randomUUID()}`, s = { session_id: id, token, status: "connected", user_id: process.env.USER ?? "unknown", device_id: deviceId() || `device-${hostname()}`, device_host: hostname(), repo, cwd: process.cwd(), linked_at: new Date().toISOString(), expires_at: new Date(Date.now() + 900000).toISOString(), consent: "pending" }; db[id] = s; save(db);
   console.log(JSON.stringify({ ...s, next: `holding terminal approve ${id}` }, null, 2));
 } else if (cmd === "status") {
-  const id = args.find((x) => !x.startsWith("-")) ?? null;
+  // Values belonging to scope flags are not positional session IDs. Without
+  // this distinction `status --company nailly --repo DIR` treated `nailly` as
+  // the session ID and incorrectly reported no sessions.
+  const valueFlags = new Set(["--company", "--repo"]);
+  const id = args.find((x, i) => !x.startsWith("-") && !valueFlags.has(args[i - 1])) ?? null;
   const company = val("--company"), repoArg = val("--repo");
   let repoFilter = null; try { repoFilter = repoArg ? realpathSync(resolve(repoArg)) : null; } catch {}
   const xs = Object.values(db).filter((s) => (!id || s.session_id === id) && (!company || s.company === company) && (!repoFilter || s.repo === repoFilter));
