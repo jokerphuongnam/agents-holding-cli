@@ -1320,7 +1320,7 @@ async function reconcile(company, sinceIso, forceActive = false) {
     let n = 0;
     for (const b of boards) {
       const jql = forceActive
-        ? `project = "${b.project_key}" ORDER BY updated ASC`
+        ? `project = "${b.project_key}" ORDER BY updated DESC`
         : X.jqlSince(b.project_key, since);
       const raw = await jira.search(jql, ["status", "updated", "summary", "description", "labels", "assignee", "comment"]);
       const res = forceActive ? raw.filter((i) => {
