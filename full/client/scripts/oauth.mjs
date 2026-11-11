@@ -4,6 +4,9 @@ import "./kc-guard.mjs"; // pin keychain calls to the real login keychain (never
 import { createServer } from "node:http";
 import { randomBytes, createHash } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
+import { mkdirSync, rmdirSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
 const BASE = () => (process.env.AH_MCP_URL ?? "https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp").replace(/\/mcp$/, "/oauth-connect");
 const svc = (p) => `agents-holding-oauth-${p}`;
 const poolSvc = (p) => `agents-holding-oauth-${p}-pool`;
@@ -121,7 +124,24 @@ export async function token(provider, selector = {}, f = fetch) {
   // of requiring the developer to reconnect in a browser.
   if (!selector.force_refresh && Date.now() < (t.expires_at ?? 0)) return t;
   if (!t.refresh_token) return null;
-  try { const n = await post("/refresh", { provider, refresh_token: t.refresh_token }, f); const m = { ...t, ...n }; save(provider, m); return m; } catch { return null; }
+  // Listener instances for different repos share one OAuth pool. Atlassian
+  // may rotate the refresh token, so concurrent refreshes can invalidate each
+  // other. Serialize refreshes across processes and reload after waiting.
+  const lock = join(homedir(), ".config/agents-holding", `oauth-refresh-${provider}.lock`);
+  let owner = false;
+  for (let i = 0; i < 60; i++) {
+    try { mkdirSync(lock, { recursive: false }); owner = true; break; }
+    catch { await new Promise((resolve) => setTimeout(resolve, 250)); }
+  }
+  try {
+    if (!owner) return null;
+    const latest = load(provider, selector);
+    if (latest?.access_token && latest !== t &&
+        (latest.access_token !== t.access_token || latest.refresh_token !== t.refresh_token)) return latest;
+    const n = await post("/refresh", { provider, refresh_token: latest?.refresh_token ?? t.refresh_token }, f);
+    const m = { ...latest, ...n }; save(provider, m); return m;
+  } catch { return null; }
+  finally { if (owner) { try { rmdirSync(lock); } catch {} } }
 }
 /** Token, or start the browser connect flow (interactive terminal), or throw a clear hint (AI / non-interactive). */
 export async function ensure(provider, selector = {}) {
