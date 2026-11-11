@@ -1113,6 +1113,7 @@ Jira: ${issue}` });
                   else {
                     const timeoutSeconds = Number(spec.timeout_seconds ?? spec.timeout ?? 0);
                     const ev = await dispatchTerminal(terminal, command, timeoutSeconds > 0 ? timeoutSeconds * 1000 : 0);
+                    log(`QC terminal ${issue}: command=${command} status=${ev.status ?? "unknown"}${ev.exit_code !== undefined ? ` exit_code=${ev.exit_code}` : ""}${ev.reason ? ` reason=${ev.reason}` : ""}`);
                     result = { name: c.name, ok: ev.status === "completed" && ev.exit_code === 0, out: ev.status === "completed" ? `${ev.stdout ?? ""}${ev.stderr ?? ""}`.slice(-1500) : ev.reason ?? "terminal did not complete" };
                   }
                 } else result = L.runChecks(rp, [c])[0];
