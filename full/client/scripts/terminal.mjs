@@ -3,7 +3,7 @@
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync, readdirSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { join, resolve } from "node:path";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { spawnSync } from "node:child_process";
 import { createConnection } from "node:net";
@@ -24,7 +24,7 @@ if (cmd === "register") {
   const repo = realpathSync(resolve(repoPath)); if (!existsSync(repo)) { console.error("repo/name does not resolve to a registered repo"); process.exit(1); }
   if (realpathSync(process.cwd()) !== repo) { console.error(`wrong repo/cwd: cd to ${repo} before registering this terminal`); process.exit(1); }
   let company = val("--company") || process.env.AH_COMPANY || null; if (!company) { try { company = Registry.load(homedir()).projects.find((p) => realpathSync(resolve(p.path)) === repo)?.company ?? null; } catch {} }
-  if (process.platform === "darwin" && process.env.AH_TERMINAL_TEST_METADATA !== "1") { const state = join(dir, `pty-${Buffer.from(repo).toString("hex").slice(0, 24)}.json`); mkdirSync(dir, { recursive: true, mode: 0o700 }); const py = fileURLToPath(new URL("./terminal_pty.py", import.meta.url)); const r = spawnSync("python3", [py, "--repo", repo, "--company", company ?? "", "--state", state], { stdio: "inherit" }); process.exit(r.status ?? 1); }
+  if (process.platform === "darwin" && process.env.AH_TERMINAL_TEST_METADATA !== "1") { const repoHash = createHash("sha256").update(repo).digest("hex").slice(0, 32); const state = join(dir, `pty-${repoHash}.json`); mkdirSync(dir, { recursive: true, mode: 0o700 }); const py = fileURLToPath(new URL("./terminal_pty.py", import.meta.url)); const r = spawnSync("python3", [py, "--repo", repo, "--company", company ?? "", "--state", state], { stdio: "inherit" }); process.exit(r.status ?? 1); }
   const id = `term-${randomUUID()}`, now = new Date().toISOString();
   const s = { session_id: id, status: "connected", company, user_id: process.env.USER ?? "unknown", device_id: deviceId() || `device-${hostname()}`, device_host: hostname(), repo, cwd: process.cwd(), shell, toolchain, registered_at: now, heartbeat_at: now, consent: "user_registered" };
   db[id] = s; save(db); console.log(JSON.stringify({ ...s, message: "Terminal registered. Listener may select it only for this company/repo/policy." }, null, 2));
