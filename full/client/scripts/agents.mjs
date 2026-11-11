@@ -27,7 +27,7 @@ export const DEFAULT_MODELS = {
   claude: { text: "haiku", code: null },
   codex: { text: null, code: null }, // codex: account default model, low reasoning effort for text stages
 };
-export const CLAUDE_CODE_TOOLS = "Bash,Read,Edit,Write,Grep,Glob";
+export const CLAUDE_CODE_TOOLS = "Bash,Read,Edit,Write,Grep,Glob,Task";
 
 const cfgPath = (home, company) => join(home, ".config/agents-holding/state", company, "agent.json");
 export function loadAgentCfg(home, company) {
@@ -113,7 +113,7 @@ export function leanCodexHome(home) {
   const d = join(home, ".config/agents-holding/codex-home"); mkdirSync(d, { recursive: true, mode: 0o700 });
   const auth = join(d, "auth.json"), real = join(process.env.CODEX_HOME || join(home, ".codex"), "auth.json");
   try { if (!existsSync(auth) && existsSync(real)) execFileSync("ln", ["-sf", real, auth]); } catch {}
-  const cfg = join(d, "config.toml"); if (!existsSync(cfg)) writeFileSync(cfg, "# agents-holding lean codex home (listener runs): no MCP servers\napproval_policy = \"never\"\n");
+  const cfg = join(d, "config.toml"); if (!existsSync(cfg)) writeFileSync(cfg, "# agents-holding lean codex home (listener runs): no MCP servers\napproval_policy = \"never\"\n\n[agents]\nenabled = true\n");
   return d;
 }
 

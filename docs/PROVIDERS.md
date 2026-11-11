@@ -4,6 +4,23 @@ Languages: [Tiếng Việt](localized/PROVIDERS.vi.md) · [日本語](localized/
 
 The lean runner and `/ceo` talk to **providers** through one small interface (the `AgentProvider` protocol). They are not tied to a particular CLI.
 
+## Native sub-agent execution
+
+The listener starts a provider parent session only to delegate the staff task;
+the parent must use that provider's native child-agent mechanism. It must not
+be replaced by a second generic provider process with the staff prompt copied
+into it.
+
+- **Codex:** native subagent workflows are enabled in the lean `CODEX_HOME`.
+- **Claude Code:** the `Task` tool is available for coding staff.
+- **Grok:** staff runs do not pass `--no-subagents`.
+- **Gemini CLI:** use Gemini's native subagent/remote-subagent mode when a
+  Gemini adapter is configured; a plain command binding is legacy mode.
+
+Agents Holding collects the parent result for checkpointing, Jira comments,
+and QC routing. Child-agent context and activity remain managed by the
+provider's own agent/thread UI.
+
 | Kind | What it is | Where it comes from |
 | --- | --- | --- |
 | Built-in | `grok`, `claude`, `codex`: the native coding CLIs | `scripts/providers/*.mjs` |

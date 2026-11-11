@@ -1,4 +1,5 @@
-// Built-in adapter: Codex CLI (`codex exec --json`, lean CODEX_HOME). See docs/PROVIDERS.md.
+// Built-in adapter: Codex CLI (`codex exec --json`, lean CODEX_HOME). The
+// parent session delegates to the provider's native subagent workflow.
 import { execFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
