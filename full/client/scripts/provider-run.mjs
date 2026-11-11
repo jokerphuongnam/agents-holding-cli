@@ -2,7 +2,7 @@
 // Same resolution as lean runs: AH_* env > company staff mapping > global agents.json > defaults (agents.mjs resolveAgent).
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import * as L from "./lean.mjs";
@@ -26,7 +26,8 @@ export async function runStaff({ home = homedir(), company, role, kind = "text",
     ({ system, context } = S.stablePrefix(system, context)); schema = schema ?? S.SUMMARY_SCHEMA; sess = S.sessionFor(home, { company, role, cwd, kind }, prompt, { continue: cont, contextHash: S.contextHash(system, context) }); }
   if (company && role) { const pol = POL.loadPolicy(home, company, role); context = [context, POL.rulesText(pol)].filter(Boolean).join("\n\n"); }
   prompt = POL.redactText(prompt); if (context) context = POL.redactText(context); if (system) system = POL.redactText(system);
-  const cfg = L.loadAgentCfg(home, company), text = kind !== "code";
+  const repoCfg = (() => { try { const j = JSON.parse(readFileSync(join(cwd, ".agents", "company.json"), "utf8")); return { ...j, staff: L.flattenStaffs(j.staffs ?? j.staff ?? {}) }; } catch { return {}; } })();
+  const baseCfg = L.loadAgentCfg(home, company), cfg = { ...baseCfg, ...repoCfg, staff: { ...(baseCfg.staff ?? {}), ...(repoCfg.staff ?? {}) } }, text = kind !== "code";
   const r = L.resolveAgent({ cfg, text, role, stageModel });
   if (r.command) { const { runCommand } = await import("./providers/command.mjs");
     const res = await runCommand(r.binding, { prompt, system, context, cwd, company, role }).catch((e) => ({ result: {}, exitCode: 1, error: e.message }));
