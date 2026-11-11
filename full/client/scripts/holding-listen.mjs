@@ -149,7 +149,6 @@ const autostartPlist = join(homedir(), "Library/LaunchAgents/com.agentsholding.j
 const myJira = {}; // enterprise: this key's Jira account; work starts only on cards assigned to it
 // Must be initialized before heartbeat/readiness can run. LaunchAgent recovery may
 // invoke heartbeat during startup, before the Jira route configuration is loaded.
-let listenerJira = false;
 let lastBeat = 0;
 const joined = new Set();
 const mcpJiraFallback = !args.includes("--no-jira-mcp-fallback") && process.env.AH_JIRA_MCP_FALLBACK !== "0";
@@ -405,7 +404,7 @@ async function announceWaiting(issue, na, p) {
   } catch (e) { log(`Jira waiting signal failed for ${issue}:`, e.message); }
 }
 const leanHome = lean ? L.leanGrokHome(homedir()) : null;
-listenerJira = dryJira || !!jiraCfg; // prefer local deterministic Jira; the agent MCP is an optional fallback
+let listenerJira = dryJira || !!jiraCfg; // prefer local deterministic Jira; the agent MCP is an optional fallback
 let jiraRouteCheckedAt = 0;
 async function refreshJiraRoute() {
   if (dryJira || !jiraCfg) { listenerJira = false; return false; }
