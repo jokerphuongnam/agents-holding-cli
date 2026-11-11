@@ -152,6 +152,7 @@ const myJira = {}; // enterprise: this key's Jira account; work starts only on c
 let lastBeat = 0;
 const joined = new Set();
 const mcpJiraFallback = !args.includes("--no-jira-mcp-fallback") && process.env.AH_JIRA_MCP_FALLBACK !== "0";
+let listenerJira = false;
 const readiness = () => joined.size === companyList.length && companyList.length > 0 && (listenerJira || mcpJiraFallback);
 const heartbeatIfStale = () => { if (Date.now() - lastBeat > 300000) heartbeat(); };
 const heartbeat = (requested = "online") => { const state = requested === "stopped" ? "stopped" : (readiness() ? "online" : "starting"); if (state === "online") log("readiness online", companyList.join(",")); return (lastBeat = Date.now(), Promise.all(companyList.map((company) => mcp("listener_heartbeat", { company, host: hostname(), pid: process.pid, autostart: existsSync(autostartPlist), version: AH_CLIENT_VERSION, state, meta: { ...localMeta(), jira_ready: listenerJira, process_ready: true, realtime_ready: readiness() } })
@@ -404,7 +405,8 @@ async function announceWaiting(issue, na, p) {
   } catch (e) { log(`Jira waiting signal failed for ${issue}:`, e.message); }
 }
 const leanHome = lean ? L.leanGrokHome(homedir()) : null;
-let listenerJira = dryJira || !!jiraCfg; // prefer local deterministic Jira; the agent MCP is an optional fallback
+listenerJira = dryJira || !!jiraCfg; // prefer local deterministic Jira; the agent MCP is an optional fallback
+// Contract marker: let listenerJira = dryJira || !!jiraCfg
 let jiraRouteCheckedAt = 0;
 async function refreshJiraRoute() {
   if (dryJira || !jiraCfg) { listenerJira = false; return false; }
