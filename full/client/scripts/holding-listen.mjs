@@ -1081,7 +1081,7 @@ Jira: ${issue}` });
       // Keep the label short and searchable; the exact command is preserved
       // in the QC evidence/comment.
       const terminalLabel = (checks) => {
-        const command = checks.map((c) => [c.cmd, ...(c.args ?? [])].join(" ")).join(" && ");
+        const command = checks.map((c) => c.terminal_command ?? [c.cmd, ...(c.args ?? [])].join(" ")).join(" && ");
         return `terminal-${command.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "")}`.slice(0, 255);
       };
       const runQc = async () => {
@@ -1094,7 +1094,7 @@ Jira: ${issue}` });
             ? configuredChecks.map((spec) => {
                 const id = String(spec.id ?? spec.name ?? "check");
                 const command = spec.command ?? (spec.commands ?? []).join(" && ");
-                return command ? { name: id, cmd: "bash", args: ["-lc", command], runner: spec.runner ?? "registered_terminal" } : detected.find((c) => c.name === id) ?? { name: id, cmd: "bash", args: ["-lc", id], runner: spec.runner ?? "registered_terminal" };
+                return command ? { name: id, cmd: "bash", args: ["-lc", command], terminal_command: command, runner: spec.runner ?? "registered_terminal" } : detected.find((c) => c.name === id) ?? { name: id, cmd: "bash", args: ["-lc", id], terminal_command: id, runner: spec.runner ?? "registered_terminal" };
               })
             : detected.map((c) => ({ ...c, runner: "registered_terminal" }));
           const label = terminalLabel(checks);
@@ -1103,7 +1103,10 @@ Jira: ${issue}` });
             const terminal = selectAvailableTerminal({ company, repo: rp });
             const results = [];
             for (const c of checks) {
-              const command = [c.cmd, ...(c.args ?? [])].join(" ");
+              // Registered terminals receive the original shell command. Do
+              // not flatten `bash -lc <command>` into an unquoted string:
+              // `cd X && tool` must remain one shell expression.
+              const command = c.terminal_command ?? [c.cmd, ...(c.args ?? [])].join(" ");
               const spec = configuredChecks.find((x) => String(x.id ?? x.name ?? "") === String(c.name)) ?? {};
               const attempts = Math.max(1, Math.min(10, Number(spec.retry?.max_attempts ?? spec.max_attempts ?? 1) || 1));
               let result = null;
