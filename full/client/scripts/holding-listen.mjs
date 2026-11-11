@@ -725,7 +725,12 @@ async function leanModel(kind, issue, stage, prompt, role = null, context = null
   const text = kind !== "code", schema = kind === "tech" ? L.TECH_SCHEMA : kind === "habits" ? L.HABITS_SCHEMA : text ? L.TEXT_SCHEMA : L.CODE_SCHEMA, system = kind === "tech" ? L.TECH_SYSTEM : kind === "habits" ? L.HABITS_SYSTEM : text ? L.TEXT_SYSTEM : null;
   const localCfg = L.loadAgentCfg(homedir(), company);
   let repoStaff = {};
-  try { repoStaff = JSON.parse(readFileSync(join(repo, ".agents", "company.json"), "utf8")).staff ?? {}; } catch {}
+  try {
+    const localCompany = JSON.parse(readFileSync(join(repo, ".agents", "company.json"), "utf8"));
+    // `staffs` is the local company schema. Read legacy `staff` for migration,
+    // but never merge a server roster into executable bindings.
+    repoStaff = localCompany.staffs ?? localCompany.staff ?? {};
+  } catch {}
   const rsv = L.resolveAgent({ cfg: {
     ...localCfg,
     ...runSettings,

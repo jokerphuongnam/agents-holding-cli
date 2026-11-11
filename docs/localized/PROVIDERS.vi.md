@@ -68,7 +68,7 @@ Với cấu hình repository, binding bền vững của staff nằm trong `comm
 
 ```json
 {
-  "staff": {
+  "staffs": {
     "ba-lead": { "command": "jev run --task \"{prompt_file}\" --agent-role \"{role}\"" },
     "tech-lead": { "command": "jev run --task \"{prompt_file}\" --agent-role \"{role}\"" },
     "qc-lead": { "command": "jev run --task \"{prompt_file}\" --agent-role \"{role}\"" },
@@ -79,7 +79,7 @@ Với cấu hình repository, binding bền vững của staff nằm trong `comm
 }
 ```
 
-Mặc định toàn cục và định nghĩa provider nằm trong `~/.config/agents-holding/agents.json`. File công ty cũng có thể định nghĩa `providers` riêng.
+Mặc định toàn cục và định nghĩa provider nằm trong `~/.config/agents-holding/agents.json`. File công ty cũng có thể định nghĩa `providers` riêng. Trong `.agents/company.json`, dùng khóa `staffs` (số nhiều) để khai báo các staff local; listener không lấy roster server để tạo binding.
 
 Thứ tự chạy là: (1) command của staff nếu có, chạy đúng command đó; (2) chỉ
 khi không có command mới dùng binding provider/model legacy; (3) staff chưa

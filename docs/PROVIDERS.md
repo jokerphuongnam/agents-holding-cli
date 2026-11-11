@@ -95,7 +95,7 @@ back to another provider.
 ```json
 {
   "company": "nailly",
-  "staff": {
+  "staffs": {
     "ba-lead": { "command": "jev run --task \"{prompt_file}\" --agent-role \"{role}\"" },
     "tech-lead": { "command": "jev run --task \"{prompt_file}\" --agent-role \"{role}\"" },
     "qc-lead": { "command": "jev run --task \"{prompt_file}\" --agent-role \"{role}\"" },
@@ -105,7 +105,7 @@ back to another provider.
 }
 ```
 
-Repo-local `staff` and `providers` take precedence over machine-local company
+Repo-local `staffs` and `providers` take precedence over machine-local company
 state. Secrets remain in Keychain/environment only.
 
 **Resolution order** (the same order is used everywhere: lean runs, `holding staff run`, `/staff run`, `/staff list`):
