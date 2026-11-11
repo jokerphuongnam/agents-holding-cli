@@ -60,13 +60,34 @@ ba-lead:
 
 Enter nhận Default (binding đã nhớ cho vai trò đó). Custom hỏi provider (danh sách từ `holding provider list`, kèm sức khỏe) → model → effort, và trở thành mặc định mới được nhớ. Trong chat agent: `/staff add <role> --agent claude --model haiku --effort low` (không cờ = mặc định đã nhớ). `holding provider set [staff …]` chạy lại bước. Binding đã nhớ nằm trong `~/.config/agents-holding/agent-defaults.json`; `holding provider list` hiện chúng, `holding provider set --default <role> <provider> [model] [effort]` / `unset <role>` sửa chúng. Mọi `set-staff` cũng được nhớ. Nhân sự không binding dùng mặc định công ty và bị gắn `⚠ unbound` trong `/staff list`.
 
-Ánh xạ được lưu **theo công ty** trong `~/.config/agents-holding/state/<company>/agent.json`:
+Với cấu hình repository, binding bền vững của staff nằm trong `command` ở
+`.agents/company.json`. Agents Holding render các placeholder `{prompt}`,
+`{prompt_file}`, `{role}`, `{context_file}`, `{cwd}`, `{model}`, `{effort}` và
+`{max_turns}`. `command` là nguồn sự thật; nếu staff đã có command thì không
+được tự fallback sang provider khác.
 
 ```json
-{ "staff": { "ba-lead": { "provider": "ollama", "model": "qwen2.5-coder:7b", "effort": "low" } }, "lang": "auto" }
+{
+  "staff": {
+    "ba-lead": { "command": "jev run --task \"{prompt_file}\" --agent-role \"{role}\"" },
+    "tech-lead": { "command": "jev run --task \"{prompt_file}\" --agent-role \"{role}\"" },
+    "qc-lead": { "command": "jev run --task \"{prompt_file}\" --agent-role \"{role}\"" },
+    "react-dev": { "command": "codex exec --dangerously-bypass-approvals \"{prompt}\"" },
+    "simple-worker": { "command": "ollama run qwen2.5-coder" }
+  },
+  "lang": "auto"
+}
 ```
 
 Mặc định toàn cục và định nghĩa provider nằm trong `~/.config/agents-holding/agents.json`. File công ty cũng có thể định nghĩa `providers` riêng.
+
+Thứ tự chạy là: (1) command của staff nếu có, chạy đúng command đó; (2) chỉ
+khi không có command mới dùng binding provider/model legacy; (3) staff chưa
+bind dùng default của company. Cú pháp headless chính thức: Codex dùng
+`codex exec`, Claude dùng `claude -p`, Grok dùng `grok -p`/`--single`. Xem
+[Codex subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents?surface=app),
+[Claude sub-agents](https://code.claude.com/docs/en/sub-agents) và
+[Grok headless scripting](https://docs.x.ai/build/cli/headless-scripting).
 
 **Thứ tự resolve** (cùng thứ tự mọi nơi: lean run, `holding staff run`, `/staff run`, `/staff list`):
 

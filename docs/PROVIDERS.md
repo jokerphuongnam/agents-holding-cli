@@ -86,14 +86,21 @@ The mapping is stored **per company** in `~/.config/agents-holding/state/<compan
 
 Global defaults and provider definitions live in `~/.config/agents-holding/agents.json`. A company file can also define its own `providers`.
 
-For a repository-owned setup, bindings can also be committed in
-`.agents/company.json`:
+For a repository-owned setup, the durable staff binding is a `command` in
+`.agents/company.json`. Agents Holding renders `{prompt}`, `{prompt_file}`,
+`{role}`, `{context_file}`, `{cwd}`, `{model}`, `{effort}`, and `{max_turns}`.
+The command is the source of truth; a staff command must not silently fall
+back to another provider.
 
 ```json
 {
   "company": "nailly",
   "staff": {
-    "ios-engineer": { "provider": "codex", "model": "gpt-5", "effort": "low" }
+    "ba-lead": { "command": "jev run --task \"{prompt_file}\" --agent-role \"{role}\"" },
+    "tech-lead": { "command": "jev run --task \"{prompt_file}\" --agent-role \"{role}\"" },
+    "qc-lead": { "command": "jev run --task \"{prompt_file}\" --agent-role \"{role}\"" },
+    "react-dev": { "command": "codex exec --dangerously-bypass-approvals \"{prompt}\"" },
+    "simple-worker": { "command": "ollama run qwen2.5-coder" }
   }
 }
 ```
@@ -102,6 +109,16 @@ Repo-local `staff` and `providers` take precedence over machine-local company
 state. Secrets remain in Keychain/environment only.
 
 **Resolution order** (the same order is used everywhere: lean runs, `holding staff run`, `/staff run`, `/staff list`):
+
+1. An explicit staff `command` binding is executed exactly as configured.
+2. Legacy provider/model bindings are used only when no command is configured.
+3. An unbound staff uses the company default.
+
+For command syntax, use the provider's official headless interface: Codex
+`codex exec`, Claude Code `claude -p`, and Grok `grok -p`/`--single`.
+Grok's documentation describes `-p/--single` for scripted headless runs;
+Claude documents `claude -p` and native sub-agents; Codex documents native
+sub-agent workflows and `codex exec` in its CLI. See [Codex subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents?surface=app), [Claude sub-agents](https://code.claude.com/docs/en/sub-agents), and [Grok headless scripting](https://docs.x.ai/build/cli/headless-scripting).
 
 - **Provider:**
   1. `AH_AGENT`

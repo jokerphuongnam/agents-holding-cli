@@ -25,18 +25,18 @@ export function words(s) {
 export const kindOf = (cmd) => { const w = basename(words(cmd)[0] ?? ""); return ["claude", "codex", "grok", "ollama"].includes(w) ? w : "text"; };
 export const shortCmd = (cmd, n = 40) => (cmd.length > n ? cmd.slice(0, n - 1) + "…" : cmd);
 
-export const PLACEHOLDERS = ["prompt", "prompt_file", "model", "effort", "cwd", "context", "context_file", "max_turns"];
+export const PLACEHOLDERS = ["prompt", "prompt_file", "role", "model", "effort", "cwd", "context", "context_file", "max_turns"];
 /** Build {bin, args, stdin, env} for one call; pure except temp files, used by `holding staff test` too.
  * b = staff binding fields {command, model, effort, cwd, context: auto|none|<file>, max_turns, timeout, env}.
  * {prompt} carries ONLY the task. The staff context goes through {context}/{context_file}, else the CLI's native channel
  * (claude --append-system-prompt-file, codex -c developer_instructions, grok --rules), else env AH_CONTEXT_FILE. */
-export function render(cmd, { prompt = "", context = "", cwd = process.cwd(), dir = null, b = {} } = {}) {
+export function render(cmd, { prompt = "", context = "", role = "staff", cwd = process.cwd(), dir = null, b = {} } = {}) {
   const w = words(cmd); if (!w.length) throw new Error("empty command");
   const d = dir ?? mkdtempSync(join(tmpdir(), "ah-cmd-"));
   const file = (name, body) => { const f = join(d, name); writeFileSync(f, body, { mode: 0o600 }); return f; };
   const ctx = b.context === "none" ? "" : b.context && b.context !== "auto" ? (() => { try { return readFileSync(b.context, "utf8"); } catch { throw new Error(`context file not readable: ${b.context}`); } })() : context;
   let used = false, ctxUsed = false, ctxFile = null;
-  const val = { model: b.model ?? "", effort: b.effort ?? "", cwd, max_turns: b.max_turns ? String(b.max_turns) : "" };
+  const val = { role, model: b.model ?? "", effort: b.effort ?? "", cwd, max_turns: b.max_turns ? String(b.max_turns) : "" };
   const out = [];
   for (const t of w.slice(1)) {
     let empty = false;
@@ -74,7 +74,7 @@ export function parseOut(kind, stdout, model = null) {
 export async function runCommand(b, { prompt, system, context, cwd, env = process.env, log = () => {}, company = env.AH_COMPANY, role = null }) {
   prompt = POL.redactText(prompt ?? ""); if (context) context = POL.redactText(context); if (system) system = POL.redactText(system);
   if (typeof b === "string") b = { command: b };
-  const r = render(b.command, { prompt, context: [system, context].filter(Boolean).join("\n\n"), cwd, b });
+  const r = render(b.command, { prompt, context: [system, context].filter(Boolean).join("\n\n"), role, cwd, b });
   const timeoutMs = (Number(b.timeout) || 0) * 1000 || Number(process.env.AH_RUN_TIMEOUT_MS) || 15 * 60000;
   const e = { ...env, ...r.env }; delete e.AGENTS_HOLDING_KEY; // staff commands never get server access
   log(`command ${r.bin} (${r.kind}) in ${r.cwd}, prompt via ${r.stdin === null ? "placeholder" : "stdin"}, context via ${r.contextVia}`);
