@@ -60,6 +60,21 @@ The mapping is stored **per company** in `~/.config/agents-holding/state/<compan
 
 Global defaults and provider definitions live in `~/.config/agents-holding/agents.json`. A company file can also define its own `providers`.
 
+For a repository-owned setup, bindings can also be committed in
+`.agents/company.json`:
+
+```json
+{
+  "company": "nailly",
+  "staff": {
+    "ios-engineer": { "provider": "codex", "model": "gpt-5", "effort": "low" }
+  }
+}
+```
+
+Repo-local `staff` and `providers` take precedence over machine-local company
+state. Secrets remain in Keychain/environment only.
+
 **Resolution order** (the same order is used everywhere: lean runs, `holding staff run`, `/staff run`, `/staff list`):
 
 - **Provider:**

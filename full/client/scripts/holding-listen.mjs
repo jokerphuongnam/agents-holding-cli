@@ -550,6 +550,8 @@ async function useCtx(p) {
     const localCompany = JSON.parse(readFileSync(join(repo, ".agents", "company.json"), "utf8"));
     if (localCompany.git?.branch_prefix) runSettings = { ...runSettings, branch_prefix: localCompany.git.branch_prefix };
     if (localCompany.staff_access) runSettings = { ...runSettings, staff_access: localCompany.staff_access };
+    if (localCompany.providers) runSettings = { ...runSettings, providers: localCompany.providers };
+    if (localCompany.staff) runSettings = { ...runSettings, staff: localCompany.staff };
     // Project-local QC rules are an intentional override for the listener
     // bound to this repo. Keep them with the company config so every machine
     // gets the same terminal gate after checkout/update.
@@ -716,7 +718,13 @@ let stageModels = {}; // flow per-stage models of the current run (next_action m
 async function leanModel(kind, issue, stage, prompt, role = null, context = null, options = {}) {
   const sid = randomUUID(), out = join(logDir, `run-${Date.now()}.log`), buf = [];
   const text = kind !== "code", schema = kind === "tech" ? L.TECH_SCHEMA : kind === "habits" ? L.HABITS_SCHEMA : text ? L.TEXT_SCHEMA : L.CODE_SCHEMA, system = kind === "tech" ? L.TECH_SYSTEM : kind === "habits" ? L.HABITS_SYSTEM : text ? L.TEXT_SYSTEM : null;
-  const rsv = L.resolveAgent({ cfg: { agent: runSettings?.agent, model: runSettings?.model, text_model: runSettings?.text_model, ...L.loadAgentCfg(homedir(), company) }, text, role, stageModel: stageModels[stage] ?? null });
+  const localCfg = L.loadAgentCfg(homedir(), company);
+  const rsv = L.resolveAgent({ cfg: {
+    ...localCfg,
+    ...runSettings,
+    staff: { ...(localCfg.staff ?? {}), ...(runSettings.staff ?? {}) },
+    providers: { ...(localCfg.providers ?? {}), ...(runSettings.providers ?? {}) },
+  }, text, role, stageModel: stageModels[stage] ?? null });
   const CM = await import("./providers/command.mjs");
   const cmds = [{ label: rsv.command ? CM.shortCmd(rsv.command) : rsv.agent, rsv }, ...(rsv.fallback ?? []).map((c) => ({ label: CM.shortCmd(c), rsv: { ...rsv, agent: "command", command: c, binding: { command: c }, model: null, effort: null } }))];
   const cliKind = (r) => r.command ? CM.kindOf(r.command) : r.agent;
