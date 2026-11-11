@@ -92,7 +92,9 @@ def main():
                     job_id = 'job-' + secrets.token_hex(10); marker = '__AH_DONE_' + secrets.token_hex(8) + '__'
                     jobs[job_id] = {'marker': marker.encode(), 'client': c, 'command': command, 'started_at': time.time(), 'buf': b''}
                     active_job = job_id; meta['active_job'] = {'job_id': job_id, 'command': command, 'started_at': jobs[job_id]['started_at']}; state.write_text(json.dumps(meta)); c.setblocking(False)
-                    print(f"[terminal] started job_id={job_id} command={command!r} cwd={repo}", flush=True)
+                    started_iso = time.strftime('%Y-%m-%dT%H:%M:%S%z', time.localtime(jobs[job_id]['started_at']))
+                    jobs[job_id]['started_at_iso'] = started_iso
+                    print(f"[terminal] started_at={started_iso} job_id={job_id} command={command!r} cwd={repo}", flush=True)
                     os.write(master, (command + f"\nprintf '{marker}:%s\\n' $?\n" ).encode())
                 else: c.close()
             if active_job and active_job in jobs and re.search(re.escape(jobs[active_job]['marker'].decode()) + r':-?\d+', jobs[active_job]['buf'].decode(errors='replace')):
@@ -105,8 +107,9 @@ def main():
                          'started_at': job['started_at'], 'completed_at': time.time()}
                 try: job['client'].sendall((json.dumps(event) + '\n').encode())
                 except OSError: pass
-                elapsed = max(0, time.time() - job['started_at'])
-                print(f"[terminal] completed command={job['command']} exit_code={exit_code} elapsed_sec={elapsed:.1f} output_bytes={len(transcript.encode())}", flush=True)
+                completed_at = time.time(); elapsed = max(0, completed_at - job['started_at'])
+                completed_iso = time.strftime('%Y-%m-%dT%H:%M:%S%z', time.localtime(completed_at))
+                print(f"[terminal] completed_at={completed_iso} command={job['command']} exit_code={exit_code} elapsed_sec={elapsed:.1f} output_bytes={len(transcript.encode())}", flush=True)
                 job['client'].close(); del jobs[active_job]; active_job = None
                 meta['active_job'] = None; meta['heartbeat_at'] = time.time(); state.write_text(json.dumps(meta))
     finally:
