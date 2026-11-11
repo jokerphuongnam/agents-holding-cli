@@ -113,7 +113,9 @@ export function leanCodexHome(home) {
   const d = join(home, ".config/agents-holding/codex-home"); mkdirSync(d, { recursive: true, mode: 0o700 });
   const auth = join(d, "auth.json"), real = join(process.env.CODEX_HOME || join(home, ".codex"), "auth.json");
   try { if (!existsSync(auth) && existsSync(real)) execFileSync("ln", ["-sf", real, auth]); } catch {}
-  const cfg = join(d, "config.toml"); if (!existsSync(cfg)) writeFileSync(cfg, "# agents-holding lean codex home (listener runs): no MCP servers\napproval_policy = \"never\"\n\n[agents]\nenabled = true\n");
+  const cfg = join(d, "config.toml");
+  if (!existsSync(cfg)) writeFileSync(cfg, "# agents-holding lean codex home (listener runs): no MCP servers\napproval_policy = \"never\"\n\n[agents]\nenabled = true\n");
+  else { const current = readFileSync(cfg, "utf8"); if (!/\[agents\][\s\S]*?enabled\s*=\s*true/.test(current)) writeFileSync(cfg, `${current.trimEnd()}\n\n[agents]\nenabled = true\n`); }
   return d;
 }
 
