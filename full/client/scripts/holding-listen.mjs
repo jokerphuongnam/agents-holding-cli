@@ -729,7 +729,8 @@ async function leanModel(kind, issue, stage, prompt, role = null, context = null
     const localCompany = JSON.parse(readFileSync(join(repo, ".agents", "company.json"), "utf8"));
     // `staffs` is the local company schema. Read legacy `staff` for migration,
     // but never merge a server roster into executable bindings.
-    repoStaff = localCompany.staffs ?? localCompany.staff ?? {};
+    const tree = localCompany.staffs ?? localCompany.staff ?? {};
+    repoStaff = L.flattenStaffs(tree);
   } catch {}
   const rsv = L.resolveAgent({ cfg: {
     ...localCfg,
@@ -740,6 +741,11 @@ async function leanModel(kind, issue, stage, prompt, role = null, context = null
     staff: { ...(localCfg.staff ?? {}), ...repoStaff },
     providers: { ...(localCfg.providers ?? {}), ...(runSettings.providers ?? {}) },
   }, text, role, stageModel: stageModels[stage] ?? null });
+  const localStaff = rsv.binding ?? {};
+  if (localStaff.skills?.length) context = [context, `LOCAL STAFF SKILLS (${role}): ${localStaff.skills.map((s) => typeof s === "string" ? s : `${s.provider ?? "local"}/${s.name ?? s.id ?? "skill"}`).join(", ")}`].filter(Boolean).join("\n\n");
+  if (localStaff.description) context = [context, `LOCAL STAFF DESCRIPTION (${role}): ${typeof localStaff.description === "string" ? localStaff.description : JSON.stringify(localStaff.description)}`].filter(Boolean).join("\n\n");
+  if (localStaff.responsibilities?.length) context = [context, `LOCAL STAFF RESPONSIBILITIES (${role}): ${localStaff.responsibilities.join("; ")}`].filter(Boolean).join("\n\n");
+  if (localStaff.parent) context = [context, `LOCAL STAFF MANAGER: ${localStaff.parent}`].filter(Boolean).join("\n\n");
   const CM = await import("./providers/command.mjs");
   const cmds = [{ label: rsv.command ? CM.shortCmd(rsv.command) : rsv.agent, rsv }, ...(rsv.fallback ?? []).map((c) => ({ label: CM.shortCmd(c), rsv: { ...rsv, agent: "command", command: c, binding: { command: c }, model: null, effort: null } }))];
   const cliKind = (r) => r.command ? CM.kindOf(r.command) : r.agent;

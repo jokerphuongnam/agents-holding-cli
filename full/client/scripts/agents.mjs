@@ -36,6 +36,17 @@ export function loadAgentCfg(home, company) {
   if (j) { if (j.staff && typeof j.staff === "object") c.staff = { ...(c.staff ?? {}), ...j.staff }; if (typeof j.default === "string") c.command = j.default || c.command; }
   return c;
 }
+/** Flatten repo-local staffs tree for lookup while preserving hierarchy metadata. */
+export function flattenStaffs(tree = {}, inherited = {}, parent = null, out = {}) {
+  for (const [role, raw] of Object.entries(tree ?? {})) {
+    if (!raw || typeof raw !== "object") continue;
+    const { members, ...own } = raw;
+    const entry = { ...inherited, ...own, ...(parent ? { parent } : {}) };
+    out[role] = entry;
+    flattenStaffs(members, entry, role, out);
+  }
+  return out;
+}
 /** holding staff set / staff unset: per-company mapping staff.<role> = {provider, model, effort} in state/<company>/agent.json. */
 export function setStaff(home, company, role, m) {
   if (role === "ceo" && m) throw new Error("the CEO is always your current chat session; it has no provider binding");
