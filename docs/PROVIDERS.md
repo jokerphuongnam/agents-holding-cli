@@ -56,7 +56,16 @@ ceo - current session
 └─ qa-lead - grok-4.7-build-fast - default ⚠ unbound (company default)
 ```
 
-**The CEO is always your current chat session** (whatever agent and model you are chatting in). It has no binding and `holding staff set ceo …` is refused. When `/ceo` delegates, it runs `holding staff run <staff> "<task>"` (default AI agent CLI: `/staff run <staff> <task>`), which starts that staff as a **separate process on its own binding**. The Jira listener does the same for every stage.
+**The CEO is always your current chat session** (whatever agent and model you are chatting in). It has no binding and `holding staff set ceo …` is refused. When `/ceo` delegates, it runs `holding staff run <staff> "<task>"`, which starts that staff through its own provider binding. The Jira listener supplies workflow events and checkpoints; for manager/lead stages it must not select or run the IC directly. The manager/lead provider must spawn the next staff through its native sub-agent mechanism.
+
+### Flexible manager routing
+
+Bindings are preferences, not a fixed company-wide flow. A company may use
+Codex for CEO/lead orchestration, Claude for coding or QC, and a local model
+for small tasks. The manager chooses the next role from the roster and skill
+descriptions: user communication goes to `ba-user`, a new plan to `po-new`, a
+plan correction to `po-modify`, and implementation/QC to the configured role.
+The selected staff's provider binding determines which native sub-agent runs.
 
 **Binding step.** `holding project add` (new company) and `holding staff add <role>` ask, per staff (never the CEO):
 

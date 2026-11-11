@@ -755,6 +755,11 @@ async function leanModelOnce(kind, issue, stage, prompt, role, context, rsv, { s
     stdout: () => Buffer.concat(buf).toString("utf8"), grokUsage: (s) => usageOf(s, leanHome), leanHome, logDir, log: (m) => log(`lean ${kind} ${issue}: ${m}`) };
   const t0 = Date.now();
   if (role) context = [context, POL.rulesText(POL.loadPolicy(homedir(), company, role))].filter(Boolean).join("\n\n");
+  // Manager roles coordinate; they do not become the implementation worker.
+  // The selected provider owns the native child-agent/thread creation.
+  if (role && /(?:^|[-_])(ceo|lead|manager|director)(?:$|[-_])/i.test(role)) {
+    context = [context, `MANAGER ORCHESTRATION CONTRACT: You are ${role}, a manager/lead. Do not implement the task yourself when another staff role is appropriate. Use this provider's native sub-agent mechanism to spawn the next staff/lead, pass only the slim task brief and required paths, wait for the child result, then return a concise orchestration result. Select the child from the company roster/skills and workflow; do not hard-code a provider. If the task requires user communication, delegate to ba-user; for a new plan use po-new; for a plan correction use po-modify; for technical implementation delegate to the appropriate IC; for QC delegate to the configured QC role.`].filter(Boolean).join("\n\n");
+  }
   prompt = POL.redactText(prompt); if (context) context = POL.redactText(context);
   const res = await prov.run({ prompt, system, context, schema, kind, text, cwd: workerCwd, model, effort, sid, bin, company, role }, ctx).catch((e) => ({ result: {}, usage: null, exitCode: 1, error: e.message }));
   const wall = Date.now() - t0, code = res.exitCode ?? 0;

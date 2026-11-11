@@ -39,7 +39,15 @@ ceo - current session
 └─ qa-lead - grok-4.7-build-fast - default ⚠ unbound (company default)
 ```
 
-**CEO luôn là phiên chat hiện tại của bạn** (bất kỳ agent và model nào bạn đang chat). Không có binding và `holding staff set ceo …` bị từ chối. Khi `/ceo` ủy quyền, nó chạy `holding staff run <staff> "<task>"` (CLI mặc định: `/staff run <staff> <task>`), khởi động nhân sự đó như **process riêng trên binding của họ**. Jira Listener làm tương tự cho mọi stage.
+**CEO luôn là phiên chat hiện tại của bạn** (bất kỳ agent và model nào bạn đang chat). Không có binding và `holding staff set ceo …` bị từ chối. Khi CEO hoặc leader ủy quyền, nó dùng lệnh spawn staff tương ứng; provider tạo native sub-agent/thread trên binding của staff đó. Jira Listener chỉ đưa event, workflow và checkpoint; với stage manager/leader, listener không tự chọn và chạy IC thay cho manager.
+
+### Điều phối manager linh hoạt
+
+Binding chỉ là lựa chọn, không phải flow cố định. Có thể dùng Codex cho
+CEO/leader, Claude cho coding hoặc QC, và local LLM cho task nhỏ. Manager đọc
+roster/skill để chọn staff cần spawn: cần hỏi user thì gọi `ba-user`, cần plan
+mới gọi `po-new`, sửa plan gọi `po-modify`, còn implementation/QC thì gọi role
+tương ứng. Provider của staff đó mới quyết định native sub-agent thực thi.
 
 **Bước binding.** `holding project add` (công ty mới) và `holding staff add <role>` hỏi từng nhân sự (không bao giờ CEO):
 
