@@ -444,6 +444,21 @@ function acquireIssueLock(k) {
   }
 }
 function releaseIssueLock(path) { try { if (path) unlinkSync(path); } catch {} }
+function clearStaleIssueRun(companyName, issue) {
+  const st = L.stateDir(homedir(), companyName), ck = X.ckptLoad(st, issue);
+  if (!ck?.running) return false;
+  const path = join(issueLockDir, `${issueLockKey(`${companyName}/${issue}`)}.lock`);
+  let live = false;
+  try {
+    const owner = JSON.parse(readFileSync(path, "utf8"));
+    if (owner.pid) { try { process.kill(owner.pid, 0); live = true; } catch {} }
+  } catch {}
+  if (live) return false;
+  try { unlinkSync(path); } catch {}
+  X.ckptSave(st, issue, { running: false, stale_recovered_at: new Date().toISOString() });
+  log(`recovery: cleared stale running checkpoint ${companyName}/${issue}`);
+  return true;
+}
 const queueKey = (p) => `${p.company ?? company}/${p.issue ?? p.task_id ?? "?"}`;
 const queueOrder = (p) => [Number.isFinite(Number(p.priority)) ? Number(p.priority) : 100000, Date.parse(p.created ?? p.updated ?? "") || Number.MAX_SAFE_INTEGER, queueKey(p)];
 function publishQueue() {
@@ -1306,6 +1321,7 @@ async function reconcile(company, sinceIso, forceActive = false) {
       });
       for (const x of replay) {
         const f = res.find((i) => i.key === x.key)?.fields ?? {};
+        const staleRun = clearStaleIssueRun(company, x.key);
         await mirrorSync(company, b.project_key, x.key, x.status, x.updated);
         const latestComment = [...(f.comment?.comments ?? [])].sort((a, z) => String(z.created ?? "").localeCompare(String(a.created ?? ""))).at(-1);
         const r = await mcp("reconcile_issue", { company, issue: x.key, status: x.status, updated: x.updated, project_key: b.project_key, summary: f.summary ?? "", description: f.description ?? "", labels: f.labels ?? [], assignee_account: f.assignee?.accountId ?? null,
@@ -1335,6 +1351,11 @@ async function reconcile(company, sinceIso, forceActive = false) {
         if (qcRecovery) {
           log(`reconcile ${x.key}: dispatching recovered QC action`);
           wake({ company, issue: x.key, event: "jira_startup_scan", stage: "qc", updated: x.updated });
+        }
+        if (staleRun && !qcRecovery && /^(reopened|coding|qc)$/i.test(String(x.status ?? ""))) {
+          const stage = /^qc$/i.test(String(x.status ?? "")) ? "qc" : "coding";
+          log(`reconcile ${x.key}: dispatching stale-run recovery at ${stage}`);
+          wake({ company, issue: x.key, event: "reconcile", stage, updated: x.updated });
         }
       }
     }
