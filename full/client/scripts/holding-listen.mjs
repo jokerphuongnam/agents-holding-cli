@@ -554,6 +554,8 @@ async function useCtx(p) {
     if (localCompany.git?.branch_prefix) runSettings = { ...runSettings, branch_prefix: localCompany.git.branch_prefix };
     if (localCompany.staff_access) runSettings = { ...runSettings, staff_access: localCompany.staff_access };
     if (localCompany.providers) runSettings = { ...runSettings, providers: localCompany.providers };
+    if (localCompany.language) runSettings = { ...runSettings, language: localCompany.language };
+    if (localCompany.artifact_policy) runSettings = { ...runSettings, artifact_policy: localCompany.artifact_policy };
     // Staff launch commands are local-only. Never copy or trust a server roster
     // here: a company may contain private/personal roles that must not leak into
     // another checkout. Spawn resolution reads repo .agents/company.json below.
@@ -755,6 +757,8 @@ async function leanModel(kind, issue, stage, prompt, role = null, context = null
   }
   if (localStaff.description) context = [context, `LOCAL STAFF DESCRIPTION (${role}): ${typeof localStaff.description === "string" ? localStaff.description : JSON.stringify(localStaff.description)}`].filter(Boolean).join("\n\n");
   if (localStaff.responsibilities?.length) context = [context, `LOCAL STAFF RESPONSIBILITIES (${role}): ${localStaff.responsibilities.join("; ")}`].filter(Boolean).join("\n\n");
+  if (runSettings.language?.rule) context = [context, `LANGUAGE AND ARTIFACT POLICY:\n${runSettings.language.rule}`].filter(Boolean).join("\n\n");
+  if (runSettings.artifact_policy) context = [context, `ARTIFACT POLICY:\n${JSON.stringify(runSettings.artifact_policy)}`].filter(Boolean).join("\n\n");
   if (localStaff.parent) context = [context, `LOCAL STAFF MANAGER: ${localStaff.parent}`].filter(Boolean).join("\n\n");
   const CM = await import("./providers/command.mjs");
   const cmds = [{ label: rsv.command ? CM.shortCmd(rsv.command) : rsv.agent, rsv }, ...(rsv.fallback ?? []).map((c) => ({ label: CM.shortCmd(c), rsv: { ...rsv, agent: "command", command: c, binding: { command: c }, model: null, effort: null } }))];
