@@ -30,7 +30,7 @@ This is the free company: two people, one plan, one build. The full edition adds
 
 ## Who decides what
 
-See [docs/WHO-DECIDES.md](docs/WHO-DECIDES.md): the default Jira flow, colour-coded by who decides (human / AI / script). You can customize your own flow.
+See [docs/WHO-DECIDES.md](docs/WHO-DECIDES.md): the default Jira flow, colour-coded by who decides (human / AI / script). You can customize your own flow. For the complete label lifecycle, see [docs/LABELS.vi.md](docs/LABELS.vi.md).
 
 ## Full version (key)
 
