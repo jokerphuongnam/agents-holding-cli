@@ -2,10 +2,10 @@ import "./kc-guard.mjs"; // pin keychain calls to the real login keychain (never
 // Browser OAuth for client tools (Figma, Atlassian). The token exchange runs on our server (client secrets never here);
 // tokens are kept in the Keychain (service agents-holding-oauth-<provider>) and refreshed automatically. Never printed.
 import { createServer } from "node:http";
-import { randomBytes, createHash } from "node:crypto";
+import { randomBytes, randomUUID, createHash } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
-import { mkdirSync, rmdirSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, readFileSync, renameSync, rmSync, rmdirSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 const BASE = () => (process.env.AH_MCP_URL ?? "https://mznrffnvmhmiudvfuquk.supabase.co/functions/v1/mcp").replace(/\/mcp$/, "/oauth-connect");
 const svc = (p) => `agents-holding-oauth-${p}`;
@@ -63,6 +63,53 @@ export function accountOf(t) { if (!t) return null; return t.account || t.handle
 export async function status(provider) {
   const t = load(provider); if (!t?.access_token) return `${provider}: not connected`;
   return `${provider}: connected as ${accountOf(t)}`;
+}
+
+const processAlive = (pid) => {
+  try { process.kill(pid, 0); return true; }
+  catch (e) { return e?.code === "EPERM"; }
+};
+/** Cross-process refresh lock. Owner metadata makes crashed refreshers reclaimable. */
+export async function acquireRefreshLock(lock, { waitMs = 30000, pollMs = 250, now = Date.now, alive = processAlive } = {}) {
+  mkdirSync(dirname(lock), { recursive: true, mode: 0o700 });
+  const ownerPath = join(lock, "owner.json"), deadline = now() + waitMs;
+  for (;;) {
+    try {
+      mkdirSync(lock, { recursive: false, mode: 0o700 });
+      const owner = { pid: process.pid, nonce: randomUUID(), at: new Date(now()).toISOString() };
+      try { writeFileSync(ownerPath, JSON.stringify(owner), { flag: "wx", mode: 0o600 }); }
+      catch (e) { try { rmdirSync(lock); } catch {} throw e; }
+      return {
+        owner,
+        release() {
+          try {
+            const current = JSON.parse(readFileSync(ownerPath, "utf8"));
+            if (current.nonce !== owner.nonce) return;
+            rmSync(ownerPath, { force: true }); rmdirSync(lock);
+          } catch {}
+        },
+      };
+    } catch (e) {
+      if (e?.code !== "EEXIST") throw e;
+    }
+
+    let stale = false;
+    try {
+      const owner = JSON.parse(readFileSync(ownerPath, "utf8"));
+      stale = !Number.isInteger(owner.pid) || !alive(owner.pid);
+    } catch {
+      // Legacy locks have no owner metadata. Give the creator time to write it,
+      // then reclaim the directory if the process crashed during acquisition.
+      try { stale = now() - statSync(lock).mtimeMs > 60000; } catch { stale = true; }
+    }
+    if (stale) {
+      const abandoned = `${lock}.stale-${process.pid}-${randomUUID()}`;
+      try { renameSync(lock, abandoned); rmSync(abandoned, { recursive: true, force: true }); continue; }
+      catch (e) { if (e?.code === "ENOENT") continue; }
+    }
+    if (now() >= deadline) return null;
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
+  }
 }
 export function logout(provider) {
   const t = load(provider); if (!t) return `${provider}: not connected`;
@@ -128,13 +175,10 @@ export async function token(provider, selector = {}, f = fetch) {
   // may rotate the refresh token, so concurrent refreshes can invalidate each
   // other. Serialize refreshes across processes and reload after waiting.
   const lock = join(homedir(), ".config/agents-holding", `oauth-refresh-${provider}.lock`);
-  let owner = false;
-  for (let i = 0; i < 60; i++) {
-    try { mkdirSync(lock, { recursive: false }); owner = true; break; }
-    catch { await new Promise((resolve) => setTimeout(resolve, 250)); }
-  }
+  let held = null;
   try {
-    if (!owner) {
+    held = await acquireRefreshLock(lock);
+    if (!held) {
       const latest = load(provider, selector);
       if (latest?.access_token && latest.access_token !== t.access_token) return latest;
       return null;
@@ -145,7 +189,7 @@ export async function token(provider, selector = {}, f = fetch) {
     const n = await post("/refresh", { provider, refresh_token: latest?.refresh_token ?? t.refresh_token }, f);
     const m = { ...latest, ...n }; save(provider, m); return m;
   } catch { return null; }
-  finally { if (owner) { try { rmdirSync(lock); } catch {} } }
+  finally { held?.release(); }
 }
 /** Token, or start the browser connect flow (interactive terminal), or throw a clear hint (AI / non-interactive). */
 export async function ensure(provider, selector = {}) {

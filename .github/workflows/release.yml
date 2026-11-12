@@ -32,6 +32,7 @@ jobs:
           # Interactive TTY/menu tests are covered on macOS; CI packaging must
           # run deterministic, non-interactive contract tests on Linux.
           bash tests/client_feature_test.sh
+          node full/client/scripts/oauth_test.mjs
           node tests/workflow_invariant_test.mjs
           node tests/access_exception_test.mjs
           node tests/internal_policy_access_test.mjs
