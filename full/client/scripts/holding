@@ -153,7 +153,7 @@ case "$noun" in
     *) usage ;; esac ;;
   listener) case "$verb" in
     run) exec node "$here/holding-listen.mjs" "$@" ;;
-    status) case " $* " in *" --server "*) srv "$@" ;; esac; exec bash "$here/launchd/listener.sh" status ;;
+    status) case " $* " in *" --server "*) srv "$@" ;; esac; exec bash "$here/launchd/listener.sh" status "$@" ;;
     restart) bash "$here/launchd/listener.sh" stop --preserve-autostart; exec bash "$here/launchd/listener.sh" start "$@" ;;
     ""|start|stop|logs|autostart) exec bash "$here/launchd/listener.sh" ${verb:-status} "$@" ;;
     *) usage ;; esac ;;
