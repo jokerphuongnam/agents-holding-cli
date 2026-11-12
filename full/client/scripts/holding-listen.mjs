@@ -1465,10 +1465,14 @@ async function reconcile(company, sinceIso, forceActive = false) {
         // makes the listener appear healthy while the task is idle forever.
         const ck = X.ckptLoad(st, x.key);
         const activeStage = /^qc$/i.test(String(x.status ?? "")) ? "qc" : "coding";
-        const idleRecovery = forceActive && /^(reopened|coding|qc|in review)$/i.test(String(x.status ?? ""))
-          && !ck?.running && !ck?.workflow_blocked && recoveryWakeStatus.get(`${recoveryKey}:idle`) !== String(x.status ?? "");
+        const idleStatus = String(x.status ?? "");
+        const alreadyDispatched = String(ck?.recovery_dispatch_status ?? "").toLowerCase() === idleStatus.toLowerCase();
+        const idleRecovery = forceActive && /^(reopened|coding|qc|in review)$/i.test(idleStatus)
+          && !ck?.running && !ck?.workflow_blocked && !alreadyDispatched
+          && recoveryWakeStatus.get(`${recoveryKey}:idle`) !== idleStatus;
         if (idleRecovery) {
-          recoveryWakeStatus.set(`${recoveryKey}:idle`, String(x.status ?? ""));
+          recoveryWakeStatus.set(`${recoveryKey}:idle`, idleStatus);
+          X.ckptSave(st, x.key, { recovery_dispatch_status: idleStatus, recovery_dispatch_at: new Date().toISOString() });
           log(`reconcile ${x.key}: dispatching idle checkpoint recovery at ${activeStage}`);
           wake({ company, issue: x.key, event: "jira_startup_scan", stage: activeStage, updated: x.updated });
         }
