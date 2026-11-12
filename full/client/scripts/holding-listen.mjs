@@ -828,7 +828,14 @@ async function leanRun(p, na, depth = 0) {
     const stp = L.stateDir(homedir(), company);
     const detail = [e.message, e.agentCode !== undefined && `exit_code=${e.agentCode}`, e.command && `command=${e.command}`, e.agentOut && `stderr/progress:\n${String(e.agentOut).slice(-5000)}`].filter(Boolean).join("\n");
     X.ckptSave(stp, issue, { stage: X.ckptLoad(stp, issue)?.stage ?? vis.stage, failed: e.message.slice(0, 200), failure: { message: e.message, command: e.command ?? null, exit_code: e.agentCode ?? null, stderr_progress: String(e.agentOut ?? "").slice(-5000), at: new Date().toISOString() }, blocked: e.agent?.cause ?? null });
-    if (e.server) { L.writeStatus(homedir(), { last_run: { issue, result: `PAUSED ${vis.stage}: ${e.message.slice(0, 120)}`, at: new Date().toISOString() } }); return; } // server problem: already warned; resumes from the checkpoint on the replay
+    if (e.server) {
+      // Infrastructure/auth failures must not leave a durable run stuck at
+      // running=true forever. Keep the current stage and evidence, close the
+      // run lock, and let the next Jira reconcile/startup recovery replay it.
+      X.ckptSave(stp, issue, { running: false, last_error: e.message.slice(0, 500) });
+      L.writeStatus(homedir(), { last_run: { issue, result: `PAUSED ${vis.stage}: ${e.message.slice(0, 120)}`, at: new Date().toISOString() } });
+      return;
+    } // server problem: already warned; resumes from the checkpoint on the replay
     if (e.agent) {
       if (jira) { await jira.labels(issue, [X.BLOCKED_LABEL]).catch((x) => log("Jira label failed:", x.message));
         await comms(issue, `${L.staffTag(vis.staff)} ${X.blockedComment(L.getLang(), e.agent, { cmd: e.cmd, stage: L.stageTitle(vis.stage), tried: e.tried ?? [] })}`, "blocked"); }
