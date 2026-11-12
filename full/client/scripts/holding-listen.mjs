@@ -162,9 +162,8 @@ const myJira = {}; // enterprise: this key's Jira account; work starts only on c
 // invoke heartbeat during startup, before the Jira route configuration is loaded.
 let lastBeat = 0;
 const joined = new Set();
-const mcpJiraFallback = !args.includes("--no-jira-mcp-fallback") && process.env.AH_JIRA_MCP_FALLBACK !== "0";
 let listenerJira = false;
-const readiness = () => joined.size === companyList.length && companyList.length > 0 && (listenerJira || mcpJiraFallback);
+const readiness = () => joined.size === companyList.length && companyList.length > 0 && listenerJira;
 const heartbeatIfStale = () => { if (Date.now() - lastBeat > 300000) heartbeat(); };
 const heartbeat = (requested = "online") => { const state = requested === "stopped" ? "stopped" : (readiness() ? "online" : "starting"); if (state === "online") log("readiness online", companyList.join(",")); return (lastBeat = Date.now(), Promise.all(companyList.map((company) => mcp("listener_heartbeat", { company, host: hostname(), pid: process.pid, autostart: existsSync(autostartPlist), version: AH_CLIENT_VERSION, state, meta: { ...localMeta(), jira_ready: listenerJira, process_ready: true, realtime_ready: readiness() } })
   .then(async (r) => { if (r?.communication) commMode[company] = r.communication; if (r?.enterprise) myJira[company] = r.jira_account ?? null; if (envStatusSyncSec === null && Number.isInteger(r?.jira_status_sync_sec)) statusSyncSec[company] = Math.min(86400, Math.max(60, r.jira_status_sync_sec)); L.writeStatus(homedir(), { companies: { [company]: { heartbeat_at: new Date().toISOString(), heartbeat_ok: true, jira_status_sync_sec: envStatusSyncSec ?? statusSyncSec[company] } } });
@@ -443,12 +442,12 @@ async function refreshJiraRoute() {
         if (retry.ok) { listenerJira = true; log("local Jira OAuth token refreshed after authorization rejection"); return listenerJira; }
       }
       listenerJira = false;
-      log(`local Jira credential rejected (HTTP ${r.status}); ${mcpJiraFallback ? "agent Atlassian MCP fallback enabled" : "MCP fallback disabled"}`);
+      log(`local Jira API credential rejected (HTTP ${r.status}); Atlassian MCP fallback is disabled`);
     } else if (r.ok) listenerJira = true;
     else log(`local Jira credential probe returned HTTP ${r.status}; keeping current Jira route`);
   } catch (e) {
     listenerJira = false;
-    log(`local Jira credential unavailable; ${mcpJiraFallback ? "agent Atlassian MCP fallback enabled" : "MCP fallback disabled"} (${e.message})`);
+    log(`local Jira API credential unavailable; Atlassian MCP fallback is disabled (${e.message})`);
   }
   return listenerJira;
 }
@@ -659,9 +658,8 @@ async function run(p, depth = 0) {
   const chainTxt = na?.chain?.length ? ` Chain these stages in this run: ${na.chain.map((c) => c.name).join(" -> ")}.` : "";
   const jiraTxt = dryJira
     ? ` DRY JIRA: never call any Jira/Atlassian tool. Print every Jira action you would take (comments, transitions, links) under "JIRA ACTIONS (dry)" instead.`
-    : listenerJira ? ` Do NOT transition Jira cards (pass listener_jira=true to next_action/advance; the listener moves cards). Post Jira comments with my Atlassian MCP.`
-    : mcpJiraFallback ? ` The local Jira credential is unavailable. Use my own Atlassian MCP session to read, comment and transition ${issue}; verify the intended company account/site first. If MCP is unavailable or lacks permission, report the exact missing account/permission instead of pretending success.`
-    : ` Jira access is unavailable and MCP fallback is disabled. Do not mutate Jira; report the exact re-authentication needed.`;
+    : listenerJira ? ` Do NOT transition Jira cards (pass listener_jira=true to next_action/advance; the listener moves cards). Report Jira updates through Agents Holding workflow actions; never use an Atlassian MCP tool.`
+    : ` Jira REST API access is unavailable and Atlassian MCP fallback is disabled. Do not mutate Jira; report the exact REST re-authentication needed.`;
   const prev = process.env.AH_RESUME === "0" ? null : sessions[issue];
   const resume = prev && existsSync(sessDir(prev));
   const prompt = resume
@@ -1364,7 +1362,7 @@ async function jiraOps(issue) {
   // Jira mirroring must still be attempted when the legacy/local credential is
   // unavailable: atlassianToken() may have a separate OAuth account.  The old
   // early return made the internal flow advance while Jira stayed stale.
-  if (!listenerJira && !mcpJiraFallback) return log(`JIRA: mirror skipped for ${issue}; Jira fallback disabled`);
+  if (!listenerJira) return log(`JIRA: mirror skipped for ${issue}; Jira REST API unavailable`);
   let ops = []; try { ops = (await mcp("jira_ops", { company, issue })).ops; } catch (e) { return log("jira_ops failed:", e.message); }
   for (const o of ops) {
     if (dryJira) { log(`JIRA (dry): ${o.notice ? `comment ${o.issue} "${o.notice}"; ` : ""}transition ${o.issue} -> ${o.to_names.join(" | ")} (else comment "${o.fallback_comment}")`); continue; }
