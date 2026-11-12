@@ -132,6 +132,7 @@ case "$noun" in
     add) set +e; node "$here/projects.mjs" add "$@" || exit $?
       [ -t 0 ] && node "$here/bind-cli.mjs" $(bash "$here/ah-cli.sh" staff list 2>/dev/null | sed -nE 's/^[^a-z0-9]*([a-z0-9][a-z0-9-]*) - .*/\1/p' | sort -u); exit 0 ;;
     remove) exec node "$here/projects.mjs" remove "$@" ;;
+    sync) exec node "$here/projects.mjs" sync "$@" ;;
     ""|list) exec node "$here/projects.mjs" list "$@" ;;
     *) usage ;; esac ;;
   create) case "$verb" in company) exec node "$here/company-create.mjs" "$@" ;; *) usage ;; esac ;;  # alias: holding create company [name]

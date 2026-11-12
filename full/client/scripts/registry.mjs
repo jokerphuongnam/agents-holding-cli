@@ -56,6 +56,29 @@ export function removeBoard(reg, { path, project_key }) {
 }
 export const companies = (reg) => [...new Set(reg.projects.flatMap((p) => p.boards.map((b) => b.company)).filter(Boolean))];
 
+// Materialize only the server-owned Jira mapping. Repo paths/settings stay local.
+// The server may expose boards as strings, objects, or a single jira_project field;
+// accepting all three keeps old and new company records compatible.
+export function syncServerCompanies(reg, rows, { site = null } = {}) {
+  const changed = [], warnings = [];
+  const list = Array.isArray(rows) ? rows : (rows?.data ?? rows?.companies ?? []);
+  const byCompany = new Map(list.map((x) => [String(x.slug ?? x.company ?? x.id ?? ""), x]));
+  for (const p of reg.projects ?? []) for (const b of p.boards ?? []) {
+    const row = byCompany.get(String(b.company));
+    if (!row) { warnings.push(`server has no company mapping for ${b.company}`); continue; }
+    const raw = row.boards ?? row.jira_projects ?? row.jira ?? row.projects ?? row.jira_project_key ?? [];
+    const boards = Array.isArray(raw) ? raw : [raw];
+    const candidates = boards.map((x) => typeof x === "string" ? { project_key: x } : x || {})
+      .map((x) => ({ project_key: x.project_key ?? x.key ?? x.projectKey ?? x.jira_project ?? x.jira_project_key ?? row.jira_project ?? row.jira_project_key, site: x.site ?? x.url ?? x.jira_site ?? row.jira_site ?? row.site ?? site }))
+      .filter((x) => x.project_key);
+    const hit = candidates.find((x) => String(x.project_key).toUpperCase() === String(b.project_key).toUpperCase()) ?? (candidates.length === 1 ? candidates[0] : null);
+    if (!hit) { warnings.push(`server mapping for ${b.company} does not include ${b.project_key}`); continue; }
+    const next = { ...b, project_key: String(hit.project_key).toUpperCase(), site: hit.site ?? b.site };
+    if (next.project_key !== b.project_key || next.site !== b.site) { Object.assign(b, next); changed.push(`${p.name}:${b.company}/${b.project_key}`); }
+  }
+  return { changed, warnings };
+}
+
 // The local registry is a materialized view of canonical company/project config.
 // Reconcile it at every listener/install/migrate boundary so a stale machine
 // cannot silently drop a Jira project.  This is deliberately independent of

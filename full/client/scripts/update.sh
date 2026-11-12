@@ -240,6 +240,7 @@ for co in $(ls "$HOME/.config/agents-holding/state" 2>/dev/null); do
 done
 echo "   (configs are also regenerated on every launch)"
 echo "3/4 slash commands"; bash "$here/sync-commands.sh" 2>&1 | tail -1 | sed 's/^/   /'
+echo "   syncing local Jira mappings from server"; node "$here/projects.mjs" sync 2>&1 | sed 's/^/   /' || echo "   project mapping sync skipped (offline?)"
 echo "4/4 Jira Listener"
 lbl=com.agentsholding.jira-listener
 if [ "$listener_was_active" = 1 ]; then

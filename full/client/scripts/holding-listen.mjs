@@ -21,6 +21,7 @@ import * as XT from "./crossteam.mjs";
 import { client as jiraRaw } from "./jira.mjs";
 import * as JR from "./jira-rules.mjs";
 import * as ME from "./mirror-executor.mjs";
+import { mcp as serverMcp } from "./server-mcp.mjs";
 import { selectAvailableTerminal, dispatchTerminal } from "./terminal-runtime.mjs";
 import { atlassianToken } from "./attach.mjs";
 import { readFileSync as readFileSync_AH } from "node:fs";
@@ -72,6 +73,16 @@ const deviceHeaders = device ? { "X-AH-Device": device, "X-AH-Device-Name": (pro
 // ---- project registry (many-to-many Jira boards <-> repos); old single-repo setup is migrated once ----
 const jiraSite = (() => { try { return JSON.parse(readFileSync(join(homedir(), ".config/agents-holding/jira.json"), "utf8")).site ?? null; } catch { return null; } })();
 let registry = R.load(homedir());
+// The server owns Jira/company mapping. Refresh the local materialized view
+// before routing, so a fresh machine can start from repo + company metadata.
+if (registry) {
+  try {
+    const remote = await serverMcp("list_companies", {});
+    const synced = R.syncServerCompanies(registry, remote, { site: jiraSite });
+    if (synced.changed.length) { R.save(homedir(), registry); log(`registry: synced ${synced.changed.length} Jira mapping(s) from server`); }
+    for (const warning of synced.warnings) log(`registry: ${warning}`);
+  } catch (e) { log(`registry: server mapping sync skipped: ${e.message}`); }
+}
 if (!registry) {
   registry = R.migrate(homedir(), onlyRepo ?? process.env.AH_REPO_DIR ?? process.cwd(), { site: jiraSite });
   if (!registry) throw new Error("no projects: run `holding project add --jira-project KEY` inside a repo");
