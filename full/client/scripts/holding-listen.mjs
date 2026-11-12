@@ -487,6 +487,13 @@ function publishQueue() {
 function wake(p) {
   if (credit.blocked) { log(`stopped (${credit.blocked.msg}); ignoring ${p.event} ${p.issue ?? p.task_id ?? "?"}`); return; }
   const k = queueKey(p);
+  // Consuming a recovery notice clears its persistent dedupe marker. If the
+  // worker exits without advancing or blocking the task, the next reconcile
+  // must see running=false and retry the same stage instead of going silent.
+  if (p.event === "jira_startup_scan" || p.event === "reconcile") {
+    const issue = p.issue ?? p.task_id;
+    if (issue) X.ckptSave(L.stateDir(homedir(), p.company ?? company), issue, { recovery_dispatch_status: null, recovery_dispatch_at: null });
+  }
   if (running) {
     if (p.event === "agent_move" && k === runningIssue) { log(`chain: ignoring agent_move ${k} -> ${p.stage} (the active run continues it)`); return; }
     const had = pending.has(k); pending.delete(k); pending.set(k, p); publishQueue();
@@ -1467,7 +1474,7 @@ async function reconcile(company, sinceIso, forceActive = false) {
         const activeStage = /^qc$/i.test(String(x.status ?? "")) ? "qc" : "coding";
         const idleStatus = String(x.status ?? "");
         const alreadyDispatched = String(ck?.recovery_dispatch_status ?? "").toLowerCase() === idleStatus.toLowerCase();
-        const idleRecovery = forceActive && /^(reopened|coding|qc|in review)$/i.test(idleStatus)
+        const idleRecovery = /^(reopened|coding|qc|in review)$/i.test(idleStatus)
           && !ck?.running && !ck?.workflow_blocked && !alreadyDispatched
           && recoveryWakeStatus.get(`${recoveryKey}:idle`) !== idleStatus;
         if (idleRecovery) {
