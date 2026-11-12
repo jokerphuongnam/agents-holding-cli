@@ -1459,6 +1459,19 @@ async function reconcile(company, sinceIso, forceActive = false) {
           log(`reconcile ${x.key}: dispatching recovered Coding action`);
           wake({ company, issue: x.key, event: "jira_startup_scan", stage: "coding", updated: x.updated });
         }
+        // Startup/reconnect recovery must also wake an active Jira card when
+        // the server checkpoint is already applied. A previous provider crash
+        // can leave running=false with no new Jira event, which otherwise
+        // makes the listener appear healthy while the task is idle forever.
+        const ck = X.ckptLoad(st, x.key);
+        const activeStage = /^qc$/i.test(String(x.status ?? "")) ? "qc" : "coding";
+        const idleRecovery = forceActive && /^(reopened|coding|qc|in review)$/i.test(String(x.status ?? ""))
+          && !ck?.running && !ck?.workflow_blocked && recoveryWakeStatus.get(`${recoveryKey}:idle`) !== String(x.status ?? "");
+        if (idleRecovery) {
+          recoveryWakeStatus.set(`${recoveryKey}:idle`, String(x.status ?? ""));
+          log(`reconcile ${x.key}: dispatching idle checkpoint recovery at ${activeStage}`);
+          wake({ company, issue: x.key, event: "jira_startup_scan", stage: activeStage, updated: x.updated });
+        }
         // A persisted QC checkpoint is not QC evidence. After a listener
         // restart, replay the QC runner once for an active QC card even when
         // reconcile_issue reports `already applied`.
