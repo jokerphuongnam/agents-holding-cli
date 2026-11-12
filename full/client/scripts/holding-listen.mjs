@@ -232,6 +232,10 @@ setTimeout(() => { crawlSkillsForCompanies().catch((e) => log("skill-crawl faile
 
 // Clean shutdown (launchctl bootout/unload, holding listener stop, Ctrl-C, logout): tell the server right away.
 const activeWorkers = new Set();
+// Track which issue owns a live provider worker. The durable issue lock is
+// owned by the listener process, so checking only that PID cannot distinguish
+// a live worker from a dead worker after a worker crash.
+const activeWorkerIssues = new Set();
 let stopping = false;
 for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(sig, () => { if (stopping) return; stopping = true;
   log(`\x1b[31m${sig}: Jira Listener stopping; telling the MCP server it is offline\x1b[0m`);
@@ -457,7 +461,19 @@ function acquireIssueLock(k) {
   const path = join(issueLockDir, `${issueLockKey(k)}.lock`);
   try { const fd = openSync(path, "wx", 0o600); writeFileSync(fd, JSON.stringify({ pid: process.pid, key: k, at: new Date().toISOString() })); closeSync(fd); return path; }
   catch {
-    try { const old = JSON.parse(readFileSync(path, "utf8")); if (old.pid) { process.kill(old.pid, 0); return null; } } catch {}
+    try {
+      const old = JSON.parse(readFileSync(path, "utf8"));
+      if (old.pid) {
+        process.kill(old.pid, 0);
+        // Locks are created by the listener before it spawns the provider
+        // worker. A surviving old listener PID is therefore not proof that
+        // the task worker is alive; after a listener restart it is a stale
+        // lock and must be reclaimed.
+        let cmd = "";
+        try { cmd = execFileSync("ps", ["-p", String(old.pid), "-o", "command="], { encoding: "utf8" }); } catch {}
+        if (!/Jira Listener|holding-listen/i.test(cmd)) return null;
+      }
+    } catch {}
     try { unlinkSync(path); const fd = openSync(path, "wx", 0o600); writeFileSync(fd, JSON.stringify({ pid: process.pid, key: k, at: new Date().toISOString() })); closeSync(fd); return path; } catch { return null; }
   }
 }
@@ -465,6 +481,7 @@ function releaseIssueLock(path) { try { if (path) unlinkSync(path); } catch {} }
 function clearStaleIssueRun(companyName, issue) {
   const st = L.stateDir(homedir(), companyName), ck = X.ckptLoad(st, issue);
   if (!ck?.running) return false;
+  if (activeWorkerIssues.has(`${companyName}/${issue}`)) return false;
   const path = join(issueLockDir, `${issueLockKey(`${companyName}/${issue}`)}.lock`);
   let live = false;
   try {
@@ -687,6 +704,7 @@ function spawnGrok(gargs, out, issue, sid, o = {}) {
     const spawnOne = (wrapped) => spawn("nice", ["-n", "10", wrapped.bin, ...wrapped.args], { cwd: launchCwd, env: wrapped.env, stdio: ["ignore", "pipe", "pipe"] });
     const ch = spawnOne(w);
     activeWorkers.add(ch.pid);
+    activeWorkerIssues.add(`${company}/${issue}`);
     let lastOut = Date.now(); // claude/codex have no grok events file: stdout activity counts as progress
     let stderr = "", stdout = "";
     ch.stdout.on("data", (d) => { lastOut = Date.now(); stdout += d.toString(); appendFileSync(out, d); if (o.collect) o.collect.push(d); });
@@ -711,6 +729,7 @@ function spawnGrok(gargs, out, issue, sid, o = {}) {
     }, 15000);
     ch.on("close", (code, sig) => {
       activeWorkers.delete(ch.pid);
+      activeWorkerIssues.delete(`${company}/${issue}`);
       clearInterval(watch);
       // macOS sandbox-exec can be present but unusable in managed/hosted terminals.
       // Retry once without the outer OS sandbox; the provider-native policy remains active
