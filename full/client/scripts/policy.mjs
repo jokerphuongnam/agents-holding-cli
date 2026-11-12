@@ -10,7 +10,7 @@ import "./kc-guard.mjs"; // pin keychain calls to the real login keychain (never
 // CLI: node policy.mjs init <role> [--company C] | show <role> | sync [role] | native <role> | exec <role> -- <cmd...> | hook | scan <file>
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, readdirSync, statSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -103,9 +103,10 @@ export function seatbeltProfile(p, { home, cwd, allowRead = [] }) {
   // Company staff owns the company workspace by default. Explicit deny rules
   // are still emitted after this scope and therefore remain authoritative.
   const root = String(cwd).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-  const internal = String(internalPolicy).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  const internalReal = (() => { try { return realpathSync(internalPolicy); } catch { return internalPolicy; } })();
+  const internalRe = `^(/private)?${String(internalReal).replace(/[.+^${}()|[\\]\\\\]/g, "\\\\$&")}$`.replace(/"/g, '\\"');
   const rules = ["(version 1)", `(allow file-read* file-write* (subpath "${root}"))`,
-    `(allow file-read* (literal "${internal}"))`, `(deny file-write* (literal "${internal}"))`,
+    `(allow file-read* (regex #"${internalRe}"))`, `(deny file-write* (regex #"${internalRe}"))`,
     ...res.map((r) => `(deny file-read* file-write* (regex #"${r.replace(/"/g, '\\"')}"))`), "(allow default)"];
   return rules.join("\n") + "\n";
 

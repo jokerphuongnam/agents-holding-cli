@@ -11,7 +11,17 @@ permissions:
   contents: write
 
 jobs:
+  macos-policy:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Verify macOS Seatbelt policy isolation
+        run: node tests/internal_policy_macos_test.mjs
   package:
+    needs: macos-policy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,6 +35,11 @@ jobs:
           node tests/workflow_invariant_test.mjs
           node tests/access_exception_test.mjs
           node tests/internal_policy_access_test.mjs
+      - name: Verify Linux bubblewrap policy isolation
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap
+          node tests/internal_policy_linux_test.mjs
       - name: Package public distribution
         run: |
           mkdir -p dist

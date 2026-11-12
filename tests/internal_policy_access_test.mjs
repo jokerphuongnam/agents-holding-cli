@@ -12,8 +12,9 @@ try {
   writeFileSync(own, '{"staff":{}}'); writeFileSync(other, '{"staff":{"secret":true}}');
   const policy = { __companySlug: "acme", files: { deny: ["~/.config/agents-holding/state/*/policy.json"] }, shell: { allow: [], deny: [] } };
   const profile = seatbeltProfile(policy, { home, cwd: join(home, "repo") });
-  assert(profile.includes(`(allow file-read* (literal "${own}"))`));
-  assert(profile.includes(`(deny file-write* (literal "${own}"))`));
+  assert(profile.includes("(allow file-read* (regex #"));
+  assert(profile.includes("(deny file-write* (regex #"));
+  assert(profile.includes("/private)?"));
   assert(profile.indexOf("(allow default)") > profile.indexOf("(deny file-write*"));
   const native = nativeConfigs(policy, { home, co: "acme", role: "developer", hookCmd: "hook" });
   assert(native.claude.permissions.deny.includes(`Read(${other})`));
