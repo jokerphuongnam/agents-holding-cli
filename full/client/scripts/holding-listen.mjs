@@ -21,7 +21,7 @@ import * as XT from "./crossteam.mjs";
 import { client as jiraRaw } from "./jira.mjs";
 import * as JR from "./jira-rules.mjs";
 import * as ME from "./mirror-executor.mjs";
-import { mcp as serverMcp } from "./server-mcp.mjs";
+import { projectConfig } from "./server-mcp.mjs";
 import { selectAvailableTerminal, dispatchTerminal } from "./terminal-runtime.mjs";
 import { atlassianToken } from "./attach.mjs";
 import { readFileSync as readFileSync_AH } from "node:fs";
@@ -77,7 +77,7 @@ let registry = R.load(homedir());
 // before routing, so a fresh machine can start from repo + company metadata.
 if (registry) {
   try {
-    const remote = await serverMcp("list_companies", {});
+    const remote = await Promise.all(R.companies(registry).map((company) => projectConfig(company)));
     const synced = R.syncServerCompanies(registry, remote, { site: jiraSite });
     if (synced.changed.length) { R.save(homedir(), registry); log(`registry: synced ${synced.changed.length} Jira mapping(s) from server`); }
     for (const warning of synced.warnings) log(`registry: ${warning}`);

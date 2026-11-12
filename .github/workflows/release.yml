@@ -24,6 +24,7 @@ jobs:
           bash tests/client_feature_test.sh
           node tests/workflow_invariant_test.mjs
           node tests/access_exception_test.mjs
+          node tests/internal_policy_access_test.mjs
       - name: Package public distribution
         run: |
           mkdir -p dist

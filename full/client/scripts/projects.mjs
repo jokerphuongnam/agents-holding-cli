@@ -10,7 +10,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import * as R from "./registry.mjs";
 import * as L from "./lean.mjs";
-import { mcp } from "./server-mcp.mjs";
+import { projectConfig } from "./server-mcp.mjs";
 
 const [cmd, ...args] = process.argv.slice(2);
 const all = (n) => args.flatMap((a, i) => (a === n ? [args[i + 1]] : [])).filter(Boolean);
@@ -35,7 +35,7 @@ async function main() {
 if (cmd === "sync") {
   const r = R.load(home) ?? R.empty();
   try {
-    const payload = await mcp("list_companies", {});
+    const companies = R.companies(r), payload = await Promise.all(companies.map((company) => projectConfig(company)));
     const out = R.syncServerCompanies(r, payload, { site: jiraCfg?.site });
     R.save(home, r); for (const x of out.changed) console.log(`synced ${x}`); for (const x of out.warnings) console.error(`warning: ${x}`);
     console.log(`project mappings synced from server: ${out.changed.length} changed`);
@@ -48,9 +48,7 @@ if (cmd === "sync") {
   let keys = all("--jira-project");
   if (!keys.length) {
     try {
-      const remote = await mcp("list_companies", {});
-      const rows = Array.isArray(remote) ? remote : (remote.data ?? remote.companies ?? []);
-      const row = rows.find((x) => String(x.slug ?? x.company ?? x.id ?? "") === String(company));
+      const row = await projectConfig(company);
       const raw = row?.boards ?? row?.jira_projects ?? row?.jira ?? row?.projects ?? row?.jira_project_key ?? [];
       const boards = (Array.isArray(raw) ? raw : [raw]).map((x) => typeof x === "string" ? x : (x?.project_key ?? x?.key ?? x?.projectKey ?? x?.jira_project ?? x?.jira_project_key ?? row?.jira_project ?? row?.jira_project_key)).filter(Boolean);
       keys = [...new Set(boards)];

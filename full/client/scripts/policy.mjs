@@ -82,9 +82,11 @@ function globRe(g, home, cwd) { // full-path regex for Seatbelt
   const roots = [...new Set([cwd, home].map((r) => esc(r).replace(/^\/private/, "")))].join("|");
   return `^(/private)?(${roots})/(.*/)?${conv(g.replace(/^\*\*\//, "").replace(/\/$/, ""))}(/.*)?$`;
 }
-const claudePath = (g) => g.startsWith("~/") || g.startsWith("/") ? (g.startsWith("/") ? "/" + g : g) : g.startsWith("**/") ? g : g.includes("/") ? `./${g.replace(/\/$/, "/**")}` : `**/${g}`;
+const claudePath = (g) => g.startsWith("~/") || g.startsWith("/") ? g : g.startsWith("**/") ? g : g.includes("/") ? `./${g.replace(/\/$/, "/**")}` : `**/${g}`;
 export function nativeConfigs(p, { home, co, role, hookCmd }) {
-  const deny = p.files.deny, sh = p.shell;
+  const internalGlob = "~/.config/agents-holding/state/*/policy.json";
+  const otherPolicies = (() => { try { return readdirSync(join(home, ".config/agents-holding/state")).filter((slug) => slug !== co).map((slug) => join(home, ".config/agents-holding/state", slug, "policy.json")); } catch { return []; } })();
+  const deny = [...p.files.deny.filter((g) => g !== internalGlob), ...otherPolicies], sh = p.shell;
   const claude = { permissions: { allow: sh.allow.map((x) => `Bash(${x}:*)`), deny: [...deny.flatMap((g) => [`Read(${claudePath(g)})`, `Edit(${claudePath(g)})`]), ...sh.deny.map((x) => `Bash(${x}:*)`)] },
     hooks: { PreToolUse: [{ matcher: "Read|Edit|Write|MultiEdit|Grep|Glob|NotebookEdit|Bash", hooks: [{ type: "command", command: hookCmd }] }] } };
   const codexRules = sh.deny.map((x) => `prefix_rule(pattern=${JSON.stringify(x.split(/\s+/))}, decision="forbidden")`)
@@ -95,17 +97,23 @@ export function nativeConfigs(p, { home, co, role, hookCmd }) {
   return { claude, codexRules, grokArgs, grokHook, grokSandbox };
 }
 export function seatbeltProfile(p, { home, cwd, allowRead = [] }) {
-  const res = p.files.deny.map((g) => globRe(g, home, cwd));
+  const internalPolicy = join(home, ".config/agents-holding/state", p.__companySlug ?? "", "policy.json");
+  const res = p.files.deny.filter((g) => g !== "~/.config/agents-holding/state/*/policy.json").map((g) => globRe(g, home, cwd));
+  try { for (const otherCompany of readdirSync(join(home, ".config/agents-holding/state"))) if (otherCompany !== p.__companySlug) res.push(globRe(join(home, ".config/agents-holding/state", otherCompany, "policy.json"), home, cwd)); } catch {}
   // Company staff owns the company workspace by default. Explicit deny rules
   // are still emitted after this scope and therefore remain authoritative.
   const root = String(cwd).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-  return ["(version 1)", "(allow default)", `(allow file-read* file-write* (subpath \"${root}\"))`, ...res.map((r) => `(deny file-read* file-write* (regex #"${r.replace(/"/g, '\\"')}"))`),
-    ].join("\n") + "\n";
+  const internal = String(internalPolicy).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  const rules = ["(version 1)", `(allow file-read* file-write* (subpath "${root}"))`,
+    `(allow file-read* (literal "${internal}"))`, `(deny file-write* (literal "${internal}"))`,
+    ...res.map((r) => `(deny file-read* file-write* (regex #"${r.replace(/"/g, '\\"')}"))`), "(allow default)"];
+  return rules.join("\n") + "\n";
+
 }
 /** Files under dir (depth-limited) that a policy denies: for bubblewrap overlays and tests. */
 export function deniedFiles(p, dir, home, depth = 4) {
   const out = []; const walk = (d, n) => { let es = []; try { es = readdirSync(d, { withFileTypes: true }); } catch { return; }
-    for (const e of es) { const f = join(d, e.name); if (C.fileDenied(p, f, home) || C.fileDenied(p, relative(dir, f), home)) { out.push(f); continue; }
+    for (const e of es) { const f = join(d, e.name); if (f === join(home, ".config/agents-holding/state", p.__companySlug ?? "", "policy.json")) continue; if (C.fileDenied(p, f, home) || C.fileDenied(p, relative(dir, f), home)) { out.push(f); continue; }
       if (e.isDirectory() && n > 0 && e.name !== "node_modules" && e.name !== ".git") walk(f, n - 1); } };
   walk(dir, depth); return out;
 }
@@ -121,12 +129,13 @@ const logDenied = (home, co, role, what) => { try { appendFileSync(join(stateDir
 export function wrapLaunch({ home = homedir(), co, role, bin, args, env = process.env, cwd = process.cwd(), platform = process.platform }) {
   if (!co || !role || env.AH_POLICY === "off") return { bin, args, env };
   const access = localStaffAccess(cwd, role), base = loadPolicy(home, co, role);
-  const p = { ...base, files: { ...(base.files ?? {}), deny: [...new Set([...(access.company?.deny ?? []), ...(access.staff?.deny ?? [])])] } };
+  const p = { ...base, __companySlug: co, files: { ...(base.files ?? {}), deny: [...new Set([...(access.company?.deny ?? []), ...(access.staff?.deny ?? [])])] } };
   const kind = basename(bin).replace(/\.exe$/, ""), nd = join(stateDir(home, co), "native", role); mkdirSync(nd, { recursive: true });
   const hookCmd = `${JSON.stringify(process.execPath)} ${JSON.stringify(join(here, "policy.mjs"))} hook`;
   const N = nativeConfigs(p, { home, co, role, hookCmd }); let a = [...args]; const e = { ...env, AH_COMPANY: co, AH_STAFF: role, AH_POLICY_CWD: cwd };
   if (kind === "claude") { const f = join(nd, "claude-settings.json"); writeFileSync(f, JSON.stringify(N.claude, null, 2)); a.push("--settings", f); }
   if (kind === "codex") { const ch = e.CODEX_HOME; if (ch) try { mkdirSync(join(ch, "rules"), { recursive: true }); writeFileSync(join(ch, "rules", "ah-staff.rules"), N.codexRules); } catch {}
+    const internalPolicy = join(home, ".config/agents-holding/state", co, "policy.json"); if (existsSync(internalPolicy) && !a.includes("--add-dir")) a.push("--add-dir", dirname(internalPolicy));
     // On managed macOS hosts sandbox-exec may exist but return EPERM. In that
     // case the outer OS sandbox is disabled by the retry path; Codex's own
     // workspace-write sandbox must be disabled too, otherwise it fails before
@@ -143,7 +152,9 @@ export function wrapLaunch({ home = homedir(), co, role, bin, args, env = proces
   // OS sandbox for the whole process tree
   if (platform === "darwin" && existsSync("/usr/bin/sandbox-exec") && env.AH_SANDBOX !== "off") { const sb = join(nd, "sandbox.sb"); writeFileSync(sb, seatbeltProfile(p, { home, cwd })); return { bin: "/usr/bin/sandbox-exec", args: ["-f", sb, bin, ...a], env: e, sandbox: "sandbox-exec" }; }
   if (platform === "linux" && env.AH_SANDBOX !== "off") { const bw = (() => { try { return execFileSync("sh", ["-c", "command -v bwrap"], { encoding: "utf8" }).trim(); } catch { return ""; } })();
-    if (bw) { const ov = []; for (const f of [...deniedFiles(p, cwd, home), ...deniedFiles(p, home, home, 1)]) { const s = stubFile(home, co, stubFor(p, f, { home, cwd }) ?? C.DENY_WARNING);
+    if (bw) { const ov = []; const internalPolicy = join(home, ".config/agents-holding/state", co, "policy.json"); if (existsSync(internalPolicy)) ov.push("--ro-bind", internalPolicy, internalPolicy);
+      try { for (const otherCompany of readdirSync(join(home, ".config/agents-holding/state"))) if (otherCompany !== co) { const otherPolicy = join(home, ".config/agents-holding/state", otherCompany, "policy.json"); if (existsSync(otherPolicy)) ov.push("--ro-bind", "/dev/null", otherPolicy); } } catch {}
+      for (const f of [...deniedFiles(p, cwd, home), ...deniedFiles(p, home, home, 1)]) { const s = stubFile(home, co, stubFor(p, f, { home, cwd }) ?? C.DENY_WARNING);
         try { ov.push(...(statSync(f).isDirectory() ? ["--tmpfs", f] : ["--ro-bind", s, f])); } catch {} }
       return { bin: bw, args: ["--bind", "/", "/", "--dev", "/dev", "--proc", "/proc", ...ov, "--", bin, ...a], env: e, sandbox: "bwrap" }; } }
   return { bin, args: a, env: e, sandbox: "none" };
@@ -156,7 +167,10 @@ export function hookDecision(input, { home = homedir(), env = process.env } = {}
   const co = env.AH_COMPANY, role = env.AH_STAFF; if (!co || !role) return null;
   const p = loadPolicy(home, co, role), cwd = input.cwd ?? env.AH_POLICY_CWD ?? process.cwd(), ti = input.tool_input ?? {}, tool = String(input.tool_name ?? "");
   const pathKey = ["file_path", "path", "target_file", "notebook_path", "file"].find((k) => typeof ti[k] === "string");
-  if (pathKey) { const stub = stubFor(p, ti[pathKey], { home, cwd }); if (stub === null) return null; logDenied(home, co, role, `${tool} ${ti[pathKey]}`);
+  if (pathKey) { const target = resolve(cwd, ti[pathKey]); const stateRoot = resolve(home, ".config/agents-holding/state"), internalPolicy = resolve(stateRoot, co, "policy.json");
+    if (target === internalPolicy) { if (/read/i.test(tool)) return null; logDenied(home, co, role, `${tool} ${ti[pathKey]}`); return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: "Agents Holding internal policy is read-only." } }; }
+    if (target.startsWith(stateRoot + "/") && target.endsWith("/policy.json")) { logDenied(home, co, role, `${tool} ${ti[pathKey]}`); return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: "Other company policies are private to their company." } }; }
+    const stub = stubFor(p, ti[pathKey], { home, cwd }); if (stub === null) return null; logDenied(home, co, role, `${tool} ${ti[pathKey]}`);
     if (/read/i.test(tool)) { const f = stubFile(home, co, stub); return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow", permissionDecisionReason: "holding policy: substitute", updatedInput: { ...ti, [pathKey]: f } } }; }
     return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: stub || C.DENY_WARNING } }; }
   const cmd = typeof ti.command === "string" ? ti.command : typeof ti.cmd === "string" ? ti.cmd : null;
