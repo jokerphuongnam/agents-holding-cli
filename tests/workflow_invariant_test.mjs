@@ -34,6 +34,9 @@ assert.match(staffRuntime({ env, cfg: { staff: localStaff }, role: "content-writ
 const explicitRun = render('codex exec -m {model} -c model_reasoning_effort="{effort}" "{prompt}"', { prompt: "task", dir: "/tmp", b: localResolved.binding });
 assert.equal(explicitRun.args.filter((x) => x === "-m").length, 1, "explicit model placeholder is not duplicated");
 assert.equal(explicitRun.args.filter((x) => x.includes("model_reasoning_effort")).length, 1, "explicit effort placeholder is not duplicated");
+const listenerBinding = resolveAgent({ env, cfg: { agent: { command: 'codex exec --sandbox danger-full-access "{prompt}"', model: "gpt-6-luna", effort: "low" } }, global: {} });
+assert.equal(listenerBinding.command, 'codex exec --sandbox danger-full-access "{prompt}"', "listener company-level agent object is flattened");
+assert.deepEqual({ model: listenerBinding.binding.model, effort: listenerBinding.binding.effort }, { model: "gpt-6-luna", effort: "low" }, "listener company-level binding preserves model and effort");
 const session = { session_id: "term-1", user_id: "user-1", device_id: "mac-1", cwd: "/repo", status: "connected" };
 const terminal = { session_id: "term-1", command: "make test", status: "completed", started_at: "2026-01-01T00:00:00Z", ended_at: "2026-01-01T00:00:01Z", exit_code: 0, stdout_digest: "sha256:out", stderr_digest: "sha256:err", toolchain_fingerprint: "sha256:tool", artifact_digest: "sha256:art", commit: "abc", tree: "tree" };
 assert.equal(terminalSessionEvidence({ session, result: terminal, command: "make test", repo: "/repo" }).ok, true, "bound terminal completion passes");

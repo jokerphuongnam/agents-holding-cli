@@ -229,6 +229,8 @@ Bindings are per company. Company = `--company X` > nearest `.agents/company.jso
 
 Give a staff one fixed command. When that staff gets work, agents-holding runs that command in the company repo (the path in projects.json). For the built-in `codex`, `claude`, and `grok` CLIs, configured `model` and `effort` are applied automatically when the command does not already set them or use `{model}` / `{effort}` placeholders. Custom CLIs should use placeholders when they accept these settings.
 
+Repo-local company and staff entries may store launch settings inside a singular `agent` object, for example `{ "agent": { "command": "codex exec …", "model": "gpt-6-luna", "effort": "low" } }`. The listener and direct staff runner resolve that object to the same command/model/effort binding.
+
 ```sh
 holding staff set developer 'claude -p --model {model} --effort {effort} --output-format json "{prompt}"' --model sonnet --effort low --timeout 900
 holding staff set ba-lead   'grok --single "{prompt}" --model grok-4.7-build-fast --reasoning-effort low --max-turns 1 --output-format json --no-subagents'

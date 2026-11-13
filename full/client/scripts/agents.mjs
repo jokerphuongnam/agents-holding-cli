@@ -93,20 +93,24 @@ export function resolveAgent({ env = process.env, cfg = {}, text, role = null, s
   const gs = normalizeStaffSettings((role && global.staff?.[role]) || {});
   const cs = normalizeStaffSettings((role && cfg.staff?.[role]) || {});
   const st = { ...gs, ...cs, provider: cs.provider ?? gs.provider };
+  // The listener can pass the resolved server binding as cfg.agent itself.
+  // Normalize that company-level object too; otherwise String(object) becomes
+  // the invalid provider name "[object Object]" before command/model selection.
+  const company = normalizeStaffSettings(cfg);
   const gd = global.default ?? {};
-  const agent = String(env.AH_AGENT || st.provider || cfg.agent || gd.provider || "grok").toLowerCase();
+  const agent = String(env.AH_AGENT || st.provider || company.provider || gd.provider || "grok").toLowerCase();
   const provs = { ...(global.providers ?? {}), ...(cfg.providers ?? {}) }; // company-local provider defs win
   const ids = providerIds(env.HOME || homedir(), { providers: provs });
   if (!ids.includes(agent)) throw new Error(`provider ${agent}: use ${ids.join("|")}`);
   const pd = provs[agent] ?? {};
   const d = DEFAULT_MODELS[pd.type ?? agent] && !pd.model ? DEFAULT_MODELS[pd.type ?? agent] : { text: pd.textModel ?? pd.model ?? gd.model ?? null, code: pd.model ?? gd.model ?? null };
-  const model = text ? (env.AH_TEXT_MODEL || st.model || stageModel || cfg.text_model || d.text) : (env.AH_MODEL || st.model || stageModel || cfg.model || d.code);
+  const model = text ? (env.AH_TEXT_MODEL || st.model || stageModel || company.text_model || d.text) : (env.AH_MODEL || st.model || stageModel || company.model || d.code);
   // reasoning effort (low|medium|high): AH_EFFORT > staff.<role>.effort > company effort (text_effort for text calls) > codex text default low
-  let effort = String(env.AH_EFFORT || st.effort || (text ? cfg.text_effort || cfg.effort : cfg.effort) || gd.effort || (agent === "codex" && text ? "low" : "")).toLowerCase() || null;
+  let effort = String(env.AH_EFFORT || st.effort || (text ? company.text_effort || company.effort : company.effort) || gd.effort || (agent === "codex" && text ? "low" : "")).toLowerCase() || null;
   if (effort && !EFFORTS.includes(effort)) effort = null;
   const bin = env[`AH_${agent.toUpperCase().replace(/-/g, "_")}_BIN`] || (agent === "grok" ? env.GROK_BIN : null) || pd.bin || agent;
-  const command = env.AH_AGENT ? null : (st.command || (!st.provider && cfg.command) || null); // fixed launch command: staff > company default
-  const binding = command ? { ...(st.command ? st : {}), command } : null;
+  const command = env.AH_AGENT ? null : (st.command || (!st.provider && company.command) || null); // fixed launch command: staff > company default
+  const binding = command ? { ...company, ...st, command, model: st.model ?? company.model ?? null, effort: st.effort ?? company.effort ?? null } : null;
   const fallback = (Array.isArray(st.fallback) ? st.fallback : st.fallback ? [st.fallback] : []).map(String).filter(Boolean); // per-staff fallback commands (agents.jsonc)
   return { fallback, binding, agent: command ? "command" : agent, model: command ? null : model || null, effort: command ? null : effort, bin, command, providerDef: pd.type ? pd : null };
 }
