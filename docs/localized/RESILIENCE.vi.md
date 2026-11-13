@@ -9,6 +9,7 @@ Jira Listener xử lý ba loại lỗi mà không mất việc. Nó không bao g
 - Tech plan lớn được code tối đa 3 bước con. Mỗi bước kết thúc bằng commit `WIP(<KEY>) n/3` trên `feature/<KEY>`, và thẻ nhận ghi chú tiến độ 📌 liệt kê phần đã xong (✅) và còn lại (⏳).
 - Chạy lại (`holding staff run <KEY>` hoặc kéo thẻ lại) tiếp tục từ checkpoint. Plan, tech plan và bước con đã xong không làm lại.
 - Khi listener khởi động/kết nối lại, các thẻ Jira đang hoạt động (gồm In Progress, Reopened, Coding, QC) được reconcile với `next_action` hiện tại từ server. Workflow tiếp tục đúng stage của agent và checkpoint local; không đoán rằng status Jira nào cũng tương ứng với Coding hoặc QC. Task đang chờ người dùng/gate hoặc đã Blocked ở QC sẽ tiếp tục chờ.
+- Nếu checkpoint local đã ghi nhận QC (checklist hoặc bằng chứng lỗi), listener ưu tiên tiếp tục QC thay vì nhảy sang stage server đã tiến trước trong lúc bị gián đoạn. Chỉ quay lại Coding khi chẩn đoán mới nối lỗi cụ thể với regression của task và đưa ra hướng sửa tập trung. Sau mỗi lần sửa, QC chạy lại và chẩn đoán lỗi còn lại trước khi sửa tiếp. Bằng chứng lặp lại, thiếu quan hệ nhân quả, hoặc chưa xác minh được nguyên nhân sẽ dừng task kèm command và output để xem xét.
 - Khi CLI agent báo nén ngữ cảnh, cắt cụt, tràn ngữ cảnh hoặc hết lượt, cuộc gọi được thử lại một lần trong phiên mới kèm ghi chú resume.
 
 ## 2. Agent hết hạn / không dùng được → `agent-blocked` + fallback
@@ -84,3 +85,4 @@ Mọi thứ cần bạn (câu hỏi nhân sự, quyết định 1/2/3, thuê ng�
 - **Nhân sự ánh xạ tới người dùng Jira thật** (`jira_user`) với vai trò/quyền, và nhật ký ai nhận / đổi gì.
 - **Theo assignee**: mỗi người chạy Jira Listener riêng; khi assignee của thẻ đổi sang người dùng Jira của họ, listener của họ nhận với nhân sự của họ.
 - **Chat trước**: mọi người nói qua `/ceo` hoặc chat nhân sự; comment Jira là tuỳ chọn (cài đặt giao tiếp). Cách vào chính là `/ceo KAN-12`: CEO tải task và điều phối nhân sự.
+- Nếu checkpoint local đã ghi nhận QC (checklist hoặc bằng chứng lỗi), listener ưu tiên tiếp tục QC thay vì nhảy sang stage server đã tiến trước trong lúc bị gián đoạn. Chỉ quay lại Coding khi chẩn đoán mới nối lỗi cụ thể với regression của task và đưa ra hướng sửa tập trung. Sau mỗi lần sửa, QC chạy lại và chẩn đoán lỗi còn lại trước khi sửa tiếp. Bằng chứng lặp lại, thiếu quan hệ nhân quả, hoặc chưa xác minh được nguyên nhân sẽ dừng task kèm command và output để xem xét.

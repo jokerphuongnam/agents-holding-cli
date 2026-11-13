@@ -1298,6 +1298,15 @@ Jira: ${issue}` });
         await blockQc("QC has returned the same diagnostic failure evidence already seen on this task; there is no measurable progress, so Coding will not repeat the same fix.", remediationReport(res), currentSignature);
         return;
       }
+      if (currentSignature && failureHistory.size) {
+        const diagnosisRole = L.stageRole(na, s0);
+        const diagnosis = await leanModel("diagnosis", issue, s0, L.qcDiagnosisPrompt(iss, { plan, implementation: implementationDiff(), failures: remediationReport(res) }), diagnosisRole, L.contextOf({ brief: await brief(diagnosisRole), habits }));
+        const diagnosisText = [`Classification: ${diagnosis.classification ?? "uncertain"}`, `Root cause: ${diagnosis.root_cause ?? "not established"}`, `Evidence: ${diagnosis.evidence ?? "not supplied"}`, diagnosis.fix_direction && `Focused fix: ${diagnosis.fix_direction}`, diagnosis.question && `Question: ${diagnosis.question}`].filter(Boolean).join("\n");
+        if (diagnosis.classification !== "task_regression" || !diagnosis.root_cause || !diagnosis.evidence || !diagnosis.fix_direction) {
+          await blockQc(`QC recovery found no evidence-backed task regression after prior remediation; refusing speculative Coding.`, `${diagnosisText}\n\n${remediationReport(res)}`, currentSignature);
+          return;
+        }
+      }
       while (res.some((x) => !x.v.pass) && codingKey) {
         const txt = qcText(res);
         await record("qc_fail", txt);
@@ -1340,6 +1349,18 @@ Jira: ${issue}` });
             await blockQc("The focused Coding change did not resolve the failure, and QC has returned to diagnostic evidence already seen on this task; stopping the repeated remediation cycle.", remediationReport(res), nextSignature);
             return;
           }
+          const diagnosisRole = L.stageRole(na, s0);
+          const nextDiagnosis = await leanModel("diagnosis", issue, s0, L.qcDiagnosisPrompt(iss, { plan, implementation: implementationDiff(), failures: remediationReport(res) }), diagnosisRole, L.contextOf({ brief: await brief(diagnosisRole), habits }));
+          const nextDiagnosisText = [`Classification: ${nextDiagnosis.classification ?? "uncertain"}`, `Root cause: ${nextDiagnosis.root_cause ?? "not established"}`, `Evidence: ${nextDiagnosis.evidence ?? "not supplied"}`, nextDiagnosis.fix_direction && `Focused fix: ${nextDiagnosis.fix_direction}`, nextDiagnosis.question && `Question: ${nextDiagnosis.question}`].filter(Boolean).join("\n");
+          if (nextDiagnosis.classification !== "task_regression" || !nextDiagnosis.root_cause || !nextDiagnosis.evidence || !nextDiagnosis.fix_direction) {
+            await blockQc("The focused change did not pass QC, and the new failure has no verified task-root cause; stopping before another speculative edit.", `${nextDiagnosisText}\n\n${remediationReport(res)}`, nextSignature);
+            return;
+          }
+          diagnosis.classification = nextDiagnosis.classification;
+          diagnosis.root_cause = nextDiagnosis.root_cause;
+          diagnosis.evidence = nextDiagnosis.evidence;
+          diagnosis.fix_direction = nextDiagnosis.fix_direction;
+          diagnosis.question = nextDiagnosis.question;
           currentSignature = nextSignature;
         }
       }
@@ -1563,7 +1584,23 @@ async function reconcile(company, sinceIso, forceActive = false) {
           try { resumeAction = await mcp("next_action", { company, task: x.key, listener_jira: true }); }
           catch (e) { log(`reconcile ${x.key}: next_action recovery lookup failed: ${e.message}`); }
         }
-        const runnableStage = resumeAction?.stage && !resumeAction.waiting;
+        // Server next_action describes the workflow's next legal action, but
+        // during restart it may be ahead of a local QC checkpoint (for example
+        // the server was advanced to Coding while QC was mid-run). Never let
+        // that stale/advanced server stage bypass locally persisted QC work.
+        const planCheckpoint = L.loadPlan(st, x.key);
+        const localStage = String(ck?.stage ?? "").toLowerCase();
+        const hasQcEvidence = !!(planCheckpoint.qc_checklist_posted || planCheckpoint.qc_failure_signature || planCheckpoint.qc_failure_history?.length || planCheckpoint.qc_remediation_blocked);
+        const checkpointStage = localStage === "qc" && hasQcEvidence ? "qc" : null;
+        const recoveryAction = checkpointStage ? { ...(resumeAction ?? {}), stage: "qc", waiting: false } : resumeAction;
+        const runnableStage = recoveryAction?.stage && !recoveryAction.waiting;
+        if (checkpointStage && ck?.qc_remediation_blocked && (/^(reopened|coding)$/i.test(idleStatus) || recoveredUserMove)) {
+          L.savePlan(st, x.key, { qc_remediation_blocked: null, qc_failure_signature: null, qc_failure_history: [] });
+          X.ckptSave(st, x.key, { qc_remediation_blocked: null, running: false, failed: null, last_error: null });
+          if (jira) await jira.labels(x.key, [], [X.BLOCKED_LABEL]).catch((e) => log(`stale QC block label cleanup failed for ${x.key}: ${e.message}`));
+          ck = X.ckptLoad(st, x.key);
+          log(`recovery ${x.key}: cleared QC stop after explicit user Jira move to ${idleStatus}; keeping stage QC`);
+        }
         const recoveryKey = `${company}/${x.key}`;
         const dispatchKey = `${idleStatus}|${resumeAction?.stage ?? ""}|${x.updated ?? ""}`;
         const mapKey = `${recoveryKey}:resume`;
@@ -1574,8 +1611,9 @@ async function reconcile(company, sinceIso, forceActive = false) {
         if (shouldWake) {
           recoveryWakeStatus.set(mapKey, dispatchKey);
           const event = userResumed ? "user_move" : staleRun ? "reconcile" : "jira_startup_scan";
-          log(`reconcile ${x.key}: resuming server checkpoint at ${resumeAction.stage} (Jira status ${idleStatus || "?"}${forceActive ? ", startup recovery" : ""})`);
-          wake({ company, issue: x.key, event, stage: resumeAction.stage, updated: x.updated });
+          const recoveryStage = recoveryAction.stage;
+          log(`reconcile ${x.key}: resuming ${checkpointStage ? "local QC evidence checkpoint" : "server checkpoint"} at ${recoveryStage} (Jira status ${idleStatus || "?"}${forceActive ? ", startup recovery" : ""})`);
+          wake({ company, issue: x.key, event, stage: recoveryStage, updated: x.updated });
         } else if (mayInspect && !ck?.qc_remediation_blocked && resumeAction?.waiting) {
           log(`reconcile ${x.key}: preserving waiting checkpoint at ${resumeAction.stage ?? "current stage"}; no agent restart`);
         }
