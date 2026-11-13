@@ -1503,6 +1503,7 @@ setInterval(() => {
 // one reconcile_issue per (issue, status, updated), deduped locally and on the server. Reads Jira only; never writes Jira events.
 const reconciling = {};
 const recoveryWakeStatus = new Map();
+const RECOVERABLE_JIRA_STATUSES = new Set(["in progress", "product work", "ba question", "planned", "pre coding", "reopened", "coding", "qc", "in review"]);
 async function reconcile(company, sinceIso, forceActive = false) {
   if (!jira || reconciling[company]) return; reconciling[company] = true;
   try {
@@ -1517,7 +1518,8 @@ async function reconcile(company, sinceIso, forceActive = false) {
       const raw = await jira.search(jql, ["status", "updated", "summary", "description", "labels", "assignee", "comment"]);
       const res = forceActive ? raw.filter((i) => {
         const s = String(i.fields?.status?.name ?? "").toLowerCase();
-        return (i.fields?.labels ?? []).includes("ah-agent-owned") || ["reopened", "coding", "qc", "in review"].includes(s);
+        const ck = X.ckptLoad(st, i.key);
+        return (i.fields?.labels ?? []).includes("ah-agent-owned") || RECOVERABLE_JIRA_STATUSES.has(s) || !!(ck?.running || ck?.failed);
       }) : raw;
       const replay = (forceActive
         ? res.map((i) => ({ key: i.key, status: i.fields?.status?.name ?? "", updated: i.fields?.updated ?? "" }))
@@ -1536,50 +1538,34 @@ async function reconcile(company, sinceIso, forceActive = false) {
         X.replayMark(st, [X.replayKey(x.key, x.status, x.updated)]); n++;
         await applyJiraRules({ company, issue: x.key, event: x.status?.toLowerCase() === "done" ? "issue_transitioned" : "label_added" });
         log(`reconcile ${x.key} "${x.status}": ${r.duplicate ? "already applied" : r.replayed ? `replayed (${r.event ?? "?"}, ${r.stage_before ?? "new"} -> ${r.stage_after ?? "?"})` : `skipped (${r.reason ?? "?"})`}`);
-        // A user recovery move (QC -> Reopened) can be missed while the
-        // listener/server is offline. reconcile_issue repairs the server
-        // checkpoint, but that alone does not emit a realtime next_action.
-        // Re-wake the local runner exactly once for the replayed Jira snapshot;
-        // replayMark above makes later sweeps idempotent and wake()'s issue lock
-        // prevents duplicate runs if a webhook arrives at the same time.
-        const recovered = /^(reopened|coding)$/i.test(String(x.status ?? ""))
-          && String(r.stage_after ?? "").toLowerCase() === "coding";
-        const recoveryKey = `${company}/${x.key}`;
-        const shouldWake = recovered && recoveryWakeStatus.get(recoveryKey) !== String(x.status ?? "");
-        if (!r.duplicate && r.replayed && shouldWake) {
-          recoveryWakeStatus.set(recoveryKey, String(x.status ?? ""));
-          log(`reconcile ${x.key}: dispatching recovered Coding action`);
-          wake({ company, issue: x.key, event: "user_move", stage: "coding", updated: x.updated });
-        }
-        // Startup/reconnect recovery must also wake an active Jira card when
-        // the server checkpoint is already applied. A previous provider crash
-        // can leave running=false with no new Jira event, which otherwise
-        // makes the listener appear healthy while the task is idle forever.
+        // The server checkpoint, not a Jira-status-to-stage guess, is the
+        // source of truth. This resumes Product Work/BA/Planning/Pre Coding,
+        // Coding, QC, Reopened and custom active stages at their exact stage.
         const ck = X.ckptLoad(st, x.key);
-        const activeStage = /^qc$/i.test(String(x.status ?? "")) ? "qc" : "coding";
         const idleStatus = String(x.status ?? "");
-        const alreadyDispatched = String(ck?.recovery_dispatch_status ?? "").toLowerCase() === idleStatus.toLowerCase();
-        const idleRecovery = /^(reopened|coding|qc|in review)$/i.test(idleStatus)
-          && !ck?.running && !ck?.workflow_blocked && !ck?.qc_remediation_blocked && !alreadyDispatched
-          && recoveryWakeStatus.get(`${recoveryKey}:idle`) !== idleStatus;
-        if (idleRecovery) {
-          recoveryWakeStatus.set(`${recoveryKey}:idle`, idleStatus);
-          X.ckptSave(st, x.key, { recovery_dispatch_status: idleStatus, recovery_dispatch_at: new Date().toISOString() });
-          log(`reconcile ${x.key}: dispatching idle checkpoint recovery at ${activeStage}`);
-          wake({ company, issue: x.key, event: "jira_startup_scan", stage: activeStage, updated: x.updated });
+        const activeStatus = RECOVERABLE_JIRA_STATUSES.has(idleStatus.toLowerCase()) || (f.labels ?? []).includes("ah-agent-owned");
+        const recoveredUserMove = !r.duplicate && r.replayed && /^(reopened|coding)$/i.test(idleStatus);
+        const mayInspect = activeStatus || staleRun || forceActive || recoveredUserMove;
+        let resumeAction = null;
+        if (mayInspect && !ck?.running) {
+          try { resumeAction = await mcp("next_action", { company, task: x.key, listener_jira: true }); }
+          catch (e) { log(`reconcile ${x.key}: next_action recovery lookup failed: ${e.message}`); }
         }
-        // A persisted QC checkpoint is not QC evidence. After a listener
-        // restart, replay the QC runner once for an active QC card even when
-        // reconcile_issue reports `already applied`.
-        const qcRecovery = forceActive && /^qc$/i.test(String(x.status ?? "")) && !ck?.qc_remediation_blocked;
-        if (qcRecovery) {
-          log(`reconcile ${x.key}: dispatching recovered QC action`);
-          wake({ company, issue: x.key, event: "jira_startup_scan", stage: "qc", updated: x.updated });
-        }
-        if (staleRun && !qcRecovery && /^(reopened|coding|qc)$/i.test(String(x.status ?? ""))) {
-          const stage = /^qc$/i.test(String(x.status ?? "")) ? "qc" : "coding";
-          log(`reconcile ${x.key}: dispatching stale-run recovery at ${stage}`);
-          wake({ company, issue: x.key, event: "reconcile", stage, updated: x.updated });
+        const runnableStage = resumeAction?.stage && !resumeAction.waiting;
+        const recoveryKey = `${company}/${x.key}`;
+        const dispatchKey = `${idleStatus}|${resumeAction?.stage ?? ""}|${x.updated ?? ""}`;
+        const mapKey = `${recoveryKey}:resume`;
+        const alreadyDispatched = recoveryWakeStatus.get(mapKey) === dispatchKey;
+        const userResumed = (recoveredUserMove || (!!ck?.qc_remediation_blocked && /^(reopened|coding)$/i.test(idleStatus))) && runnableStage;
+        const idleRecovery = mayInspect && !ck?.running && !ck?.workflow_blocked && !ck?.qc_remediation_blocked && runnableStage;
+        const shouldWake = userResumed || (idleRecovery && (forceActive || staleRun || !alreadyDispatched));
+        if (shouldWake) {
+          recoveryWakeStatus.set(mapKey, dispatchKey);
+          const event = userResumed ? "user_move" : staleRun ? "reconcile" : "jira_startup_scan";
+          log(`reconcile ${x.key}: resuming server checkpoint at ${resumeAction.stage} (Jira status ${idleStatus || "?"}${forceActive ? ", startup recovery" : ""})`);
+          wake({ company, issue: x.key, event, stage: resumeAction.stage, updated: x.updated });
+        } else if (mayInspect && !ck?.qc_remediation_blocked && resumeAction?.waiting) {
+          log(`reconcile ${x.key}: preserving waiting checkpoint at ${resumeAction.stage ?? "current stage"}; no agent restart`);
         }
       }
     }

@@ -8,6 +8,7 @@ The Jira Listener handles three kinds of failure without losing work. It never i
 - Each stage writes a checkpoint to `~/.config/agents-holding/state/<company>/<KEY>.ckpt.json`. The checkpoint records the stage, the finished steps, the coding sub-steps already done, the last commit and any error.
 - Larger tech plans are coded in up to 3 sub-steps. Each one ends in a `WIP(<KEY>) n/3` commit on `feature/<KEY>`, and the card gets a 📌 progress note listing what is done (✅) and what remains (⏳).
 - A rerun (`holding staff run <KEY>` or moving the card again) resumes from the checkpoint. Finished plans, tech plans and sub-steps are not redone.
+- On listener startup/reconnect, active Jira cards (including In Progress, Reopened, Coding and QC) are reconciled with the server's current `next_action`. Recovery resumes that exact agent stage and local checkpoint; Jira status is never guessed to mean Coding or QC. Waiting/user-gate and QC-blocked tasks stay paused.
 - When the agent CLI reports compaction, truncation, a context overflow or a max-turns limit, the call is retried once in a fresh session with a resume note.
 
 ## 2. Agent expired / unavailable → `agent-blocked` + fallback

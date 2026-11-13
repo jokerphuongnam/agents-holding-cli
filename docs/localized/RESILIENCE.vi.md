@@ -8,6 +8,7 @@ Jira Listener xử lý ba loại lỗi mà không mất việc. Nó không bao g
 - Mỗi stage ghi checkpoint vào `~/.config/agents-holding/state/<company>/<KEY>.ckpt.json`. Checkpoint ghi stage, các bước đã xong, các bước coding con đã làm, commit cuối và lỗi nếu có.
 - Tech plan lớn được code tối đa 3 bước con. Mỗi bước kết thúc bằng commit `WIP(<KEY>) n/3` trên `feature/<KEY>`, và thẻ nhận ghi chú tiến độ 📌 liệt kê phần đã xong (✅) và còn lại (⏳).
 - Chạy lại (`holding staff run <KEY>` hoặc kéo thẻ lại) tiếp tục từ checkpoint. Plan, tech plan và bước con đã xong không làm lại.
+- Khi listener khởi động/kết nối lại, các thẻ Jira đang hoạt động (gồm In Progress, Reopened, Coding, QC) được reconcile với `next_action` hiện tại từ server. Workflow tiếp tục đúng stage của agent và checkpoint local; không đoán rằng status Jira nào cũng tương ứng với Coding hoặc QC. Task đang chờ người dùng/gate hoặc đã Blocked ở QC sẽ tiếp tục chờ.
 - Khi CLI agent báo nén ngữ cảnh, cắt cụt, tràn ngữ cảnh hoặc hết lượt, cuộc gọi được thử lại một lần trong phiên mới kèm ghi chú resume.
 
 ## 2. Agent hết hạn / không dùng được → `agent-blocked` + fallback
