@@ -81,15 +81,18 @@ Review. Các path được bảo vệ sẽ không bị xoá. Nhờ vậy branch 
 ràng và khi squash merge vào `develop`/`main` thì file rác không đi theo,
 không cần rewrite lịch sử.
 
-### Giới hạn sửa lỗi QC và phạm vi task
-Mặc định QC cho phép tối đa 2 lượt Coding sửa lỗi; bộ đếm được lưu qua lần
-restart listener và lần Jira scan. Nếu vẫn fail, task chuyển Blocked và chờ
-người dùng xem evidence rồi chủ động comment `HOLDING RESUME`; startup scan
-không tự khởi động lại vòng lặp. Có thể đổi bằng
-`max_auto_remediation_attempts` trong policy; giá trị `0` tắt tự sửa. Khi người
-dùng resume, bộ đếm được đặt lại.
+### QC chẩn đoán và phạm vi task
+QC cung cấp check, runner, command, exit code và log lỗi cụ thể. Trước khi
+chuyển về Coding, QC đối chiếu evidence với acceptance criteria đã duyệt và diff
+trên branch, rồi phân loại nguyên nhân. Chỉ lỗi được xác nhận do thay đổi của
+task mới được chuyển Coding sửa; lỗi có sẵn, môi trường hoặc chưa rõ nguyên nhân
+được báo cho người dùng, không sửa đoán. Sau một thay đổi tập trung, QC chạy lại
+check. Nếu evidence lỗi không đổi hoặc check không chạy được, task được gắn
+Blocked và chờ người dùng quyết định rồi comment `HOLDING RESUME`. Evidence lỗi
+mới tiếp tục qua bước chẩn đoán; không giới hạn bằng số lượt cố định. Startup
+scan không lặp lại chẩn đoán đã bị Blocked.
 
 Coding chỉ thực hiện scope và acceptance criteria đã duyệt; không thêm refactor,
 dọn dẹp ngoài yêu cầu, tài liệu, file placeholder hoặc Markdown để tạo commit.
-QC chỉ sửa lỗi do thay đổi của task gây ra; hết lượt thì đưa evidence cho người
-dùng quyết định.
+QC chỉ sửa lỗi do thay đổi của task gây ra; khi không có tiến triển được chứng
+minh thì đưa evidence cho người dùng quyết định.

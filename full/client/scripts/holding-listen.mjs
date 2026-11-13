@@ -760,7 +760,7 @@ function spawnGrok(gargs, out, issue, sid, o = {}) {
 let stageModels = {}; // flow per-stage models of the current run (next_action model/chain[].model), honored by leanModel
 async function leanModel(kind, issue, stage, prompt, role = null, context = null, options = {}) {
   const sid = randomUUID(), out = join(logDir, `run-${Date.now()}.log`), buf = [];
-  const text = kind !== "code", schema = kind === "tech" ? L.TECH_SCHEMA : kind === "habits" ? L.HABITS_SCHEMA : text ? L.TEXT_SCHEMA : L.CODE_SCHEMA, system = kind === "tech" ? L.TECH_SYSTEM : kind === "habits" ? L.HABITS_SYSTEM : text ? L.TEXT_SYSTEM : null;
+  const text = kind !== "code", schema = kind === "tech" ? L.TECH_SCHEMA : kind === "diagnosis" ? L.QC_DIAGNOSIS_SCHEMA : kind === "habits" ? L.HABITS_SCHEMA : text ? L.TEXT_SCHEMA : L.CODE_SCHEMA, system = kind === "tech" ? L.TECH_SYSTEM : kind === "diagnosis" ? L.QC_DIAGNOSIS_SYSTEM : kind === "habits" ? L.HABITS_SYSTEM : text ? L.TEXT_SYSTEM : null;
   const localCfg = L.loadAgentCfg(homedir(), company);
   let repoStaff = {};
   try {
@@ -858,7 +858,7 @@ async function leanRun(p, na, depth = 0) {
   await normalizeTaskLabels(issue, { keepWaiting: !!na.waiting, keepBlocked: qcBlocked });
   try { const r = await leanRunInner(p, na, depth, vis);
     { const stp = L.stateDir(homedir(), company), ck = X.ckptLoad(stp, issue); if (ck?.blocked || ck?.failed) { X.ckptSave(stp, issue, { blocked: null, failed: null }); if (jira) await jira.labels(issue, [], [X.BLOCKED_LABEL, WORKFLOW_FAILURE_LABEL]).catch(() => {}); }
-      if (ck?.qc_remediation_blocked && depth === 0) { L.desktopNotify(homedir(), `agents-holding: ${issue} QC blocked`, "Automatic remediation limit reached; user action is required."); L.writeStatus(homedir(), { last_run: { issue, result: "BLOCKED QC: remediation limit reached; waiting for user action", at: new Date().toISOString() } }); } }
+      if (ck?.qc_remediation_blocked && depth === 0) { L.desktopNotify(homedir(), `agents-holding: ${issue} QC blocked`, "QC evidence needs a user decision; automatic remediation paused."); L.writeStatus(homedir(), { last_run: { issue, result: "BLOCKED QC: no actionable progress or check execution evidence; waiting for user action", at: new Date().toISOString() } }); } }
     const finalCk = X.ckptLoad(L.stateDir(homedir(), company), issue);
     if (vis.worked && depth === 0 && !finalCk?.qc_remediation_blocked) { L.desktopNotify(homedir(), `agents-holding: ${issue}`, `Finished ${L.stageTitle(vis.stage)}`); L.writeStatus(homedir(), { last_run: { issue, result: `ok (${vis.stage})`, at: new Date().toISOString() } }); }
     return r; }
@@ -895,13 +895,13 @@ async function leanRunInner(p, na, depth, vis) {
   const issue = na.issue ?? p.issue ?? p.task_id; const st = L.stateDir(homedir(), company); let saved = L.loadPlan(st, issue);
   if (saved.qc_remediation_blocked) {
     if (!USER_RECOVERY_EVENTS.has(p.event)) {
-      log(`lean: ${issue} waiting for user action after QC remediation limit (${saved.qc_remediation_blocked.attempts}/${saved.qc_remediation_blocked.limit})`);
+      log(`lean: ${issue} waiting for user action after QC remediation stopped: ${saved.qc_remediation_blocked.reason ?? "previous retry policy paused this task"}`);
       return;
     }
-    L.savePlan(st, issue, { qc_remediation_blocked: null, qc_remediation_attempts: 0 });
+    L.savePlan(st, issue, { qc_remediation_blocked: null, qc_remediation_attempts: 0, qc_failure_signature: null, qc_failure_history: [] });
     X.ckptSave(st, issue, { qc_remediation_blocked: null });
     if (jira) await jira.labels(issue, [], [X.BLOCKED_LABEL]).catch((e) => log(`Jira blocked label cleanup failed: ${e.message}`));
-    saved = { ...saved, qc_remediation_blocked: null, qc_remediation_attempts: 0 };
+    saved = { ...saved, qc_remediation_blocked: null, qc_remediation_attempts: 0, qc_failure_signature: null, qc_failure_history: [] };
     log(`lean: ${issue} explicit user action cleared QC remediation block`);
   }
   const recoveredByReconcile = saved.workflow_blocked && STATUS_RECOVERY_EVENTS.has(p.event) && na.stage;
@@ -1103,7 +1103,7 @@ Jira: ${issue}` });
           const workerRole = worker.role || o.dev;
           log(`lean: ${issue} ${stage} worker=${workerRole} scope=${scope}`);
           const workerCwd = scope === "." ? rp : join(rp, scope);
-          const r1 = await leanModel("code", issue, stage, L.codePrompt(iss, { plan: (plan ?? "") + multi + `\n\nStaff worker scope: ${scopeNote}${worker.prompt ? `\nWorker assignment: ${worker.prompt}` : ""}`, techPlan: o.techPlan, approval, feedback: o.feedback, hints: L.fileHints(files, `${iss.summary} ${iss.description} ${plan ?? ""}`), qc: !!o.selfCheck?.[rp], preexisting: L.preexistingFails(L.loadPlan(st, issue).qc_baseline?.[rp] ?? o.baselines?.[rp]), review: !!o.review, branch }), workerRole, L.contextOf({ brief: await brief(workerRole), habits }), { cwd: workerCwd });
+          const r1 = await leanModel("code", issue, stage, L.codePrompt(iss, { plan: (plan ?? "") + multi + `\n\nStaff worker scope: ${scopeNote}${worker.prompt ? `\nWorker assignment: ${worker.prompt}` : ""}`, techPlan: o.techPlan, approval, feedback: o.feedback, qcRemediation: o.qcRemediation, hints: L.fileHints(files, `${iss.summary} ${iss.description} ${plan ?? ""}`), qc: !!o.selfCheck?.[rp], preexisting: L.preexistingFails(L.loadPlan(st, issue).qc_baseline?.[rp] ?? o.baselines?.[rp]), review: !!o.review, branch }), workerRole, L.contextOf({ brief: await brief(workerRole), habits }), { cwd: workerCwd });
           if (r1.question && !r1.summary) { await record("question", r1.question); await say(o.who, `QUESTION (${workerRole}/${rname(rp)})\n${r1.question}`, "question"); repo = runRepos[0]; return null; }
           results.push({ ...r1, worker: workerRole, scope });
         }
@@ -1192,7 +1192,7 @@ Jira: ${issue}` });
       if (to) { const need = L.neededArtifact(s0, to); if (need) await record(need, art(need)); if (!(await advance(s0, to, art))) return; }
       continue;
     }
-    if (seg.kind === "qc") { // QC by script: the repo's checks vs the baseline; one cheap fix round through Coding on a new failure
+    if (seg.kind === "qc") { // QC by script: diagnose exact evidence; route only confirmed task regressions to Coding
       const who = L.stageStaff(na, s0, { kind: "qc" });
       const checklistState = L.loadPlan(st, issue);
       if (!checklistState.qc_checklist_posted) {
@@ -1236,12 +1236,13 @@ Jira: ${issue}` });
               let result = null;
               for (let attempt = 1; attempt <= attempts; attempt++) {
                 if (c.runner !== "local") {
-                  if (!terminal) result = { name: c.name, ok: false, out: `no live registered terminal for company=${company} repo=${rp}; waiting for terminal reconnect` };
+                  if (!terminal) result = { name: c.name, command, runner: "registered_terminal", exit_code: null, failure_kind: "execution", ok: false, out: `no live registered terminal for company=${company} repo=${rp}; waiting for terminal reconnect` };
                   else {
                     const timeoutSeconds = Number(spec.timeout_seconds ?? spec.timeout ?? 0);
                     const ev = await dispatchTerminal(terminal, command, timeoutSeconds > 0 ? timeoutSeconds * 1000 : 0);
                     log(`QC terminal ${issue}: command=${command} status=${ev.status ?? "unknown"}${ev.exit_code !== undefined ? ` exit_code=${ev.exit_code}` : ""}${ev.reason ? ` reason=${ev.reason}` : ""}`);
-                    result = { name: c.name, ok: ev.status === "completed" && ev.exit_code === 0, out: ev.status === "completed" ? `${ev.stdout ?? ""}${ev.stderr ?? ""}`.slice(-1500) : ev.reason ?? "terminal did not complete" };
+                    const completed = ev.status === "completed";
+                    result = { name: c.name, command, runner: "registered_terminal", exit_code: ev.exit_code ?? null, failure_kind: completed ? (ev.exit_code === 0 ? null : "check") : "execution", ok: completed && ev.exit_code === 0, out: completed ? `stdout:\n${ev.stdout ?? ""}\nstderr:\n${ev.stderr ?? ""}`.slice(-6000) : ev.reason ?? "terminal did not complete" };
                   }
                 } else result = L.runChecks(rp, [c])[0];
                 if (result.ok || attempt === attempts) break;
@@ -1258,24 +1259,59 @@ Jira: ${issue}` });
       };
       const qcText = (res) => res.map((x) => `${runRepos.length > 1 ? rname(x.rp) + ": " : ""}${x.v.text}`).join("\n");
       for (const rp of runRepos) L.ensureBranch(rp, branch);
-      let res = await runQc(), fixes = 0;
-      // QC is a release gate, but retries must be bounded across listener
-      // restarts. A failing task is surfaced for a user decision after the
-      // configured limit rather than looping through Coding/QC forever.
-      const maxRemediation = Math.max(0, Number(
-        na.qc_policy?.max_auto_remediation_attempts ??
-        na.workflow?.max_auto_remediation_attempts ??
-        runSettings.max_auto_remediation_attempts ?? 2
-      ) || 0);
-      let remediationAttempts = Math.max(0, Number(saved.qc_remediation_attempts) || 0);
-      const remediationAllowed = () => remediationAttempts < maxRemediation;
-      while (res.some((x) => !x.v.pass) && remediationAllowed() && codingKey) {
+      let res = await runQc();
+      const failureRows = (rows) => rows.flatMap(({ rp, v }) => v.failed.map((f) => ({ repo: rname(rp), name: f.name, command: f.command ?? f.name, runner: f.runner ?? "unknown", exit_code: f.exit_code ?? null, failure_kind: f.failure_kind ?? "check", evidence: String(f.out ?? "").replace(/\u001b\[[0-9;]*m/g, "").replace(/\r/g, "").trim().slice(-6000) })));
+      const failureSignature = (rows) => {
+        const stable = failureRows(rows).map((f) => {
+          const lines = f.evidence.split("\n").map((x) => x.trim()).filter(Boolean);
+          const diagnosticLines = lines.filter((x) => /fail|error|assert|expected|actual|exception|stack|not found|missing|denied|timeout|timed out/i.test(x));
+          return { ...f, evidence: (diagnosticLines.length ? diagnosticLines : lines).map((x) => x.replace(/\b\d+(?:\.\d+)?\s*(?:ms|seconds?|secs?)\b/gi, "<duration>").replace(/\b\d{4}-\d\d-\d\d[T ][\d:.Z+-]+/g, "<timestamp>")).join("\n") };
+        });
+        return createHash("sha256").update(JSON.stringify(stable)).digest("hex");
+      };
+      const remediationReport = (rows) => failureRows(rows).map((f) => [`Repo: ${f.repo}`, `Check: ${f.name}`, `Runner: ${f.runner}`, `Exact command: ${f.command}`, `Exit code: ${f.exit_code ?? "unknown"}`, `Failure class: ${f.failure_kind}`, `stdout/stderr excerpt:\n${f.evidence}`].join("\n")).join("\n\n");
+      const implementationDiff = () => runRepos.map((rp) => {
+        let base = null;
+        for (const target of [runSettings.squash_target, "develop", "main", "origin/main"].filter(Boolean)) {
+          try { base = L.git(rp, "merge-base", branch, target); if (base) break; } catch {}
+        }
+        if (!base) return `${rname(rp)}: base branch unavailable; recent task commits:\n${L.git(rp, "log", "-6", "--oneline", branch)}`;
+        return `${rname(rp)} changes since ${base}:\n${L.git(rp, "diff", "--stat", `${base}..${branch}`)}\n${L.git(rp, "diff", "--no-ext-diff", "--unified=3", `${base}..${branch}`).slice(-10000)}`;
+      }).join("\n\n").slice(-14000);
+      const blockQc = async (reason, evidence, signature) => {
+        const blocked = { reason, evidence: String(evidence).slice(-6000), signature, at: new Date().toISOString() };
+        L.savePlan(st, issue, { qc_remediation_blocked: blocked, qc_failure_signature: signature ?? null });
+        X.ckptSave(st, issue, { stage: s0, running: false, qc_remediation_blocked: true, last_error: String(reason).slice(0, 500) });
+        if (jira) await jira.labels(issue, [X.BLOCKED_LABEL]).catch((e) => log(`Jira blocked label failed: ${e.message}`));
+        await record("qc_fail", `${reason}\n${evidence}`);
+        await say(who, `QC BLOCKED\n${reason}\n${evidence}\nReview the evidence. After fixing the environment or making a user decision, comment HOLDING RESUME to continue.`);
+        log(`lean: ${issue} QC stopped for user action: ${reason}`);
+      };
+      let currentSignature = res.some((x) => !x.v.pass) ? failureSignature(res) : null;
+      const failureHistory = new Set(saved.qc_failure_history ?? []);
+      const executionFailures = failureRows(res).filter((f) => f.failure_kind === "execution");
+      if (executionFailures.length) {
+        await blockQc("QC could not produce a completed check result; this is an execution/terminal problem, not evidence for a code change.", remediationReport(res), currentSignature);
+        return;
+      }
+      if (currentSignature && failureHistory.has(currentSignature)) {
+        await blockQc("QC has returned the same diagnostic failure evidence already seen on this task; there is no measurable progress, so Coding will not repeat the same fix.", remediationReport(res), currentSignature);
+        return;
+      }
+      while (res.some((x) => !x.v.pass) && codingKey) {
         const txt = qcText(res);
-        const limitNote = ` (attempt ${remediationAttempts + 1}/${maxRemediation})`;
         await record("qc_fail", txt);
-        await say(who, `QC FAIL\n${txt}\nBack to Coding for automatic remediation${limitNote}.`);
-        remediationAttempts++;
-        L.savePlan(st, issue, { qc_remediation_attempts: remediationAttempts });
+        const report = remediationReport(res);
+        const qcRole = L.stageRole(na, s0);
+        const diagnosis = await leanModel("diagnosis", issue, s0, L.qcDiagnosisPrompt(iss, { plan, implementation: implementationDiff(), failures: report }), qcRole, L.contextOf({ brief: await brief(qcRole), habits }));
+        const diagnosisText = [`Classification: ${diagnosis.classification ?? "uncertain"}`, `Root cause: ${diagnosis.root_cause ?? "not established"}`, `Evidence: ${diagnosis.evidence ?? "not supplied"}`, diagnosis.fix_direction && `Focused fix: ${diagnosis.fix_direction}`, diagnosis.question && `Question: ${diagnosis.question}`].filter(Boolean).join("\n");
+        if (diagnosis.classification !== "task_regression" || !diagnosis.root_cause || !diagnosis.evidence || !diagnosis.fix_direction) {
+          await blockQc(`QC diagnosis is ${diagnosis.classification ?? "uncertain"}; Coding will not make a speculative change.`, `${diagnosisText}\n\n${report}`, currentSignature);
+          return;
+        }
+        await say(who, `QC FAIL — evidence-based remediation\n${diagnosisText}\n\n${report}`);
+        failureHistory.add(currentSignature);
+        L.savePlan(st, issue, { qc_failure_signature: currentSignature, qc_failure_history: [...failureHistory] });
         // QC remediation is an engineering loop; Reopened is a user-facing
         // post-Done state and may be user-only in Jira workflows.
         const recoveryKey = codingKey;
@@ -1288,12 +1324,24 @@ Jira: ${issue}` });
           X.ckptSave(st, issue, { stage: codingKey, running: true, workflow_blocked: false, last_error: null });
         }
         const sv = L.loadPlan(st, issue), dev = sv.developer ?? "tech-lead", dwho = L.stageStaff(na, codingKey, { kind: "code", developer: dev });
-        const r = await codeOnce(codingKey, { techPlan: sv.tech_plan, dev, feedback: `QC failed, fix it:\n${res.filter((x) => !x.v.pass).map((x) => x.v.failed.map((f) => `${f.name}: ${f.out}`).join("\n")).join("\n")}`, who: dwho });
+        const r = await codeOnce(codingKey, { techPlan: sv.tech_plan, dev, qcRemediation: JSON.stringify(diagnosis), feedback: report, who: dwho });
         if (!r) return;
+        if (!r.qc_root_cause || !r.qc_fix_for) {
+          await blockQc("Coding did not confirm the diagnosed root cause and target check in its implementation evidence; no further remediation will run.", `${diagnosisText}\n${report}`, currentSignature);
+          return;
+        }
         L.savePlan(st, issue, { summary: `${sv.summary ?? ""}\nFix: ${r.summary ?? ""}`, commit: r.commit, where: r.where });
         await say(dwho, `FIX\n${r.summary ?? ""}\n${r.where}`);
         if (!(await advance(codingKey, s0))) return;
-        fixes++; res = await runQc();
+        res = await runQc();
+        if (res.some((x) => !x.v.pass)) {
+          const nextSignature = failureSignature(res);
+          if (failureHistory.has(nextSignature)) {
+            await blockQc("The focused Coding change did not resolve the failure, and QC has returned to diagnostic evidence already seen on this task; stopping the repeated remediation cycle.", remediationReport(res), nextSignature);
+            return;
+          }
+          currentSignature = nextSignature;
+        }
       }
       const sv = L.loadPlan(st, issue);
       const ck = X.ckptLoad(st, issue) ?? {};
@@ -1314,28 +1362,14 @@ Jira: ${issue}` });
       if (res.some((x) => !x.v.pass) || executionBlocked) {
         const txt = [qcText(res), executionBlocked && "QC execution evidence invalid: worker was blocked before running the requested checks."] .filter(Boolean).join("\n");
         await record("qc_fail", txt);
-        if (codingKey && remediationAttempts >= maxRemediation) {
-          const blocked = { attempts: remediationAttempts, limit: maxRemediation, evidence: txt.slice(-3000), at: new Date().toISOString() };
-          L.savePlan(st, issue, { qc_remediation_blocked: blocked });
-          X.ckptSave(st, issue, { stage: s0, running: false, qc_remediation_blocked: true, last_error: `QC remediation limit reached (${remediationAttempts}/${maxRemediation})` });
-          if (jira) await jira.labels(issue, [X.BLOCKED_LABEL]).catch((e) => log(`Jira blocked label failed: ${e.message}`));
-          await say(who, `QC BLOCKED\nAutomatic remediation stopped after ${remediationAttempts}/${maxRemediation} attempt(s).\n${txt}\nReview the evidence and make a user decision, then comment HOLDING RESUME to continue. Startup scans will not restart Coding automatically.`);
-          log(`lean: ${issue} stopped after QC remediation limit ${remediationAttempts}/${maxRemediation}; waiting for explicit user action`);
+        if (codingKey) {
+          await blockQc("QC is still failing after remediation; no actionable Coding role is available for this checkpoint.", remediationReport(res), currentSignature);
           return;
         }
-        // QC is an engineering gate, not a user gate. Keep the task in the
-        // remediation checkpoint; the next reconcile/run retries Coding.
-        if (codingKey) {
-          const moved = await advance(s0, codingKey).catch((e) => { log(`lean: ${issue} QC remediation checkpoint failed: ${e.message}`); return false; });
-          if (!moved) {
-            X.ckptSave(st, issue, { stage: codingKey, running: false, workflow_blocked: false, failed: null, last_error: txt });
-            log(`lean: ${issue} QC failure persisted as Coding checkpoint; Jira remains ${s0} until workflow permits the move`);
-          }
-        }
-        log(`lean: ${issue} QC failed after ${fixes} automatic remediation attempt(s); kept in Coding (${remediationAttempts}/${maxRemediation} configured attempts)`);
+        await blockQc("QC failed and the workflow has no configured Coding remediation stage.", txt, currentSignature);
         return;
       }
-      L.savePlan(st, issue, { qc_remediation_attempts: 0, qc_remediation_blocked: null });
+      L.savePlan(st, issue, { qc_remediation_blocked: null, qc_failure_signature: null, qc_failure_history: [] });
       const txt = [qcText(res), res.every((x) => !x.v.passed.length) && sv.tests && `Developer check: ${sv.tests}`].filter(Boolean).join("\n");
       const steps = L.prSteps(na, seg), h = steps.open || steps.merge ? host(sv) : { msg: [] };
       const where = [sv.where, ...h.msg].filter(Boolean).join("\n");
@@ -1350,11 +1384,7 @@ Jira: ${issue}` });
         const failed = checkRows.filter((x) => !x.ok).map((x) => x.id).join(", ");
         const failureText = `QC evidence gate failed: ${failed}`;
         await record("qc_fail", failureText);
-        const blocked = { attempts: remediationAttempts, limit: maxRemediation, evidence: failureText, at: new Date().toISOString() };
-        L.savePlan(st, issue, { qc_remediation_blocked: blocked });
-        X.ckptSave(st, issue, { stage: s0, running: false, qc_remediation_blocked: true, last_error: failureText });
-        if (jira) await jira.labels(issue, [X.BLOCKED_LABEL]).catch((e) => log(`Jira blocked label failed: ${e.message}`));
-        await say(who, `QC BLOCKED\nEvidence gate failed (${failed}). Automatic remediation is not being restarted from a status scan. Review the evidence and comment HOLDING RESUME after deciding how to continue.`);
+        await blockQc(`QC evidence gate failed (${failed}); this is an evidence/configuration mismatch, not a Coding instruction.`, failureText, currentSignature);
         return;
       }
       await record("qc_report", JSON.stringify(qcReport));

@@ -6,7 +6,7 @@ import "./kc-guard.mjs"; // pin keychain calls to the real login keychain (never
 //   * Pre Coding (tech_plan): ONE tool-less call, cheap model: tech plan + the developer role picked from the server roster. NO code.
 //   * Coding (code): the script moves the card to Coding FIRST, then ONE coding call (default model) implements the saved tech plan.
 //   * QC (qc_test): the script moves the card to QC, then runs the repo's own checks (npm test/lint/typecheck/build, pytest, go, cargo)
-//     before vs after; only newly failing checks fail QC (one cheap fix call, then QC again). No model call when checks pass.
+//     before vs after; only newly failing checks fail QC. A diagnosis call directs Coding only for confirmed regressions; unchanged failures stop as Blocked.
 //   Each stage is its own step; the Jira card is moved right after each advance, so the board shows what is actually happening.
 //   Every comment: "[agent-holding] [<staff name>] ..." (staff from the server's stage owners / roster).
 // Every model call is a FRESH session (no resume) with no MCP servers (lean GROK_HOME / CODEX_HOME, claude --strict-mcp-config);
@@ -105,8 +105,10 @@ export const codeMaxTurns = (env = process.env) => Math.max(5, Number(env.AH_COD
 export const CODE_TOOLS = "Bash,read_file,search_replace,write,grep,list_dir";
 export const TECH_TOOLS = "read_file,grep,list_dir"; // Pre Coding: read-only, a few turns max, cheap model
 export const TEXT_SCHEMA = { type: "object", properties: { plan: { type: "string" }, question: { type: "string" } } };
-export const CODE_SCHEMA = { type: "object", properties: { summary: { type: "string" }, tests: { type: "string" }, commit_message: { type: "string" }, commit: { type: "string" }, where: { type: "string" }, changed_files: { type: "array", items: { type: "string" } }, implementation_evidence: { type: "string" }, question: { type: "string" } }, required: ["summary"] };
+export const CODE_SCHEMA = { type: "object", properties: { summary: { type: "string" }, tests: { type: "string" }, commit_message: { type: "string" }, commit: { type: "string" }, where: { type: "string" }, changed_files: { type: "array", items: { type: "string" } }, implementation_evidence: { type: "string" }, question: { type: "string" }, qc_diagnosis: { type: "string", enum: ["task_regression", "preexisting", "environment", "uncertain"] }, qc_root_cause: { type: "string" }, qc_fix_for: { type: "string" } }, required: ["summary"] };
 export const TECH_SCHEMA = { type: "object", properties: { tech_plan: { type: "string" }, developer: { type: "string" }, question: { type: "string" } } };
+export const QC_DIAGNOSIS_SCHEMA = { type: "object", properties: { classification: { type: "string", enum: ["task_regression", "preexisting", "environment", "uncertain"] }, root_cause: { type: "string" }, evidence: { type: "string" }, fix_direction: { type: "string" }, question: { type: "string" } }, required: ["classification", "root_cause", "evidence"] };
+export const QC_DIAGNOSIS_SYSTEM = "You are an evidence-first QC diagnostician. Do not edit code. Classify each failure using only the task acceptance criteria, branch diff, exact command, exit status and logs. Recommend Coding only when evidence ties the failure to this task's changes. Pre-existing, environmental, or uncertain failures must be returned for user action, not speculative remediation. Reply with JSON only.";
 
 // ---------- pure helpers (unit-tested in tests/lean_test.mjs) ----------
 export function adfText(n) {
@@ -188,11 +190,17 @@ export function textPrompt(iss, o = {}) {
     o.allowQuestion ? "If something essential is unclear, return {\"question\": \"...\"}. Otherwise return {\"plan\": \"...\"}." : "Return {\"plan\": \"...\"}.",
     "Plan: goal, scope, acceptance criteria, files/steps; max 12 short lines. Reply with the JSON only."].filter(Boolean).join("\n\n");
 }
+export function qcDiagnosisPrompt(iss, { plan, implementation, failures }) {
+  return [issueBlock(iss), plan && `Approved plan and acceptance criteria:\n${plan}`, implementation && `Task branch implementation diff (bounded excerpt):\n${implementation}`, `QC failure evidence:\n${failures}`,
+    "Do not propose a fix based only on the non-zero exit code. Identify the exact failing assertion/output, expected versus actual behavior, and the changed file/line that causally explains it. Classify as task_regression only when the branch diff supports that causal link. Otherwise classify preexisting, environment, or uncertain and ask for the missing evidence/action. Return {classification, root_cause, evidence, fix_direction, question}."].filter(Boolean).join("\n\n");
+}
 export const TEXT_SYSTEM = "You are a senior BA/tech lead. You write short, concrete task plans. Reply with JSON only.";
 export function codePrompt(iss, o = {}) {
   return [issueBlock(iss), o.plan && `Approved plan:\n${o.plan}`, o.techPlan && `Tech plan (follow it; read only the files it names unless something is missing):\n${o.techPlan}`,
     o.approval && `User: ${o.approval}`, o.review && `The user reviewed your change on branch ${o.branch ?? "feature/" + iss.key} (already checked out, your earlier commits are on it) and sent it back to Coding.`,
     o.feedback && `Address this ${o.review ? "review " : ""}feedback: ${o.feedback}`,
+    o.qcRemediation && `QC diagnosis from the QC lead:\n${o.qcRemediation}\nImplement only the diagnosed fix_direction for the named failure. Do not broaden scope. Report qc_root_cause and qc_fix_for (the exact failed assertion/check this change resolves).`,
+    o.qcRemediation && "The final JSON must include qc_diagnosis (task_regression|preexisting|environment|uncertain), qc_root_cause, and qc_fix_for.",
     o.preexisting?.length && `Already failing BEFORE your change (QC baseline): ${o.preexisting.join(", ")}. Ignore these: do not run, investigate or fix them; QC only blames new failures.`,
     !o.techPlan && o.hints?.length && `Likely files: ${o.hints.join(", ")}`,
     `${o.review ? "Change only what the feedback asks" : "Implement only the behavior and acceptance criteria in the task; do not add adjacent cleanup, refactors, or improvements"}${o.qc ? "; then run the cheapest relevant check (build/tests) and fix only failures caused by this change" : "; do not run tests/builds (QC runs them by script)"}.`,
@@ -245,8 +253,8 @@ export function detectChecks(repo, has = (f) => existsSync(join(repo, f)), read 
   return out;
 }
 export function runChecks(repo, checks, exec = (c, a) => execFileSync(c, a, { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 5 * 60 * 1000, env: { ...process.env, CI: "1" } })) {
-  return checks.map((c) => { try { const o = exec(c.cmd, c.args); return { name: c.name, ok: true, out: clip(o, 300) }; }
-    catch (e) { return { name: c.name, ok: false, out: clip(`${e.stdout ?? ""}\n${e.stderr ?? ""}\n${e.message ?? ""}`.split("\n").filter(Boolean).slice(-25).join("\n"), 1500) }; } });
+  return checks.map((c) => { const command = [c.cmd, ...(c.args ?? [])].join(" "); try { const o = exec(c.cmd, c.args); return { name: c.name, command, runner: "local", exit_code: 0, failure_kind: null, ok: true, out: clip(o, 1200) }; }
+    catch (e) { const exitCode = Number.isFinite(Number(e.status)) ? Number(e.status) : null; return { name: c.name, command, runner: "local", exit_code: exitCode, failure_kind: e.code === "ENOENT" || e.signal || exitCode === null || exitCode === 127 ? "execution" : "check", ok: false, out: clip(`${e.stdout ?? ""}\n${e.stderr ?? ""}\n${e.message ?? ""}`.split("\n").filter(Boolean).slice(-60).join("\n"), 6000) }; } });
 }
 /** Validate evidence returned by a user-bound terminal session. The listener
  * never executes declared terminal commands itself and never accepts a model
@@ -281,7 +289,7 @@ export function qcVerdict(baseline, after) {
   const failed = after.filter((r) => !r.ok && was[r.name] !== false), preexisting = after.filter((r) => !r.ok && was[r.name] === false);
   const passed = after.filter((r) => r.ok);
   return { pass: !failed.length, failed, preexisting, passed,
-    text: [passed.length && `PASS: ${passed.map((r) => r.name).join(", ")}`, failed.length && `FAIL: ${failed.map((r) => `${r.name}\n${r.out}`).join("\n")}`,
+    text: [passed.length && `PASS: ${passed.map((r) => r.name).join(", ")}`, failed.length && `FAIL: ${failed.map((r) => `${r.name}\n  runner: ${r.runner ?? "unknown"}\n  command: ${r.command ?? r.name}\n  exit_code: ${r.exit_code ?? "unknown"}\n  class: ${r.failure_kind ?? "check"}\n  evidence:\n${r.out}`).join("\n")}`,
       preexisting.length && `Pre-existing failures (also fail before the change): ${preexisting.map((r) => r.name).join(", ")}`, !after.length && "No automated checks in this repo."].filter(Boolean).join("\n") };
 }
 /** Agent-stage segments of a run: one per stage [{kind, stages:[s], moves:[to]}] from the current stage + server chain (each stage is its own step). */
@@ -718,7 +726,7 @@ export function desktopNotify(home, title, msg, exec = (c, a) => execFileSync(c,
   try { exec("osascript", notifyArgs(title, msg)); return true; } catch { return false; }
 }
 /** What the user must do, per CEO inbox kind (one line, shown in the 'Agents Holding' notification and `holding inbox`). */
-export const INBOX_NEED = { question: "a staff has a question for you", decision: "pick an option (1/2/3)", hire: "needs a hire (or pick an existing staff)", blocked: "an agent is blocked (e.g. needs a login)", failed: "a run failed: needs a look", gate: "approve or ask for changes", qc: "QC failed after fixes: needs a look", repo: "which repo should this task use?", staff: "staff decision needed" };
+export const INBOX_NEED = { question: "a staff has a question for you", decision: "pick an option (1/2/3)", hire: "needs a hire (or pick an existing staff)", blocked: "an agent is blocked (e.g. needs a login)", failed: "a run failed: needs a look", gate: "approve or ask for changes", qc: "QC evidence needs a user decision after diagnosis or no progress", repo: "which repo should this task use?", staff: "staff decision needed" };
 export const HOLDING_BIN = join(dirname(fileURLToPath(import.meta.url)), "holding");
 export const statusPath = (home) => join(home, ".config/agents-holding/listener-status.json");
 export function readStatus(home) { try { return JSON.parse(readFileSync(statusPath(home), "utf8")); } catch { return null; } }

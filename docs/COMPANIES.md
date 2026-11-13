@@ -95,14 +95,19 @@ This keeps the feature branch auditable and lets a later squash merge exclude
 the cleanup files from `develop`/`main` without rewriting history.
 
 ### QC remediation and scope
-QC automatically returns to Coding at most twice by default. The attempt count
-persists across listener restarts and Jira scans. If QC still fails, the task is
-marked Blocked and waits for an explicit user action/comment (`HOLDING RESUME`);
-startup scans do not restart the same failing loop. Set
-`max_auto_remediation_attempts` in the project/workflow policy to change the
-limit; `0` disables automatic remediation. On resume, the counter resets.
+QC provides the exact check, runner, command, exit code and failure output.
+Before Coding receives a remediation, the QC role compares that evidence with
+the approved acceptance criteria and task branch diff, then classifies the
+failure. Only a confirmed regression caused by the task is routed to Coding;
+pre-existing, environmental, and uncertain failures are surfaced for user
+action without speculative edits. After a focused fix, QC reruns the same check.
+If its diagnostic failure
+evidence is unchanged, or a check could not execute, the task is marked Blocked
+and waits for an explicit user action/comment (`HOLDING RESUME`). New failure
+evidence continues through diagnosis; there is no fixed retry count. Startup
+scans do not repeat a blocked diagnosis.
 
 Coding follows the approved task scope and acceptance criteria. It must not add
 adjacent refactors, cleanup, docs, placeholder files, or Markdown merely to
 create a commit. QC findings should lead only to fixes caused by the task's
-changes; after the retry limit, evidence is surfaced for a user decision.
+changes; repeated identical failure evidence is surfaced for a user decision.
