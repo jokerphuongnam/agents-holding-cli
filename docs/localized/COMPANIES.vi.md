@@ -71,11 +71,25 @@ PR chỉ mở khi auto-PR bật cho công ty đó (`holding company config <c> s
 Lưu ý: kéo thẻ sang Done khi PR `main` merge chưa tự động; hãy tự kéo sang Done sau khi merge.
 
 ### Tự động dọn artifact
-Workflow đọc `artifact_policy` trong repo. Khi bật
-`cleanup_unrequested_files`, Coding lưu cây thư mục trước khi chạy và xoá các
-file Markdown mới, chưa được track, không thuộc task. `cleanup_paths` dùng để
+Workflow đọc `artifact_policy` trong repo. Mặc định, nếu task không yêu cầu tài
+liệu (hoặc policy không đặt `cleanup_unrequested_files: false`), Coding lưu cây
+thư mục trước khi chạy và xoá các file Markdown mới, chưa được track, không
+thuộc task. `cleanup_paths` dùng để
 khai báo các file đã track nhưng cần xoá; các file này được commit riêng với
 message `chore(<issue>): remove workflow artifacts` trước khi task vào In
 Review. Các path được bảo vệ sẽ không bị xoá. Nhờ vậy branch vẫn có audit rõ
 ràng và khi squash merge vào `develop`/`main` thì file rác không đi theo,
 không cần rewrite lịch sử.
+
+### Giới hạn sửa lỗi QC và phạm vi task
+Mặc định QC cho phép tối đa 2 lượt Coding sửa lỗi; bộ đếm được lưu qua lần
+restart listener và lần Jira scan. Nếu vẫn fail, task chuyển Blocked và chờ
+người dùng xem evidence rồi chủ động comment `HOLDING RESUME`; startup scan
+không tự khởi động lại vòng lặp. Có thể đổi bằng
+`max_auto_remediation_attempts` trong policy; giá trị `0` tắt tự sửa. Khi người
+dùng resume, bộ đếm được đặt lại.
+
+Coding chỉ thực hiện scope và acceptance criteria đã duyệt; không thêm refactor,
+dọn dẹp ngoài yêu cầu, tài liệu, file placeholder hoặc Markdown để tạo commit.
+QC chỉ sửa lỗi do thay đổi của task gây ra; hết lượt thì đưa evidence cho người
+dùng quyết định.

@@ -84,11 +84,25 @@ PRs open only when auto-PR is on for that company (`holding company config <c> s
 Note: moving the card to Done when the `main` PR merges is not automatic yet; move it to Done yourself after the merge.
 
 ### Automatic artifact cleanup
-The workflow reads the repository's local `artifact_policy`. When
-`cleanup_unrequested_files` is enabled, Coding records the pre-run tree and
+The workflow reads the repository's local `artifact_policy`. Unless the task
+explicitly requests documentation (or the policy sets
+`cleanup_unrequested_files: false`), Coding records the pre-run tree and
 removes newly-created, untracked Markdown files that were not part of the
 task. `cleanup_paths` may list known tracked files to remove; those deletions
 are committed as a separate `chore(<issue>): remove workflow artifacts`
 commit before the task reaches In Review. Protected paths are never removed.
 This keeps the feature branch auditable and lets a later squash merge exclude
 the cleanup files from `develop`/`main` without rewriting history.
+
+### QC remediation and scope
+QC automatically returns to Coding at most twice by default. The attempt count
+persists across listener restarts and Jira scans. If QC still fails, the task is
+marked Blocked and waits for an explicit user action/comment (`HOLDING RESUME`);
+startup scans do not restart the same failing loop. Set
+`max_auto_remediation_attempts` in the project/workflow policy to change the
+limit; `0` disables automatic remediation. On resume, the counter resets.
+
+Coding follows the approved task scope and acceptance criteria. It must not add
+adjacent refactors, cleanup, docs, placeholder files, or Markdown merely to
+create a commit. QC findings should lead only to fixes caused by the task's
+changes; after the retry limit, evidence is surfaced for a user decision.
