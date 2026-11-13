@@ -1541,7 +1541,19 @@ async function reconcile(company, sinceIso, forceActive = false) {
         // The server checkpoint, not a Jira-status-to-stage guess, is the
         // source of truth. This resumes Product Work/BA/Planning/Pre Coding,
         // Coding, QC, Reopened and custom active stages at their exact stage.
-        const ck = X.ckptLoad(st, x.key);
+        let ck = X.ckptLoad(st, x.key);
+        // v2026111304 used a fixed retry count. That policy is superseded by
+        // evidence-based diagnosis; release only those legacy cap blocks so an
+        // active task can resume from its existing server/local stage. Other
+        // QC blocks (which have a diagnostic reason, not `limit`) stay blocked.
+        const taskCheckpoint = L.loadPlan(st, x.key);
+        if (taskCheckpoint.qc_remediation_blocked && Object.hasOwn(taskCheckpoint.qc_remediation_blocked, "limit")) {
+          L.savePlan(st, x.key, { qc_remediation_blocked: null, qc_remediation_attempts: 0, qc_failure_signature: null, qc_failure_history: [] });
+          X.ckptSave(st, x.key, { qc_remediation_blocked: null, running: false, last_error: null });
+          if (jira) await jira.labels(x.key, [], [X.BLOCKED_LABEL]).catch((e) => log(`legacy QC block label cleanup failed for ${x.key}: ${e.message}`));
+          ck = X.ckptLoad(st, x.key);
+          log(`recovery ${x.key}: cleared superseded fixed-count QC block; retaining current stage ${ck?.stage ?? r.stage_after ?? "?"}`);
+        }
         const idleStatus = String(x.status ?? "");
         const activeStatus = RECOVERABLE_JIRA_STATUSES.has(idleStatus.toLowerCase()) || (f.labels ?? []).includes("ah-agent-owned");
         const recoveredUserMove = !r.duplicate && r.replayed && /^(reopened|coding)$/i.test(idleStatus);
