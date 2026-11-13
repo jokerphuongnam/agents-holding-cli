@@ -227,7 +227,7 @@ Bindings are per company. Company = `--company X` > nearest `.agents/company.jso
 
 ## Staff launch command (the simple way)
 
-Give a staff one fixed command. When that staff gets work, agents-holding runs exactly that command in the company repo (the path in projects.json).
+Give a staff one fixed command. When that staff gets work, agents-holding runs that command in the company repo (the path in projects.json). For the built-in `codex`, `claude`, and `grok` CLIs, configured `model` and `effort` are applied automatically when the command does not already set them or use `{model}` / `{effort}` placeholders. Custom CLIs should use placeholders when they accept these settings.
 
 ```sh
 holding staff set developer 'claude -p --model {model} --effort {effort} --output-format json "{prompt}"' --model sonnet --effort low --timeout 900
@@ -244,8 +244,8 @@ Fields (all optional except `command`). The binding step in `holding staff add` 
 | field | example | used by |
 |---|---|---|
 | command | `claude -p --model {model} "{prompt}"` | the exact command run |
-| model | `sonnet` | `{model}` |
-| effort | `low` | `{effort}` |
+| model | `sonnet` | `{model}`; also applied to built-in CLI commands when omitted there |
+| effort | `low` | `{effort}`; also applied to built-in CLI commands when omitted there |
 | max_turns | `25` | `{max_turns}` |
 | cwd | empty = company repo | `{cwd}` and the process cwd |
 | context | `auto` \| `none` \| `/path/ctx.md` | staff context (see below) |
@@ -277,7 +277,7 @@ Output parsing is picked from the first word:
 - `grok`: JSON
 - anything else: plain text (a trailing `{...}` JSON is used if present)
 
-`holding provider list` prints each built-in's full effective template, then the company's default command and per-staff commands. `/staff list` shows `<staff> - $ <command…>`.
+`holding provider list` prints each built-in's full effective template, then the company's default command and per-staff commands. `/staff list` shows the fixed command and its resolved model/effort.
 
 ## Sub-agent presets (headless)
 

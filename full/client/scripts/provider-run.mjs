@@ -31,7 +31,7 @@ export async function runStaff({ home = homedir(), company, role, kind = "text",
   const r = L.resolveAgent({ cfg, text, role, stageModel });
   if (r.command) { const { runCommand } = await import("./providers/command.mjs");
     const res = await runCommand(r.binding, { prompt, system, context, cwd, company, role }).catch((e) => ({ result: {}, exitCode: 1, error: e.message }));
-    return { ...res, provider: "command", command: r.command, model: null, effort: null }; }
+    return { ...res, provider: "command", command: r.command, model: r.binding?.model ?? null, effort: r.binding?.effort ?? null }; }
   const prov = await getProvider(r.agent, home, { providers: { ...(L.loadGlobalCfg(home).providers ?? {}), ...(cfg.providers ?? {}) } });
   const buf = [], sid = sess?.sid ?? randomUUID(), logDir = join(home, ".config/agents-holding/logs"); mkdirSync(logDir, { recursive: true });
   const ctx = { spawn: simpleSpawn(cwd, buf, { company, role }), stdout: () => Buffer.concat(buf).toString("utf8"), leanHome: r.agent === "grok" ? L.leanGrokHome(home) : null, logDir, log: () => {} };

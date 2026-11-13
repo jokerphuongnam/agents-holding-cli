@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { implementationEvidence, terminalSessionEvidence, validatePtyExecutionEvidence, qcChecklist, workChecklist } from "../full/client/scripts/lean.mjs";
-import { resolveAgent } from "../full/client/scripts/agents.mjs";
+import { flattenStaffs, resolveAgent, staffRuntime } from "../full/client/scripts/agents.mjs";
+import { render } from "../full/client/scripts/providers/command.mjs";
 
 const good = { summary: "Changed canonical cache routing", tests: "build: ok; install: ok; smoke: ok" };
 assert.equal(implementationEvidence(good, "abc123", "feature/MARLIN-1 @ abc123").ok, true, "success advances");
@@ -19,6 +20,20 @@ const resolved = resolveAgent({ env, cfg: company, role: "comm-objc-engineer", g
 assert.deepEqual({ agent: resolved.agent, model: resolved.model, effort: resolved.effort }, { agent: "codex", model: "gpt-5.6-luna", effort: "low" }, "company staff provider wins over stale default");
 const inherited = resolveAgent({ env, cfg: { staff: { "comm-objc-engineer": company.staff["comm-objc-engineer"] } }, role: "comm-objc-engineer", global });
 assert.equal(inherited.agent, "codex", "parent/child effective staff mapping remains explicit");
+const localStaff = flattenStaffs({ ceo: {
+  agent: { command: 'codex exec --sandbox danger-full-access "{prompt}"', model: "gpt-6-luna", effort: "low" },
+  members: { "content-writer": { responsibilities: ["write content"], agent: { command: 'codex exec --sandbox danger-full-access "{prompt}"', model: "gpt-6-luna", effort: "low" } } },
+} });
+const localResolved = resolveAgent({ env, cfg: { agent: "grok", staff: localStaff }, role: "content-writer", global: {} });
+assert.equal(localResolved.command, 'codex exec --sandbox danger-full-access "{prompt}"', "singular agent object command is flattened for staff dispatch");
+assert.deepEqual({ model: localResolved.binding.model, effort: localResolved.binding.effort }, { model: "gpt-6-luna", effort: "low" }, "per-staff model and effort survive flattening");
+const commandRun = render(localResolved.command, { prompt: "task", dir: "/tmp", b: localResolved.binding });
+assert.ok(commandRun.args.includes("-m") && commandRun.args.includes("gpt-6-luna"), "fixed Codex command receives the staff model");
+assert.ok(commandRun.args.includes("-c") && commandRun.args.includes('model_reasoning_effort="low"'), "fixed Codex command receives the staff effort");
+assert.match(staffRuntime({ env, cfg: { staff: localStaff }, role: "content-writer" }), /gpt-6-luna - low\)$/);
+const explicitRun = render('codex exec -m {model} -c model_reasoning_effort="{effort}" "{prompt}"', { prompt: "task", dir: "/tmp", b: localResolved.binding });
+assert.equal(explicitRun.args.filter((x) => x === "-m").length, 1, "explicit model placeholder is not duplicated");
+assert.equal(explicitRun.args.filter((x) => x.includes("model_reasoning_effort")).length, 1, "explicit effort placeholder is not duplicated");
 const session = { session_id: "term-1", user_id: "user-1", device_id: "mac-1", cwd: "/repo", status: "connected" };
 const terminal = { session_id: "term-1", command: "make test", status: "completed", started_at: "2026-01-01T00:00:00Z", ended_at: "2026-01-01T00:00:01Z", exit_code: 0, stdout_digest: "sha256:out", stderr_digest: "sha256:err", toolchain_fingerprint: "sha256:tool", artifact_digest: "sha256:art", commit: "abc", tree: "tree" };
 assert.equal(terminalSessionEvidence({ session, result: terminal, command: "make test", repo: "/repo" }).ok, true, "bound terminal completion passes");

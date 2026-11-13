@@ -58,6 +58,25 @@ export function render(cmd, { prompt = "", context = "", role = "staff", cwd = p
     else if (kind === "grok") out.splice(0, 0, "--rules", ctx);
     else env.AH_CONTEXT_FILE = (ctxFile ??= file("context.md", ctx));
   }
+  // A per-staff agent object may carry model/effort beside a fixed command. Apply
+  // those values to the built-in CLIs even when the command omits placeholders.
+  // Explicit flags or {model}/{effort} placeholders remain authoritative.
+  const insertForCli = (args) => {
+    const i = kind === "codex" ? out.indexOf("exec") : -1;
+    out.splice(i >= 0 ? i + 1 : 0, 0, ...args);
+  };
+  const hasModel = out.some((a) => ["--model", "-m"].includes(a) || a.startsWith("--model=") || a.startsWith("-m="));
+  if (b.model && !/\{model\}/.test(cmd) && !hasModel && ["codex", "claude", "grok"].includes(kind)) {
+    insertForCli(kind === "codex" ? ["-m", String(b.model)] : ["--model", String(b.model)]);
+  }
+  const hasEffort = kind === "codex"
+    ? out.some((a) => a.includes("model_reasoning_effort"))
+    : out.some((a) => ["--effort", "--reasoning-effort"].includes(a) || a.startsWith("--effort=") || a.startsWith("--reasoning-effort="));
+  if (b.effort && !/\{effort\}/.test(cmd) && !hasEffort && ["codex", "claude", "grok"].includes(kind)) {
+    insertForCli(kind === "codex"
+      ? ["-c", `model_reasoning_effort=\"${b.effort}\"`]
+      : [kind === "grok" ? "--reasoning-effort" : "--effort", String(b.effort)]);
+  }
   if (used && out.some((a) => a.length > 200000)) throw new Error("prompt too long for {prompt}: use {prompt_file} or stdin (no placeholder)");
   return { bin: w[0], args: out, stdin: used ? null : prompt, kind, env, contextVia: !ctx ? "none" : ctxUsed ? "placeholder" : { claude: "--append-system-prompt-file", codex: "-c developer_instructions", grok: "--rules" }[kind] ?? "env AH_CONTEXT_FILE", cwd: b.cwd || cwd };
 }

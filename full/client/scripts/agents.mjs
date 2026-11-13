@@ -40,10 +40,27 @@ export function loadAgentCfg(home, company) {
 export function flattenStaffs(tree = {}, inherited = {}, parent = null, out = {}) {
   for (const [role, raw] of Object.entries(tree ?? {})) {
     if (!raw || typeof raw !== "object") continue;
-    const { members, ...own } = raw;
+    const { members, ...rawOwn } = raw;
+    const own = normalizeStaffSettings(rawOwn);
     const entry = { ...own, ...(own.command ? {} : inherited.command ? { command: inherited.command } : {}), ...(parent ? { parent } : {}) };
     out[role] = entry;
     flattenStaffs(members, { command: entry.command }, role, out);
+  }
+  return out;
+}
+/** Unwrap the per-staff `agent` object while keeping legacy string provider aliases working. */
+function normalizeStaffSettings(staff = {}) {
+  const out = { ...staff };
+  const agent = out.agent;
+  if (agent && typeof agent === "object" && !Array.isArray(agent)) {
+    delete out.agent;
+    const nested = { ...agent };
+    const nestedAgent = nested.agent;
+    delete nested.agent;
+    Object.assign(out, nested);
+    if (!out.provider && typeof nestedAgent === "string") out.provider = nestedAgent;
+  } else if (typeof agent === "string") {
+    out.provider ??= agent;
   }
   return out;
 }
@@ -73,8 +90,9 @@ export function saveAgentCfg(home, company, o) {
  * > company model/text_model > CLI defaults. `holding staff list` shows exactly this resolution. */
 export function resolveAgent({ env = process.env, cfg = {}, text, role = null, stageModel = null, global = loadGlobalCfg(env.HOME || homedir()) }) {
   // per-staff mapping: company agent.json staff.<role> over agents.json staff.<role>; `agent` is the legacy name of `provider`
-  const gs = (role && global.staff?.[role]) || {}, cs = (role && cfg.staff?.[role]) || {};
-  const st = { ...gs, ...cs, provider: cs.provider ?? cs.agent ?? gs.provider ?? gs.agent };
+  const gs = normalizeStaffSettings((role && global.staff?.[role]) || {});
+  const cs = normalizeStaffSettings((role && cfg.staff?.[role]) || {});
+  const st = { ...gs, ...cs, provider: cs.provider ?? gs.provider };
   const gd = global.default ?? {};
   const agent = String(env.AH_AGENT || st.provider || cfg.agent || gd.provider || "grok").toLowerCase();
   const provs = { ...(global.providers ?? {}), ...(cfg.providers ?? {}) }; // company-local provider defs win
@@ -99,7 +117,7 @@ export const EFFORTS = ["low", "medium", "high"];
 /** `holding staff list` runtime cell for one staff: "<model> - <effort>" exactly as resolveAgent will run it. */
 export function staffRuntime({ env = process.env, cfg = {}, role, text = true, stageModel = null }) {
   const r = resolveAgent({ env, cfg, text, role, stageModel });
-  if (r.command) return `$ ${r.command.length > 40 ? r.command.slice(0, 39) + "…" : r.command}`;
+  if (r.command) return `$ ${r.command.length > 40 ? r.command.slice(0, 39) + "…" : r.command} (${r.binding?.model ?? "default"} - ${r.binding?.effort ?? "default"})`;
   return `${r.model ?? `${r.agent} default`} - ${r.effort ?? "default"}`;
 }
 export function claudeArgs({ model, text, prompt, schema, system, codeTools = CLAUDE_CODE_TOOLS, maxTurns, effort, context }) {
