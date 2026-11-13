@@ -50,7 +50,7 @@ ah_refresh_package() {
   echo "   resolved published release: $tag"
   tmp="$(mktemp -d "${TMPDIR:-/tmp}/ah-update.XXXXXX")"
   endpoint="https://api.github.com/repos/jokerphuongnam/agents-holding-cli/releases/latest"
-  [ "$tag" != latest ] && endpoint="https://api.github.com/repos/jokerphuongnam/agents-holding-cli/releases/tags/$tag"
+  [ "$tag" != latest ] && endpoint="https://api.github.com/repos/jokerphuongnam/agents-holding-cli/releases/tags/v$tag"
   release_json="$(curl -fsSL -H 'Accept: application/vnd.github+json' "$endpoint" 2>/dev/null || true)"
   asset_url="$(printf '%s' "$release_json" | jq -r '.assets[]? | select(.name | endswith(".tar.gz")) | .browser_download_url' 2>/dev/null | head -1)"
   asset_api_url="$(printf '%s' "$release_json" | jq -r '.assets[]? | select(.name | endswith(".tar.gz")) | .url' 2>/dev/null | head -1)"

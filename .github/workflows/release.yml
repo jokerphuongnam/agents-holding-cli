@@ -44,7 +44,12 @@ jobs:
       - name: Package public distribution
         run: |
           mkdir -p dist
-          tar --exclude=.git -czf "dist/agents-holding-cli-${GITHUB_REF_NAME}.tar.gz" .
+          # Keep the output directory out of the input tree. Otherwise tar
+          # reads the archive while it is still writing it and exits with
+          # "file changed as we read it", preventing the release from being
+          # created (and leaving the updater with a tag but no asset).
+          tar --exclude=.git --exclude=./dist --exclude=./dist/** \
+            -czf "dist/agents-holding-cli-${GITHUB_REF_NAME}.tar.gz" .
           git archive --format=zip --output="dist/agents-holding-cli-${GITHUB_REF_NAME}.zip" HEAD
       - name: Publish release and attach artifacts
         env:
