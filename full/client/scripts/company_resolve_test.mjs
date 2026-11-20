@@ -31,6 +31,19 @@ try {
   writeFileSync(join(root, "legacy", ".agents", "company.json"), JSON.stringify({ company: "legacy-co" }));
   assert.deepEqual(fromCwd(join(root, "legacy")), { company: "legacy-co", source: ".agents/company.json (legacy)" });
 
+  // A registered repo's company.json is the canonical server ID even when its
+  // generated Company OS directory still has the legacy <slug>-company name.
+  const repo3 = join(root, "repo3"), home3 = join(root, "home3");
+  mkdirSync(join(repo3, ".agents", "nailly-company"), { recursive: true });
+  mkdirSync(join(home3, ".config", "agents-holding"), { recursive: true });
+  writeFileSync(join(repo3, ".agents", "nailly-company", "COMPANY.md"), "x");
+  writeFileSync(join(repo3, ".agents", "company.json"), JSON.stringify({ company: "nailly" }));
+  writeFileSync(join(home3, ".config", "agents-holding", "projects.json"), JSON.stringify({ projects: [
+    { path: repo3, boards: [{ company: "nailly", project_key: "NAIL" }] },
+  ] }));
+  assert.deepEqual(fromCwd(repo3, { home: home3 }), { company: "nailly", source: ".agents/company.json (registered)" });
+  assert.equal(resolveCompany({ cwd: repo3, argv: [], env: {}, home: home3 }).company, "nailly");
+
   // marked folder wins over company.json at same level
   writeFileSync(join(repo, ".agents", "company.json"), JSON.stringify({ company: "pinned" }));
   // still ambiguous (two marked) — json must NOT win

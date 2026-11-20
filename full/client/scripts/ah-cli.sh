@@ -105,8 +105,30 @@ SK=""; case " ${A[*]:-} " in *" --custom "*) [ -n "$OWNCMD" ] && { SK="${AH_CUST
 if [ -z "$CO" ]; then
   ACT=""; [ -f "$HOME/.config/agents-holding/active" ] && ACT="$(tr -d '\n' < "$HOME/.config/agents-holding/active")"
   d="$PWD"; while [ "$d" != "/" ]; do
-    # Prefer .agents/<folder>/ with COMPANY.md|COMPANY_BOOT.md (any name). company.json is legacy fallback only.
+    # A repo registry maps the generated local folder name to the canonical
+    # server company ID. Trust that mapping only when the company.json ID is
+    # registered for this exact repo path.
     if [ -d "$d/.agents" ]; then
+      if [ -f "$d/.agents/company.json" ] && [ -f "$HOME/.config/agents-holding/projects.json" ]; then
+        _ah_registered_co="$(node - "$d" "$d/.agents/company.json" "$HOME/.config/agents-holding/projects.json" <<'NODE'
+const fs = require("fs"), path = require("path");
+try {
+  const [repo, companyFile, registryFile] = process.argv.slice(2);
+  const company = String(JSON.parse(fs.readFileSync(companyFile, "utf8")).company || "");
+  const root = fs.realpathSync(repo);
+  const registry = JSON.parse(fs.readFileSync(registryFile, "utf8"));
+  const matched = (registry.projects || []).some((p) => {
+    try {
+      return fs.realpathSync(p.path) === root && (p.boards || []).some((b) => b.company === company);
+    } catch { return false; }
+  });
+  if (matched) process.stdout.write(company);
+} catch {}
+NODE
+        )"
+        if [ -n "$_ah_registered_co" ]; then CO="$_ah_registered_co"; break; fi
+      fi
+      # Otherwise prefer .agents/<folder>/ with COMPANY.md|COMPANY_BOOT.md.
       _ah_cos=()
       for _ah_d in "$d/.agents"/*; do
         [ -d "$_ah_d" ] || continue
