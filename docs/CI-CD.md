@@ -27,3 +27,9 @@ AH_VERSION=YYYYMMDDNN holding update --yes
 This repository contains the client distribution. Production Supabase MCP and
 Railway identity deployments belong to the server project and are not changed
 by a CLI release.
+
+## Native listener release assets
+
+Each `vYYYYMMDDNN` release also builds the Rust Jira Listener for macOS, Linux, and Windows and attaches assets named `agents-holding-listener-<target>` to the same public CLI release. This is the location used by `holding update` for native listener upgrades.
+
+The listener source remains in the private `agents-holding-server` repository. Configure the `AGENTS_HOLDING_SERVER_READ_TOKEN` repository secret in `agents-holding-cli` with read-only Contents access to that repository. The workflow's built-in `GITHUB_TOKEN` publishes the artifacts to this CLI repository's release.
