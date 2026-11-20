@@ -55,6 +55,23 @@ usage: holding <noun> <verb> [args]   (chat: /<noun> <verb> ...; no verb = list/
 USAGE
 exit 2; }
 noun="${1:-}"; verb="${2:-}"; [ $# -gt 0 ] && shift; [ $# -gt 0 ] && shift
+# A registered PTY is a company-local shell. Never let an explicit switch,
+# --all, or a company-wide picker widen the context captured at registration.
+if [ -n "${AH_TERMINAL_SESSION_ID:-}" ]; then
+  [ -n "${AH_COMPANY:-}" ] || { echo "registered terminal has no company context; reconnect it with --company" >&2; exit 2; }
+  check_args=("$@");
+  while [ ${#check_args[@]} -gt 0 ]; do
+    case "${check_args[0]}" in
+      --company) [ "${check_args[1]:-}" = "$AH_COMPANY" ] || { echo "terminal is scoped to company $AH_COMPANY" >&2; exit 2; }; check_args=("${check_args[@]:2}") ;;
+      --all) echo "--all is unavailable in a company-registered terminal (company: $AH_COMPANY)" >&2; exit 2 ;;
+      *) check_args=("${check_args[@]:1}") ;;
+    esac
+  done
+  case "$noun $verb" in
+    "company "|"company use"|"company create"|"company list"|"company count"|"company overview")
+      echo "company switching/listing is unavailable in a terminal registered to $AH_COMPANY" >&2; exit 2 ;;
+  esac
+fi
 # deny add|remove|list <scope> [path] [--replace FILE]: scope * = company-wide, else one staff. Replacement files are scanned for real secrets first.
 denycmd() { local v="$1" sc="$2"; shift 2; local a=() rep="" force=""; while [ $# -gt 0 ]; do case "$1" in --replace) rep="$2"; a+=("--replace" "$2"); shift 2 ;; --force) force=1; shift ;; *) a+=("$1"); shift ;; esac; done
   [ "$v" = list ] && exec bash "$here/ah-cli.sh" staff policy deny list "$sc" "${a[@]+"${a[@]}"}"
