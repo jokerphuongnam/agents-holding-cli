@@ -12,7 +12,7 @@ merge. Pushes to `main` also run the same checks.
 
 ## Release
 
-Push a version tag in the `vYYYYMMDDNN` format, matching
+Push a tag in the shared `vYYYYMMDDNN` format, matching
 `full/client/scripts/VERSION`. The release workflow calls the same CI workflow,
 then packages the public distribution and creates a GitHub Release with
 `.tar.gz` and `.zip` assets. Publishing stops if either CI job fails or the
