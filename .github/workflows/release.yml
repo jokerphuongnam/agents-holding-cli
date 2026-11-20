@@ -4,8 +4,7 @@ on:
   push:
     tags:
       - '20[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
-      - 'v*'
-  workflow_dispatch:
+      - 'v[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
 
 permissions:
   contents: write
@@ -18,6 +17,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Verify tag matches client version
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(tr -d '\r\n' < full/client/scripts/VERSION)"
+          [[ "$tag" =~ ^[0-9]{10}$ && "$tag" = "$version" ]] || {
+            echo "Release tag must match full/client/scripts/VERSION (YYYYMMDDNN)." >&2
+            exit 1
+          }
       - name: Package public distribution
         run: |
           mkdir -p dist
