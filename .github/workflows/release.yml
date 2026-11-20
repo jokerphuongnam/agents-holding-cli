@@ -1,0 +1,42 @@
+name: Release client distribution
+
+on:
+  push:
+    tags:
+      - 'v[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    uses: ./.github/workflows/ci.yml
+  package:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify tag matches client version
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(tr -d '\r\n' < full/client/scripts/VERSION)"
+          [[ "$tag" =~ ^[0-9]{10}$ && "$tag" = "$version" ]] || {
+            echo "Release tag must match full/client/scripts/VERSION (YYYYMMDDNN)." >&2
+            exit 1
+          }
+      - name: Package public distribution
+        run: |
+          mkdir -p dist
+          tar --exclude=.git --exclude=./dist --exclude=./dist/** \
+            -czf "dist/agents-holding-cli-${GITHUB_REF_NAME}.tar.gz" .
+          git archive --format=zip --output="dist/agents-holding-cli-${GITHUB_REF_NAME}.zip" HEAD
+      - name: Publish release and attach artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" \
+            --latest \
+            --generate-notes

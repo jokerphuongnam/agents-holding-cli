@@ -1,0 +1,30 @@
+name: Client CI
+
+on:
+  pull_request:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: client-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Run client tests
+        run: |
+          bash tests/client_feature_test.sh
+          node full/client/scripts/oauth_test.mjs
+          node full/client/scripts/attach_oauth_test.mjs
+          node full/client/scripts/release_listener_test.mjs
