@@ -1,11 +1,12 @@
 // Company resolution (holding CLI + slash commands):
 // --company X > AH_COMPANY >
-// nearest repo .agents/<folder>/ with COMPANY.md|COMPANY_BOOT.md (any folder name; if several, prefer
+// nearest repo's registered .agents/company.json (canonical server ID) >
+// .agents/<folder>/ with COMPANY.md|COMPANY_BOOT.md (any folder name; if several, prefer
 //   active from `holding company use` when it matches one of them; else leave unresolved) >
-// legacy .agents/company.json > active alone.
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+// unregistered legacy .agents/company.json > active alone.
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 const H = () => process.env.HOME || homedir();
 export const activePath = (home = H()) => join(home, ".config/agents-holding/active");
 export const getActive = (home = H()) => { try { return readFileSync(activePath(home), "utf8").trim() || null; } catch { return null; } };
@@ -20,13 +21,35 @@ function isCompanyDir(agents, name) {
   } catch { return false; }
 }
 
-/** Walk cwd→root. Collect company folders under .agents/; resolve one. Legacy company.json is last resort at that level. */
-export function fromCwd(cwd = process.cwd(), { active = null } = {}) {
+function registeredCompanyForRepo(repo, company, home = H()) {
+  if (!company) return false;
+  try {
+    const registry = JSON.parse(readFileSync(join(home, ".config/agents-holding/projects.json"), "utf8"));
+    const root = join(repo);
+    return (registry.projects ?? []).some((p) => {
+      if (!p.path || requireRealPath(p.path) !== requireRealPath(root)) return false;
+      return (p.boards ?? []).some((b) => b.company === company);
+    });
+  } catch { return false; }
+}
+function requireRealPath(p) {
+  // Resolve symlinks when possible while still supporting paths that are not mounted.
+  try { return realpathSync(p); } catch { return resolve(p); }
+}
+
+/** Walk cwd→root. A registered company.json canonicalizes a legacy local folder name. */
+export function fromCwd(cwd = process.cwd(), { active = null, home = H() } = {}) {
   let d = cwd;
   for (;;) {
     const agents = join(d, ".agents");
     try {
       if (existsSync(agents) && statSync(agents).isDirectory()) {
+        try {
+          const j = JSON.parse(readFileSync(join(agents, "company.json"), "utf8"));
+          if (j?.company && registeredCompanyForRepo(d, String(j.company), home)) {
+            return { company: String(j.company), source: ".agents/company.json (registered)" };
+          }
+        } catch {}
         const dirs = readdirSync(agents).filter((n) => isCompanyDir(agents, n));
         if (dirs.length === 1) return { company: dirs[0], source: `.agents/${dirs[0]}` };
         if (dirs.length > 1) {
@@ -34,7 +57,7 @@ export function fromCwd(cwd = process.cwd(), { active = null } = {}) {
           // ambiguous: do not guess; keep walking? No — this repo's .agents is the stop; leave unresolved so caller can ask.
           return { company: null, source: null, candidates: dirs.map((n) => `.agents/${n}`) };
         }
-        // no marked folders: legacy company.json at this level
+        // no marked folders: unregistered legacy company.json at this level
         try {
           const j = JSON.parse(readFileSync(join(agents, "company.json"), "utf8"));
           if (j?.company) return { company: String(j.company), source: ".agents/company.json (legacy)" };
@@ -52,7 +75,7 @@ export function resolveCompany({ argv = process.argv.slice(2), env = process.env
   if (i >= 0 && argv[i + 1]) return { company: argv[i + 1], source: "--company" };
   if (env.AH_COMPANY) return { company: env.AH_COMPANY, source: "AH_COMPANY" };
   const active = getActive(home);
-  const hit = fromCwd(cwd, { active });
+  const hit = fromCwd(cwd, { active, home });
   if (hit?.company) return { company: hit.company, source: hit.source };
   if (hit?.candidates) return { company: null, source: null, candidates: hit.candidates };
   if (active) return { company: active, source: "active (holding company use)" };
