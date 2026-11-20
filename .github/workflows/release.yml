@@ -1,4 +1,4 @@
-name: Release client and native listener
+name: Release client
 
 on:
   push:
@@ -38,59 +38,8 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
-  listener:
-    needs: verify
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-          - os: ubuntu-22.04
-            target: aarch64-unknown-linux-gnu
-            cross_linux_arm64: true
-          - os: macos-14
-            target: aarch64-apple-darwin
-          - os: macos-13
-            target: x86_64-apple-darwin
-          - os: windows-2022
-            target: x86_64-pc-windows-msvc
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Checkout private listener source
-        uses: actions/checkout@v4
-        with:
-          repository: jokerphuongnam/agents-holding-server
-          ref: main
-          token: ${{ secrets.AGENTS_HOLDING_SERVER_READ_TOKEN }}
-          path: server-source
-      - if: matrix.cross_linux_arm64
-        name: Install Linux ARM64 linker
-        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-      - name: Test listener
-        run: cargo test --manifest-path server-source/services/listener-rs/Cargo.toml --locked
-      - name: Build listener
-        run: cargo build --release --manifest-path server-source/services/listener-rs/Cargo.toml --target ${{ matrix.target }} --locked
-      - name: Package native listener asset
-        shell: bash
-        run: |
-          mkdir -p dist
-          ext=""
-          [ "${{ runner.os }}" = "Windows" ] && ext=".exe"
-          name="agents-holding-listener-${{ matrix.target }}${ext}"
-          cp "server-source/services/listener-rs/target/${{ matrix.target }}/release/agents-holding-listener${ext}" "dist/$name"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: listener-${{ matrix.target }}
-          path: dist/agents-holding-listener-*
-          if-no-files-found: error
-
   publish:
-    needs: [client, listener]
+    needs: client
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -98,10 +47,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
+          name: client-distribution
           path: dist
-          pattern: '*'
-          merge-multiple: true
-      - name: Publish release with client and native listener assets
+      - name: Publish release assets
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

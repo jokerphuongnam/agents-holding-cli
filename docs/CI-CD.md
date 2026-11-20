@@ -1,7 +1,7 @@
 # Client CI/CD
 
 The public CLI uses one verification workflow for pull requests, pushes to
-`main`, manual runs, and tagged releases.
+`main`, and tagged releases.
 
 ## Continuous integration
 
@@ -24,12 +24,5 @@ After publication, update an installed client with:
 AH_VERSION=YYYYMMDDNN holding update --yes
 ```
 
-This repository contains the client distribution. Production Supabase MCP and
-Railway identity deployments belong to the server project and are not changed
-by a CLI release.
-
-## Native listener release assets
-
-Each `vYYYYMMDDNN` release also builds the Rust Jira Listener for macOS, Linux, and Windows and attaches assets named `agents-holding-listener-<target>` to the same public CLI release. This is the location used by `holding update` for native listener upgrades.
-
-The listener source remains in the private `agents-holding-server` repository. Configure the `AGENTS_HOLDING_SERVER_READ_TOKEN` repository secret in `agents-holding-cli` with read-only Contents access to that repository. The workflow's built-in `GITHUB_TOKEN` publishes the artifacts to this CLI repository's release.
+This repository contains the public client distribution. Supabase and Railway
+deployments are triggered by service-specific tags in the server repository.
