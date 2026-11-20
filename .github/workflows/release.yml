@@ -3,7 +3,6 @@ name: Release client distribution
 on:
   push:
     tags:
-      - '20[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
       - 'v[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
 
 permissions:
@@ -43,4 +42,5 @@ jobs:
           gh release create "$GITHUB_REF_NAME" dist/* \
             --repo "$GITHUB_REPOSITORY" \
             --title "$GITHUB_REF_NAME" \
+            --latest \
             --generate-notes
