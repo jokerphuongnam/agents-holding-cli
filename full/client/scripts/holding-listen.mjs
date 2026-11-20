@@ -24,6 +24,7 @@ import * as ME from "./mirror-executor.mjs";
 import { projectConfig } from "./server-mcp.mjs";
 import { selectAvailableTerminal, dispatchTerminal } from "./terminal-runtime.mjs";
 import { atlassianToken } from "./attach.mjs";
+import { isAutomationEcho } from "./listener-events.mjs";
 import { readFileSync as readFileSync_AH } from "node:fs";
 const AH_CLIENT_VERSION = (() => { try { return readFileSync_AH(new URL("./VERSION", import.meta.url), "utf8").trim(); } catch { return "0"; } })();
 
@@ -1692,6 +1693,7 @@ async function connect(company) {
       if (issueKey && !ownsProject) { log("skip", issueKey, `(project ${projectKey} is not registered for ${company}/${onlyRepo ?? repo})`); return; }
       const p = { ...raw, company };
       if (p.enterprise && company in myJira && p.assignee_account !== myJira[company]) { log("skip", p.issue ?? "", "(assigned to someone else)"); return; }
+      if (isAutomationEcho(p.event)) { log("skip agent-authored comment event", p.issue ?? p.task_id ?? ""); return; }
       if (p.rules_only) { applyJiraRules(p).catch((e) => log("rules failed:", e.message)); return; }
       L.writeStatus(homedir(), { companies: { [company]: { last_event_at: new Date().toISOString(), last_event: `${p.event} ${p.issue ?? ""}`.trim() } } });
       log("next_action", company, p.event, p.issue ?? p.task_id ?? "", "stage", p.stage, p.waiting ? "(waiting on user)" : "");
