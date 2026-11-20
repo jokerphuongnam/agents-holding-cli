@@ -6,8 +6,9 @@ The public CLI uses one verification workflow for pull requests, pushes to
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs the macOS Seatbelt check and Linux client,
-workflow, access-policy, and bubblewrap checks. Pull requests and every push to
-`main` must pass both jobs before the change is considered ready to release.
+workflow, access-policy, and bubblewrap checks. Branch protection on `main`
+requires both `macos-policy` and `linux-tests` to pass before a pull request can
+merge. Pushes to `main` also run the same checks.
 
 ## Release
 
