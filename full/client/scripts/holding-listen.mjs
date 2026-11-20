@@ -1558,8 +1558,12 @@ async function reconcile(company, sinceIso, forceActive = false) {
         const r = await mcp("reconcile_issue", { company, issue: x.key, status: x.status, updated: x.updated, project_key: b.project_key, summary: f.summary ?? "", description: f.description ?? "", labels: f.labels ?? [], assignee_account: f.assignee?.accountId ?? null,
           comment: latestComment ? { id: latestComment.id, body: latestComment.body, author: latestComment.author } : null });
         X.replayMark(st, [X.replayKey(x.key, x.status, x.updated)]); n++;
-        await applyJiraRules({ company, issue: x.key, event: x.status?.toLowerCase() === "done" ? "issue_transitioned" : "label_added" });
         log(`reconcile ${x.key} "${x.status}": ${r.duplicate ? "already applied" : r.replayed ? `replayed (${r.event ?? "?"}, ${r.stage_before ?? "new"} -> ${r.stage_after ?? "?"})` : `skipped (${r.reason ?? "?"})`}`);
+        if (isAutomationEcho(r.event)) {
+          log(`reconcile ${x.key}: ignored listener-authored Jira comment; no rules or workflow wake`);
+          continue;
+        }
+        await applyJiraRules({ company, issue: x.key, event: x.status?.toLowerCase() === "done" ? "issue_transitioned" : "label_added" });
         // The server checkpoint, not a Jira-status-to-stage guess, is the
         // source of truth. This resumes Product Work/BA/Planning/Pre Coding,
         // Coding, QC, Reopened and custom active stages at their exact stage.
