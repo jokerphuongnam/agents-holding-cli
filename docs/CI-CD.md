@@ -1,7 +1,7 @@
 # Client CI/CD
 
 The public CLI uses one verification workflow for pull requests, pushes to
-`main`, manual runs, and tagged releases.
+`main`, and tagged releases.
 
 ## Continuous integration
 
@@ -24,6 +24,5 @@ After publication, update an installed client with:
 AH_VERSION=YYYYMMDDNN holding update --yes
 ```
 
-This repository contains the client distribution. Production Supabase MCP and
-Railway identity deployments belong to the server project and are not changed
-by a CLI release.
+This repository contains the public client distribution. Supabase and Railway
+deployments are triggered by service-specific tags in the server repository.

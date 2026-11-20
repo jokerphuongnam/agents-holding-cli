@@ -1,4 +1,4 @@
-name: Release client distribution
+name: Release client
 
 on:
   push:
@@ -11,7 +11,8 @@ permissions:
 jobs:
   verify:
     uses: ./.github/workflows/ci.yml
-  package:
+
+  client:
     needs: verify
     runs-on: ubuntu-latest
     steps:
@@ -28,14 +29,27 @@ jobs:
       - name: Package public distribution
         run: |
           mkdir -p dist
-          # Keep the output directory out of the input tree. Otherwise tar
-          # reads the archive while it is still writing it and exits with
-          # "file changed as we read it", preventing the release from being
-          # created (and leaving the updater with a tag but no asset).
           tar --exclude=.git --exclude=./dist --exclude=./dist/** \
             -czf "dist/agents-holding-cli-${GITHUB_REF_NAME}.tar.gz" .
           git archive --format=zip --output="dist/agents-holding-cli-${GITHUB_REF_NAME}.zip" HEAD
-      - name: Publish release and attach artifacts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: client-distribution
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    needs: client
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: client-distribution
+          path: dist
+      - name: Publish release assets
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
