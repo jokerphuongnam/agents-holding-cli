@@ -26,7 +26,7 @@ globalThis.fetch = async (url, init) => {
   return { ok: true, status: 200, json: async () => ({}) };
 };
 try { await jira.issue("MARLIN-1"); } finally { globalThis.fetch = originalFetch; }
-assert.equal(calls[0].url, "https://api.atlassian.com/ex/jira/cloud/rest/api/3/issue/MARLIN-1?fields=summary,description,comment");
+assert.equal(calls[0].url, "https://api.atlassian.com/ex/jira/cloud/rest/api/3/issue/MARLIN-1?fields=summary,description,comment,issuetype");
 assert.equal(calls[0].auth, "Bearer oauth-access");
 const expired = L.jiraClient({ jira: "https://api.atlassian.com/ex/jira/cloud/rest/api/3", auth: () => "Bearer expired" }, { dry: false, log() {} });
 globalThis.fetch = async () => ({ ok: false, status: 401, json: async () => ({ errorMessages: ["token expired"] }) });
