@@ -4,7 +4,7 @@ import "../kc-guard.mjs"; // pin keychain calls to the real login keychain (neve
 // "keychain": "<Keychain service holding the API key>" (omit for keyless local servers), "maxTurns", "testCommand", "supportsEffort" }.
 // No native coding CLI needed: a minimal, repo-confined tool loop (read_file, list_dir, write_file, run_tests) with capped turns.
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve, sep } from "node:path";
 
 const keyFrom = (svc) => { if (!svc) return null; try { return execFileSync("security", ["find-generic-password", "-s", svc, "-a", process.env.USER, "-w"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { return null; } };
@@ -16,6 +16,7 @@ export const TOOL_DEFS = {
   list_dir: fn("list_dir", "List entries of a repo directory (relative path, '.' = root).", { path: S }),
   write_file: fn("write_file", "Create or overwrite a repo file with the full new content.", { path: S, content: S }),
   run_tests: fn("run_tests", "Run the project's configured test command; returns exit code and the output tail.", {}, []),
+  run_reproducer: fn("run_reproducer", "Run a temporary reproduction script under .ah-repro/ and delete it after the run. Allowed runtimes: node, python3, bash.", { path: S, runtime: { type: "string", enum: ["node", "python3", "bash"] } }),
 };
 /** Resolve a model-supplied path inside the repo; refuses escapes and .git. */
 export function safePath(root, p) {
@@ -24,12 +25,19 @@ export function safePath(root, p) {
   if (relative(r, abs).split(sep).includes(".git")) throw new Error(".git is off limits");
   return abs;
 }
-export function runTool(name, args, { cwd, testCommand, write }) {
+export function runTool(name, args, { cwd, testCommand, write, tech = false }) {
   try {
     if (name === "read_file") { const t = readFileSync(safePath(cwd, args.path), "utf8"); return t.length > 20000 ? t.slice(0, 20000) + "\n...[truncated]" : t; }
     if (name === "list_dir") { const d = safePath(cwd, args.path); return readdirSync(d).filter((x) => x !== ".git").slice(0, 300).map((x) => statSync(resolve(d, x)).isDirectory() ? x + "/" : x).join("\n"); }
-    if (name === "write_file" && write) { const f = safePath(cwd, args.path); mkdirSync(dirname(f), { recursive: true }); writeFileSync(f, String(args.content ?? "")); return `wrote ${relative(cwd, f)}`; }
-    if (name === "run_tests" && write) {
+    if (name === "write_file" && (write || (tech && String(args.path ?? "").startsWith(".ah-repro/")))) { const f = safePath(cwd, args.path); if (tech && !relative(cwd, f).startsWith(".ah-repro/")) return "PreWork may only write temporary files under .ah-repro/"; mkdirSync(dirname(f), { recursive: true }); writeFileSync(f, String(args.content ?? "")); return `wrote ${relative(cwd, f)}`; }
+    if (name === "run_reproducer" && tech) {
+      const f = safePath(cwd, args.path), rel = relative(cwd, f), runtime = { node: "node", python3: "python3", bash: "bash" }[args.runtime];
+      if (!runtime || !rel.startsWith(".ah-repro/") || !existsSync(f)) return "reproducer must be an existing script under .ah-repro/ with runtime node, python3, or bash";
+      try { const out = execFileSync(runtime, [f], { cwd, encoding: "utf8", timeout: 60000, stdio: ["ignore", "pipe", "pipe"] }); return `exit 0\n${out.slice(-4000)}`; }
+      catch (e) { return `exit ${e.status ?? "?"}\n${String((e.stdout ?? "") + (e.stderr ?? "")).slice(-4000)}`; }
+      finally { try { unlinkSync(f); } catch {} }
+    }
+    if (name === "run_tests" && write && !tech) {
       const cmd = testCommand || (existsSync(resolve(cwd, "package.json")) ? "npm test --silent" : null); if (!cmd) return "no test command configured";
       try { return "exit 0\n" + execFileSync("sh", ["-c", cmd], { cwd, encoding: "utf8", timeout: 180000, stdio: ["ignore", "pipe", "pipe"] }).slice(-4000); }
       catch (e) { return `exit ${e.status ?? "?"}\n` + String((e.stdout ?? "") + (e.stderr ?? "")).slice(-4000); }
@@ -50,9 +58,9 @@ export function createProvider(name, def = {}) {
       try { const m = await this.listModels(); return { ok: true, detail: `${base} (${m.length} models)` }; } catch (e) { return { ok: false, detail: `${base} unreachable: ${e.message}` }; }
     },
     async run(o, ctx = {}) {
-      const code = !o.text, names = code ? ["read_file", "list_dir", "write_file", "run_tests"] : o.kind === "tech" ? ["read_file", "list_dir"] : [];
+      const code = !o.text, tech = o.kind === "tech", names = code ? ["read_file", "list_dir", "write_file", "run_tests"] : tech ? ["read_file", "list_dir", "write_file", "run_reproducer"] : [];
       const maxTurns = o.maxTurns ?? (code ? def.maxTurns ?? 15 : o.kind === "tech" ? 4 : 1);
-      const sys = [o.system, o.context, names.length ? "Use the tools to inspect/change files in the repo (paths relative to repo root)." : "",
+      const sys = [o.system, o.context, tech ? "Use tools in PreWork only to inspect and reproduce Bugs. Temporary scripts must be written under .ah-repro/ and run with run_reproducer, which deletes each script after execution. Never edit product code." : code ? "Use the tools to inspect/change files in the repo (paths relative to repo root)." : "",
         `When finished, reply with ONLY one JSON object matching this JSON schema:\n${JSON.stringify(o.schema)}`].filter(Boolean).join("\n\n");
       const msgs = [{ role: "system", content: sys }, { role: "user", content: o.prompt }];
       const usage = { input: 0, output: 0, cached: 0, reasoning: 0, calls: 0, model: o.model ?? def.model ?? null };
@@ -68,7 +76,7 @@ export function createProvider(name, def = {}) {
         if (!m.tool_calls?.length || last) { const result = firstJson(m.content) ?? (m.content ? { summary: String(m.content) } : {}); return { result, text: m.content ?? "", usage, exitCode: 0 }; }
         msgs.push({ role: "assistant", content: m.content ?? null, tool_calls: m.tool_calls });
         for (const tc of m.tool_calls) { let a = {}; try { a = JSON.parse(tc.function?.arguments || "{}"); } catch {}
-          msgs.push({ role: "tool", tool_call_id: tc.id, content: names.includes(tc.function?.name) ? runTool(tc.function.name, a, { cwd: o.cwd, testCommand: def.testCommand, write: code }) : "tool not allowed" }); }
+          msgs.push({ role: "tool", tool_call_id: tc.id, content: names.includes(tc.function?.name) ? runTool(tc.function.name, a, { cwd: o.cwd, testCommand: def.testCommand, write: code, tech }) : "tool not allowed" }); }
       }
       return { result: {}, usage, exitCode: 1, error: "turn cap" };
     },
