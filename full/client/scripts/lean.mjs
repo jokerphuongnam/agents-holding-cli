@@ -3,10 +3,10 @@ import "./kc-guard.mjs"; // pin keychain calls to the real login keychain (never
 // Scripts do everything deterministic: read the Jira issue (REST), record artifacts, advance stages, Jira comments,
 // transitions (via jiraOps), branch + commit. The model is called only for the text it must write:
 //   * text stages (product_work / ba_question / plan revision): ONE tool-less call, cheap model, JSON {plan|question}
-//   * Pre Coding (tech_plan): ONE tool-less call, cheap model: tech plan + the developer role picked from the server roster. NO code.
-//   * Coding (code): the script moves the card to Coding FIRST, then ONE coding call (default model) implements the saved tech plan.
+//   * PreWork (tech_plan): ONE tool-less call, cheap model: tech plan + the developer role picked from the server roster. NO code.
+//   * Working (code): the script moves the card to Working FIRST, then ONE coding call (default model) implements the saved tech plan.
 //   * QC (qc_test): the script moves the card to QC, then runs the repo's own checks (npm test/lint/typecheck/build, pytest, go, cargo)
-//     before vs after; only newly failing checks fail QC. A diagnosis call directs Coding only for confirmed regressions; unchanged failures stop as Blocked.
+//     before vs after; only newly failing checks fail QC. A diagnosis call directs Working only for confirmed regressions; unchanged failures stop as Blocked.
 //   Each stage is its own step; the Jira card is moved right after each advance, so the board shows what is actually happening.
 //   Every comment: "[agent-holding] [<staff name>] ..." (staff from the server's stage owners / roster).
 // Every model call is a FRESH session (no resume) with no MCP servers (lean GROK_HOME / CODEX_HOME, claude --strict-mcp-config);
@@ -100,15 +100,17 @@ export function validateStaffScope(scope, repo) {
 export const reviewBackComment = (dev) => `${staffTag(staffName(dev))} ${T("review")}`;
 export const ENTER_ONLY = new Set(["planned", "in_review", "done"]);
 // grok --tools names: "Bash" = run_terminal_command ("run_terminal_command" itself is NOT accepted and silently loads ALL ~22 tools, ~9k tokens/turn)
-/** Coding call turn cap (model calls); AH_CODE_MAX_TURNS overrides. Stops runaway loops (KAN-6: 60 calls, 2.26M input tokens). */
+/** Working call turn cap (model calls); AH_CODE_MAX_TURNS overrides. Stops runaway loops (KAN-6: 60 calls, 2.26M input tokens). */
 export const codeMaxTurns = (env = process.env) => Math.max(5, Number(env.AH_CODE_MAX_TURNS) || 25);
 export const CODE_TOOLS = "Bash,read_file,search_replace,write,grep,list_dir";
-export const TECH_TOOLS = "read_file,grep,list_dir"; // Pre Coding: read-only, a few turns max, cheap model
+export const TECH_TOOLS = "Bash,read_file,write,grep,list_dir"; // PreWork: inspect + run a temporary reproducer; never implement product work
 export const TEXT_SCHEMA = { type: "object", properties: { plan: { type: "string" }, question: { type: "string" } } };
-export const CODE_SCHEMA = { type: "object", properties: { summary: { type: "string" }, tests: { type: "string" }, commit_message: { type: "string" }, commit: { type: "string" }, where: { type: "string" }, changed_files: { type: "array", items: { type: "string" } }, implementation_evidence: { type: "string" }, question: { type: "string" }, qc_diagnosis: { type: "string", enum: ["task_regression", "preexisting", "environment", "uncertain"] }, qc_root_cause: { type: "string" }, qc_fix_for: { type: "string" } }, required: ["summary"] };
-export const TECH_SCHEMA = { type: "object", properties: { tech_plan: { type: "string" }, developer: { type: "string" }, question: { type: "string" } } };
+export const CODE_SCHEMA = { type: "object", properties: { summary: { type: "string" }, tests: { type: "string" }, commit_message: { type: "string" }, commit: { type: "string" }, where: { type: "string" }, repo_changes: { type: "boolean" }, work_kind: { type: "string", enum: ["code", "configuration", "documentation", "design", "content", "deletion", "external", "analysis", "research", "no_change"] }, no_work_needed: { type: "object", properties: { reason: { type: "string" }, evidence: { type: "string" } } }, changed_files: { type: "array", items: { type: "string" } }, implementation_evidence: { type: "string" }, question: { type: "string" }, qc_diagnosis: { type: "string", enum: ["task_regression", "preexisting", "environment", "uncertain"] }, qc_root_cause: { type: "string" }, qc_fix_for: { type: "string" } }, required: ["summary"] };
+export const TECH_SCHEMA = { type: "object", properties: { tech_plan: { type: "string" }, developer: { type: "string" }, work_kind: { type: "string", enum: ["code", "configuration", "documentation", "design", "content", "deletion", "external", "analysis", "research", "no_change"] }, outcome: { type: "string", enum: ["proceed", "unable_to_reproduce", "no_work_needed", "question"] }, evidence: { type: "string" }, reproduction: { type: "object", properties: { status: { type: "string", enum: ["reproduced", "unable_to_reproduce", "not_applicable"] }, setup: { type: "string" }, steps: { type: "array", items: { type: "string" } }, expected: { type: "string" }, actual: { type: "string" }, evidence: { type: "string" }, attempts: { type: "array", items: { type: "object", properties: { steps: { type: "string" }, result: { type: "string" } } } } } }, question: { type: "string" } }, required: ["outcome"] };
 export const QC_DIAGNOSIS_SCHEMA = { type: "object", properties: { classification: { type: "string", enum: ["task_regression", "preexisting", "environment", "uncertain"] }, root_cause: { type: "string" }, evidence: { type: "string" }, fix_direction: { type: "string" }, question: { type: "string" } }, required: ["classification", "root_cause", "evidence"] };
-export const QC_DIAGNOSIS_SYSTEM = "You are an evidence-first QC diagnostician. Do not edit code. Classify each failure using only the task acceptance criteria, branch diff, exact command, exit status and logs. Recommend Coding only when evidence ties the failure to this task's changes. Pre-existing, environmental, or uncertain failures must be returned for user action, not speculative remediation. Reply with JSON only.";
+export const QC_REVIEW_SCHEMA = { type: "object", properties: { pass: { type: "boolean" }, summary: { type: "string" }, acceptance_criteria: { type: "array", items: { type: "string" } }, evidence: { type: "string" }, findings: { type: "array", items: { type: "object", properties: { id: { type: "string" }, file: { type: "string" }, expected: { type: "string" }, actual: { type: "string" }, evidence: { type: "string" } } } } }, required: ["pass", "summary"] };
+export const QC_REVIEW_SYSTEM = "You independently review the actual non-code deliverable against acceptance criteria. For documentation check correctness, completeness, clarity, links, examples and formatting in scope. Do not require code edits, a PR or unrelated tests. Return specific evidence and JSON only.";
+export const QC_DIAGNOSIS_SYSTEM = "You are an evidence-first QC diagnostician. Do not edit code. Classify each failure using only the task acceptance criteria, branch diff, exact command, exit status and logs. Recommend Working only when evidence ties the failure to this task's changes. Pre-existing, environmental, or uncertain failures must be returned for user action, not speculative remediation. Reply with JSON only.";
 
 // ---------- pure helpers (unit-tested in tests/lean_test.mjs) ----------
 export function adfText(n) {
@@ -123,7 +125,7 @@ export function compactIssue(j, max = { desc: 1500, comments: 4, comment: 400 })
   const f = j?.fields ?? {};
   const comments = (f.comment?.comments ?? []).map((c) => ({ who: c.author?.displayName ?? "?", t: clip(adfText(c.body), max.comment) }))
     .filter((c) => c.t && !isAgentText(c.t)).slice(-max.comments);
-  return { summary: f.summary ?? "", description: clip(adfText(f.description), max.desc), comments };
+  return { summary: f.summary ?? "", description: clip(adfText(f.description), max.desc), issueType: f.issuetype?.name ?? "", comments };
 }
 /** Up to n repo files whose path matches words of the task (cheap file hints; whole list if the repo is tiny). */
 export function fileHints(files, text, n = 8) {
@@ -138,7 +140,7 @@ export function neededArtifact(from, to, onEnter = false) {
   if (onEnter) return "note";
   if (from === "product_work" || from === "ba_question") return to === "ba_question" ? "question" : "plan";
   if (from === "pre_coding") return "tech_plan";
-  if (from === "coding") return to === "in_review" ? "pr" : null;
+  if (from === "coding") return "note";
   if (from === "qc") return to === "in_review" ? "pr" : "qc_pass";
   return null;
 }
@@ -156,8 +158,8 @@ export function workChecklist(na = {}, { issue = "TASK", stage = na.stage, plan 
 }
 /** Evidence gate for implementation -> the next quality/review stage.  A model
  * answer is not evidence: the worker must show what changed and where. Build
- * and test execution belongs to the explicit QC terminal gate; Coding must not
- * fail early merely because QC has not run yet. A flow may opt Coding into
+ * and test execution belongs to the explicit QC terminal gate; Working must not
+ * fail early merely because QC has not run yet. A flow may opt Working into
  * test evidence with require_tests=true. */
 export function implementationEvidence(result, commit, where = "", policy = {}) {
   const r = result && typeof result === "object" ? result : {};
@@ -183,7 +185,7 @@ export function feedbackOf(na) {
   for (const s of na?.steps ?? []) { const m = s.match(/^(?:User feedback on the plan|Address|Review comment|User answered): (.*)$/s); if (m) { try { return JSON.parse(m[1]); } catch { return m[1]; } } }
   return null;
 }
-const issueBlock = (iss) => [`Task ${iss.key}: ${iss.summary}`, iss.description && `Description:\n${iss.description}`,
+const issueBlock = (iss) => [`${iss.issueType || "Work item"} ${iss.key}: ${iss.summary}`, iss.description && `Description:\n${iss.description}`,
   iss.comments?.length && `Comments:\n${iss.comments.map((c) => `- ${c.who}: ${c.t}`).join("\n")}`].filter(Boolean).join("\n");
 export function textPrompt(iss, o = {}) {
   return [issueBlock(iss), o.context && `Project: ${o.context}`, o.prevPlan && `Current plan:\n${o.prevPlan}`, o.feedback && `User feedback: ${o.feedback}`,
@@ -197,29 +199,32 @@ export function qcDiagnosisPrompt(iss, { plan, implementation, failures }) {
 export const TEXT_SYSTEM = "You are a senior BA/tech lead. You write short, concrete task plans. Reply with JSON only.";
 export function codePrompt(iss, o = {}) {
   return [issueBlock(iss), o.plan && `Approved plan:\n${o.plan}`, o.techPlan && `Tech plan (follow it; read only the files it names unless something is missing):\n${o.techPlan}`,
-    o.approval && `User: ${o.approval}`, o.review && `The user reviewed your change on branch ${o.branch ?? "feature/" + iss.key} (already checked out, your earlier commits are on it) and sent it back to Coding.`,
+    o.approval && `User: ${o.approval}`, o.review && `The user reviewed your change on branch ${o.branch ?? "feature/" + iss.key} (already checked out, your earlier commits are on it) and sent it back to Working.`,
     o.feedback && `Address this ${o.review ? "review " : ""}feedback: ${o.feedback}`,
     o.qcRemediation && `QC diagnosis from the QC lead:\n${o.qcRemediation}\nImplement only the diagnosed fix_direction for the named failure. Do not broaden scope. Report qc_root_cause and qc_fix_for (the exact failed assertion/check this change resolves).`,
     o.qcRemediation && "The final JSON must include qc_diagnosis (task_regression|preexisting|environment|uncertain), qc_root_cause, and qc_fix_for.",
     o.preexisting?.length && `Already failing BEFORE your change (QC baseline): ${o.preexisting.join(", ")}. Ignore these: do not run, investigate or fix them; QC only blames new failures.`,
     !o.techPlan && o.hints?.length && `Likely files: ${o.hints.join(", ")}`,
-    `${o.review ? "Change only what the feedback asks" : "Implement only the behavior and acceptance criteria in the task; do not add adjacent cleanup, refactors, or improvements"}${o.qc ? "; then run the cheapest relevant check (build/tests) and fix only failures caused by this change" : "; do not run tests/builds (QC runs them by script)"}.`,
+    `${o.review ? "Address only the review feedback" : "Complete the requested deliverable in its appropriate form"}. Inspect current state and task history. Repository changes are optional. Documentation, design, content, analysis, research and external work are valid deliverables. Do not invent edits to satisfy a diff check. If no work remains, return no_work_needed with reason and evidence; repo_changes=false alone is not a no-work decision. For configuration verify only the affected behavior, not every repo test. Run checks only when they directly verify acceptance criteria.`,
     `${o.review ? "This is a review follow-up: inspect the existing implementation and apply only the requested review changes. If no file change is needed, report that clearly and do not create a fake commit." : "This is an implementation run, not a planning/review-only run: inspect the named files, make the required code/config changes in the checked-out repo, verify the diff, and create a local commit when the task requires code. Do not stop after describing a plan."} Before committing, compare every changed path with the approved plan and acceptance criteria; revert unrelated changes. Never create a placeholder, Vietnamese/English Markdown note, test fixture, or other file just to produce a commit or satisfy evidence. For cleanup tasks, remove only the named/generated artifacts and make the requested implementation change; do not broaden cleanup. Do not push, create a PR, merge, or touch Jira (the workflow scripts handle those actions). If this task does not explicitly require documentation, do not create, migrate, translate, or delete README/Markdown files. Never create files merely to satisfy a commit or evidence rule. If documentation/config-only, commit only the required tracked changes.`,
-    "Do not return a tech_plan, plan, or implementation proposal from Coding. The final JSON must describe work already performed: summary of files changed, local commit SHA/message, and checks/results. A plan-only response is invalid and will be retried.",
-    `Finish with JSON: {"summary": "what changed", ${o.qc ? "\"tests\": \"checks run + result\", " : ""}\"commit_message\": \"one line or empty if no commit is appropriate\", \"commit\": \"local SHA or empty\", \"changed_files\": ["exact changed paths, including ignored files"], \"implementation_evidence\": \"before/after hash or concrete change evidence\", \"where\": \"exact paths\"}.`].filter(Boolean).join("\n\n");
+    "Do not return a tech_plan, plan, or implementation proposal from Working. The final JSON must describe work already performed: summary of files changed, local commit SHA/message, and checks/results. A plan-only response is invalid and will be retried.",
+    `Finish with JSON: {"summary":"what was done or why no work remained", "repo_changes":true|false, "changed_files":["repo-relative path"], "work_kind":"code|configuration|documentation|design|content|deletion|external|analysis|research|no_change", "no_work_needed":{"reason":"...","evidence":"..."} (only when no work remains), ${o.qc ? "\"tests\": \"relevant checks + result or not applicable\", " : ""}\"commit_message\": \"one line or empty when not appropriate\", \"commit\": \"local SHA or empty\", \"implementation_evidence\": \"concrete deliverable evidence\", \"where\": \"exact paths or external deliverable\"}. JSON only.`].filter(Boolean).join("\n\n");
 }
-export const TECH_SYSTEM = "You are the tech lead. You write short technical plans and pick the developer. You never write code. Reply with JSON only.";
-/** Pre Coding prompt: tech plan only (no code), with inline file excerpts so one tool-less turn is enough, and the developer roles to pick from. */
+export const TECH_SYSTEM = "You are a PreWork triage lead. Classify Bug versus Task/Story, reproduce reported Bugs before Working, pick likely staff roles, and never implement product changes. Temporary repro scripts/tests are allowed and should be removed unless useful as regression evidence. Use only the registered terminal for this repo. Reply with JSON only.";
+/** PreWork prompt: tech plan only (no code), with inline file excerpts so one tool-less turn is enough, and the developer roles to pick from. */
 export function techPlanPrompt(iss, o = {}) {
   const roles = (o.devRoles ?? []).map((r) => `- ${r.role}${r.skills?.length ? `: ${r.skills.join(", ")}` : ""}`).join("\n");
   return [issueBlock(iss), o.plan && `Approved plan:\n${o.plan}`, o.feedback && `User feedback: ${o.feedback}`, o.context && `Project: ${o.context}`,
     o.files?.length && `Repo files (subset): ${o.files.join(", ")}`,
     o.snippets?.length && `File excerpts:\n${o.snippets.map((x) => `--- ${x.path}\n${x.text}`).join("\n")}`,
     roles ? `Developers on the roster (pick the best fit by role/skills):\n${roles}` : "No developer roles on the roster: the tech lead codes it (developer = \"tech-lead\").",
-    "Use the excerpts above; read at most 2 more files only if essential. Write the technical plan only (do NOT write code or edit files): files to change/create, steps, risks, test plan; max 8 short lines.",
-    "Return {\"tech_plan\": \"...\", \"developer\": \"<role id>\"}, or {\"question\": \"...\"} if something essential is unclear. JSON only."].filter(Boolean).join("\n\n");
+    "Classify this Jira item by issue type and content. For Bug/defect reports capture exact setup, steps, expected/actual, then reproduce with a temporary script or UI check when useful. Return outcome=proceed only when reproduced and include reproduction.status=reproduced, setup, steps[], expected, actual and evidence; record detailed attempts and outcome=unable_to_reproduce if repeated attempts cannot reproduce, then close without Working. For Task/Story, check goal, acceptance criteria, dependencies, current state, likely roles and remaining deliverable; if already complete, return outcome=no_work_needed with concrete evidence. Ask a focused question if essential facts are missing. Do not make product changes in PreWork.",
+    "For confirmed work return outcome=proceed, work_kind (code, configuration, documentation, design, content, deletion, external, analysis, research, or no_change), concise plan and primary developer role. Reply with JSON only."].filter(Boolean).join("\n\n");
 }
-/** Developer role for Coding: the model's pick if it is on the roster, else the task's assigned dev role, else best skill/keyword match, else tech-lead. */
+export function qcReviewPrompt(iss, o = {}) {
+  return [issueBlock(iss), o.plan && `Approved plan/acceptance criteria:\n${o.plan}`, o.summary && `Working result:\n${o.summary}`, o.files?.length && `Relevant deliverable files:\n${o.files.join(", ")}`, o.snippets?.length && `Deliverable excerpts:\n${o.snippets.map((x) => `--- ${x.path}\n${x.text}`).join("\n")}`, "Review the actual deliverable against the task acceptance criteria. Return acceptance_criteria as a nonempty list of criterion/result strings and evidence describing what you inspected. For documents inspect factual correctness, completeness, clarity, links, examples and formatting. Do not run unrelated repository tests/builds or demand a PR. For configuration inspect changed settings and verify only affected behavior. Return {pass:true,summary,acceptance_criteria,evidence,findings:[]} when it meets criteria; otherwise report concrete findings with id/file/expected/actual/evidence. JSON only."].filter(Boolean).join("\n\n");
+}
+/** Developer role for Working: the model's pick if it is on the roster, else the task's assigned dev role, else best skill/keyword match, else tech-lead. */
 export function pickDeveloper(devRoles = [], choice, assigned, text = "") {
   const ids = devRoles.map((r) => r.role);
   if (choice && ids.includes(choice)) return choice;
@@ -295,7 +300,7 @@ export function qcVerdict(baseline, after) {
 /** Agent-stage segments of a run: one per stage [{kind, stages:[s], moves:[to]}] from the current stage + server chain (each stage is its own step). */
 // Which stages need the model at all. Only real AI work (analysis/plan text, tech plan/code/QC) calls it;
 // moves, gates, review, done, todo, merges, PRs, comments and custom stages without AI actions are script-only.
-// Stage kinds: move | text (plan) | techplan (Pre Coding: tech plan + developer pick, no code) | code (Coding) | qc (QC by script) | script.
+// Stage kinds: move | text (plan) | techplan (PreWork: tech plan + developer pick, no code) | code (Working) | qc (QC by script) | script.
 // Custom stages map by their on_enter actions (code > tech_plan > qc_test > analyze/plan); a stage with no AI action is script-only.
 export const CODE_STAGES = new Set(["pre_coding", "coding", "qc"]);
 const TEXT_ACTIONS = new Set(["analyze", "plan"]);
@@ -347,7 +352,7 @@ export function jiraClient(cfg, { dry, log }) {
     }
     if (!r.ok) { if (r.status === 401 || r.status === 403) throw new Error(`JIRA_AUTH_EXPIRED: Jira rejected the listener credentials (HTTP ${r.status}). Run \`holding jira connect --switch\` to refresh OAuth, then \`holding listener restart\`.`); throw new Error(`Jira ${m} ${path.split("?")[0]} -> ${r.status}`); } return r.status === 204 ? null : r.json(); };
   return {
-    async issue(key) { return req("GET", `/issue/${encodeURIComponent(key)}?fields=summary,description,comment`); },
+    async issue(key) { return req("GET", `/issue/${encodeURIComponent(key)}?fields=summary,description,comment,issuetype`); },
     async search(jql, fields = ["status", "updated"]) { const j = await req("POST", "/search/jql", { jql, fields, maxResults: 50 }); return j?.issues ?? []; },
     async meta(key) { const j = await req("GET", `/issue/${encodeURIComponent(key)}?fields=labels,components`); return { labels: j.fields?.labels ?? [], components: (j.fields?.components ?? []).map((c) => c.name) }; },
     async staffLabel(key, role, jiraUser = null) { // replace the previous staff:<role> label (null = remove)
@@ -435,12 +440,45 @@ export function commitAll(repo, msg) {
     if (!eligible.length) return null;
     git(repo, "commit", "-q", "-m", msg); return git(repo, "rev-parse", "--short", "HEAD"); } catch (e) { return "failed: " + e.message.split("\n")[0]; }
 }
+/** Commit only task-reported paths; never sweep unrelated workspace edits into a Jira task. */
+export function commitPaths(repo, msg, reported = []) {
+  try {
+    const paths = [...new Set((reported ?? []).map((p) => String(p ?? "").trim()).filter(Boolean))]
+      .filter((p) => !p.startsWith("/") && !p.split(/[\\/]/).includes("..") && !/^\.agents(?:\/|$)/.test(p) && !/^\.ah-repro(?:\/|$)/.test(p));
+    if (!paths.length) return null;
+    const links = git(repo, "ls-files", "-s").split("\n")
+      .map((line) => { const m = /^(160000)\s+\S+\s+\d+\t(.+)$/.exec(line); return m?.[2]; }).filter(Boolean);
+    const parentPaths = new Set(paths);
+    for (const rel of links) {
+      const childPaths = paths.filter((p) => p === rel || p.startsWith(`${rel}/`));
+      if (!childPaths.length) continue;
+      const child = join(repo, rel);
+      if (!existsSync(join(child, ".git"))) continue;
+      const inner = childPaths.map((p) => p === rel ? "." : p.slice(rel.length + 1));
+      const childSha = commitPaths(child, msg, inner);
+      if (typeof childSha === "string" && childSha.startsWith("failed:")) return childSha;
+      childPaths.forEach((p) => parentPaths.delete(p));
+      if (childSha) { execFileSync("git", ["add", "--", rel], { cwd: repo, stdio: ["ignore", "pipe", "pipe"] }); parentPaths.add(rel); }
+    }
+    const allowed = [...parentPaths];
+    if (allowed.length) {
+      git(repo, "add", "-u", "--", ...allowed);
+      execFileSync("git", ["add", "--", ...allowed], { cwd: repo, stdio: ["ignore", "pipe", "pipe"] });
+    }
+    const staged = git(repo, "diff", "--cached", "--name-only").split("\n").filter(Boolean);
+    const permit = new Set(allowed);
+    const unexpected = staged.filter((p) => !permit.has(p) || /^\.agents(?:\/|$)/.test(p));
+    if (unexpected.length) throw new Error(`refusing to include unreported paths: ${unexpected.join(", ")}`);
+    if (!staged.length) return null;
+    git(repo, "commit", "-q", "-m", msg); return git(repo, "rev-parse", "--short", "HEAD");
+  } catch (e) { return "failed: " + e.message.split("\n")[0]; }
+}
 /**
- * Workflow artifact cleanup.  Coding agents must not create documentation or
+ * Workflow artifact cleanup.  Working agents must not create documentation or
  * migration notes just to satisfy the commit gate.  Explicit cleanup_paths
  * are safe for already-tracked junk; newly-created Markdown is removed only
  * when the company enables cleanup_unrequested_files and was not present at
- * the Coding checkpoint.
+ * the Working checkpoint.
  */
 export function cleanupUnrequestedArtifacts(repo, { baseline = [], policy = {} } = {}) {
   if (!policy || policy.cleanup_unrequested_files !== true) return { removed: [], skipped: [] };
@@ -620,25 +658,25 @@ let LANG = "en";
 export const setLang = (l) => { LANG = l || "en"; return LANG; };
 export const getLang = () => LANG;
 const STR = {
-  en: { started: "▶️ Started {stage}…", why: "Why {staff}: {why}", failed: "❌ Failed {stage}: {reason}", review: "🔁 Review feedback received, back to Coding", learned: "🧠 Learned your habits:",
-    gate_planned: "🚦 Plan ready for your approval.\n- Approve: drag the card to Pre Coding, or comment `/approve`\n- Revise: comment what to change (the plan is rewritten, the card stays in Planned)",
-    gate_in_review: "🚦 Ready for review.\n- Request changes: comment what to fix (back to Coding, same developer, then QC)\n- Accept: drag the card to Done",
+  en: { started: "▶️ Started {stage}…", why: "Why {staff}: {why}", failed: "❌ Failed {stage}: {reason}", review: "🔁 Review feedback received, back to Working", learned: "🧠 Learned your habits:",
+    gate_planned: "🚦 Plan ready for your approval.\n- Approve: drag the card to PreWork, or comment `/approve`\n- Revise: comment what to change (the plan is rewritten, the card stays in Planned)",
+    gate_in_review: "🚦 Ready for review.\n- Request changes: comment what to fix (back to Working, same developer, then QC)\n- Accept: drag the card to Done",
     PLAN: "📋 Plan", "TECH PLAN": "🛠️ Tech plan", QUESTION: "❓ Question", CODE: "💻 Code", "CODE (review feedback)": "💻 Code (review feedback)", FIX: "🔧 Fix", "QC PASS": "✅ QC pass", "QC FAIL": "❌ QC fail", DONE: "✅ Done" },
-  vi: { started: "▶️ Bắt đầu {stage}…", why: "Vì sao chọn {staff}: {why}", failed: "❌ Lỗi ở {stage}: {reason}", review: "🔁 Đã nhận góp ý review, quay lại Coding", learned: "🧠 Đã ghi nhớ thói quen của bạn:",
-    gate_planned: "🚦 Kế hoạch đã sẵn sàng để bạn duyệt.\n- Duyệt: kéo thẻ sang Pre Coding, hoặc comment `/approve`\n- Sửa: comment điều cần thay đổi (kế hoạch được viết lại, thẻ vẫn ở Planned)",
-    gate_in_review: "🚦 Sẵn sàng để review.\n- Yêu cầu sửa: comment điều cần sửa (quay lại Coding, cùng developer, rồi QC)\n- Chấp nhận: kéo thẻ sang Done",
+  vi: { started: "▶️ Bắt đầu {stage}…", why: "Vì sao chọn {staff}: {why}", failed: "❌ Lỗi ở {stage}: {reason}", review: "🔁 Đã nhận góp ý review, quay lại Working", learned: "🧠 Đã ghi nhớ thói quen của bạn:",
+    gate_planned: "🚦 Kế hoạch đã sẵn sàng để bạn duyệt.\n- Duyệt: kéo thẻ sang PreWork, hoặc comment `/approve`\n- Sửa: comment điều cần thay đổi (kế hoạch được viết lại, thẻ vẫn ở Planned)",
+    gate_in_review: "🚦 Sẵn sàng để review.\n- Yêu cầu sửa: comment điều cần sửa (quay lại Working, cùng developer, rồi QC)\n- Chấp nhận: kéo thẻ sang Done",
     PLAN: "📋 Kế hoạch", "TECH PLAN": "🛠️ Kế hoạch kỹ thuật", QUESTION: "❓ Câu hỏi", CODE: "💻 Code", "CODE (review feedback)": "💻 Code (theo góp ý review)", FIX: "🔧 Sửa lỗi", "QC PASS": "✅ QC đạt", "QC FAIL": "❌ QC không đạt", DONE: "✅ Hoàn tất" },
-  zh: { started: "▶️ 开始 {stage}…", why: "为什么是 {staff}：{why}", failed: "❌ {stage} 失败：{reason}", review: "🔁 已收到评审意见，返回 Coding", learned: "🧠 已记住你的习惯：",
-    gate_planned: "🚦 计划已就绪，等待你批准。\n- 批准：把卡片拖到 Pre Coding，或评论 `/approve`\n- 修改：评论需要修改的内容（计划会重写，卡片留在 Planned）",
-    gate_in_review: "🚦 可以评审了。\n- 要求修改：评论需要修复的内容（返回 Coding，同一开发者，然后 QC）\n- 接受：把卡片拖到 Done",
+  zh: { started: "▶️ 开始 {stage}…", why: "为什么是 {staff}：{why}", failed: "❌ {stage} 失败：{reason}", review: "🔁 已收到评审意见，返回 Working", learned: "🧠 已记住你的习惯：",
+    gate_planned: "🚦 计划已就绪，等待你批准。\n- 批准：把卡片拖到 PreWork，或评论 `/approve`\n- 修改：评论需要修改的内容（计划会重写，卡片留在 Planned）",
+    gate_in_review: "🚦 可以评审了。\n- 要求修改：评论需要修复的内容（返回 Working，同一开发者，然后 QC）\n- 接受：把卡片拖到 Done",
     PLAN: "📋 计划", "TECH PLAN": "🛠️ 技术方案", QUESTION: "❓ 问题", CODE: "💻 代码", "CODE (review feedback)": "💻 代码（评审意见）", FIX: "🔧 修复", "QC PASS": "✅ QC 通过", "QC FAIL": "❌ QC 未通过", DONE: "✅ 完成" },
-  ja: { started: "▶️ {stage} を開始…", why: "{staff} を選んだ理由: {why}", failed: "❌ {stage} 失敗: {reason}", review: "🔁 レビュー指摘を受け取りました。Coding に戻ります", learned: "🧠 あなたの習慣を学びました:",
-    gate_planned: "🚦 計画の承認待ちです。\n- 承認: カードを Pre Coding へ移動、または `/approve` とコメント\n- 修正: 変更点をコメント（計画を書き直し、カードは Planned のまま）",
-    gate_in_review: "🚦 レビュー準備完了。\n- 修正依頼: 直す点をコメント（Coding に戻り、同じ開発者、その後 QC）\n- 承認: カードを Done へ移動",
+  ja: { started: "▶️ {stage} を開始…", why: "{staff} を選んだ理由: {why}", failed: "❌ {stage} 失敗: {reason}", review: "🔁 レビュー指摘を受け取りました。Working に戻ります", learned: "🧠 あなたの習慣を学びました:",
+    gate_planned: "🚦 計画の承認待ちです。\n- 承認: カードを PreWork へ移動、または `/approve` とコメント\n- 修正: 変更点をコメント（計画を書き直し、カードは Planned のまま）",
+    gate_in_review: "🚦 レビュー準備完了。\n- 修正依頼: 直す点をコメント（Working に戻り、同じ開発者、その後 QC）\n- 承認: カードを Done へ移動",
     PLAN: "📋 計画", "TECH PLAN": "🛠️ 技術計画", QUESTION: "❓ 質問", CODE: "💻 コード", "CODE (review feedback)": "💻 コード（レビュー対応）", FIX: "🔧 修正", "QC PASS": "✅ QC 合格", "QC FAIL": "❌ QC 不合格", DONE: "✅ 完了" },
-  ko: { started: "▶️ {stage} 시작…", why: "{staff} 선택 이유: {why}", failed: "❌ {stage} 실패: {reason}", review: "🔁 리뷰 피드백을 받아 Coding으로 돌아갑니다", learned: "🧠 습관을 학습했습니다:",
-    gate_planned: "🚦 계획이 승인을 기다립니다.\n- 승인: 카드를 Pre Coding으로 옮기거나 `/approve` 댓글\n- 수정: 바꿀 내용을 댓글로 (계획을 다시 쓰고 카드는 Planned에 유지)",
-    gate_in_review: "🚦 리뷰 준비 완료.\n- 수정 요청: 고칠 내용을 댓글로 (Coding으로, 같은 개발자, 이후 QC)\n- 승인: 카드를 Done으로 이동",
+  ko: { started: "▶️ {stage} 시작…", why: "{staff} 선택 이유: {why}", failed: "❌ {stage} 실패: {reason}", review: "🔁 리뷰 피드백을 받아 Working으로 돌아갑니다", learned: "🧠 습관을 학습했습니다:",
+    gate_planned: "🚦 계획이 승인을 기다립니다.\n- 승인: 카드를 PreWork으로 옮기거나 `/approve` 댓글\n- 수정: 바꿀 내용을 댓글로 (계획을 다시 쓰고 카드는 Planned에 유지)",
+    gate_in_review: "🚦 리뷰 준비 완료.\n- 수정 요청: 고칠 내용을 댓글로 (Working으로, 같은 개발자, 이후 QC)\n- 승인: 카드를 Done으로 이동",
     PLAN: "📋 계획", "TECH PLAN": "🛠️ 기술 계획", QUESTION: "❓ 질문", CODE: "💻 코드", "CODE (review feedback)": "💻 코드(리뷰 반영)", FIX: "🔧 수정", "QC PASS": "✅ QC 통과", "QC FAIL": "❌ QC 실패", DONE: "✅ 완료" },
 };
 /** Fixed script string in the current language; languages without a table fall back to English (generic). */
@@ -646,14 +684,14 @@ export const T = (key, vars = {}, lang = LANG) => String((STR[lang] ?? STR.en)[k
 export const langInstruction = (lang = LANG) => `Language: write every human-readable field (plan, questions, summaries, notes) in ${LANG_NAMES[lang] ?? lang}, the language of the task. Keep code, identifiers, file paths and commit messages in the repo's own conventions.`;
 // ---------- visibility: Jira "working" label + start/fail comments, macOS notifications, local listener status ----------
 export const WORK_LABEL = "agent-working";
-const STAGE_TITLES = { todo: "To Do", in_progress: "In Progress", product_work: "Product Work", ba_question: "BA Question", planned: "Planned", pre_coding: "Pre Coding", coding: "Coding", qc: "QC", in_review: "In Review", done: "Done" };
+const STAGE_TITLES = { todo: "To Do", in_progress: "In Progress", product_work: "Product Work", ba_question: "BA Question", planned: "Planned", pre_coding: "PreWork", coding: "Working", qc: "QC", in_review: "In Review", done: "Done" };
 export const stageTitle = (k) => STAGE_TITLES[k] ?? String(k ?? "?").replace(/_/g, " ");
 export const startedComment = (staff, stage, why) => `${staffTag(staff)} ${T("started", { stage: stageTitle(stage) })}${why ? `\n${T("why", { staff, why })}` : ""}`;
 export const failedComment = (staff, stage, reason) => `${staffTag(staff)} ${T("failed", { stage: stageTitle(stage), reason: clip(String(reason ?? "error").split("\n")[0], 200) })}`;
 // ---------- explicit user gates (posted once when the card enters the gate) ----------
 export const GATE_HINTS = {
-  planned: "🚦 Plan ready for your approval.\n- Approve: drag the card to Pre Coding, or comment `/approve`\n- Revise: comment what to change (the plan is rewritten, the card stays in Planned)",
-  in_review: "🚦 Ready for review.\n- Request changes: comment what to fix (back to Coding, same developer, then QC)\n- Accept: drag the card to Done",
+  planned: "🚦 Plan ready for your approval.\n- Approve: drag the card to PreWork, or comment `/approve`\n- Revise: comment what to change (the plan is rewritten, the card stays in Planned)",
+  in_review: "🚦 Ready for review.\n- Request changes: comment what to fix (back to Working, same developer, then QC)\n- Accept: drag the card to Done",
 };
 export const gateComment = (staff, stage) => GATE_HINTS[stage] ? `${staffTag(staff)} ${T(`gate_${stage}`)}` : null;
 // ---------- acting staff on the board: one label staff:<role> (replaced each stage, removed at Done) ----------
@@ -766,6 +804,6 @@ export const compactionSignal = (txt) => String(txt ?? "").match(COMPACT_RX)?.[0
 export function resumeHint(plan = {}, ck = {}) {
   return ["RESUME: a previous attempt lost its context mid-run. Do NOT redo finished work.",
     plan.plan && "The plan is already approved (above).", plan.tech_plan && "The tech plan is done.",
-    ck?.code_done?.length && `Coding sub-steps already committed (WIP): ${ck.code_done.map((i) => i + 1).join(", ")}. Check \`git log\` on the branch.`,
+    ck?.code_done?.length && `Working sub-steps already committed (WIP): ${ck.code_done.map((i) => i + 1).join(", ")}. Check \`git log\` on the branch.`,
     "Continue from where it stopped."].filter(Boolean).join("\n");
 }

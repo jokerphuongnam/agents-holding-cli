@@ -5,10 +5,10 @@
 # Ends by reading the board's columns and, if they are out of order (team-managed boards append new columns after Done
 # and Jira has no public API to reorder them), printing the exact order to drag them into.
 # Ensures the project's workflow has, in order (or the company flow from AH_FLOW_JSON):
-#   To Do, In Progress, Product Work, BA Question, Planned, Pre Coding, Coding, QC, In Review, Done
+#   To Do, In Progress, Product Work, BA Question, Planned, PreWork, Working, QC, In Review, Done
 # with GLOBAL transitions (any status -> any status). Missing statuses are created
 # (project-scoped for team-managed, global for company-managed). An unused
-# "In Progress" status is dropped from the workflow (replaced by "Coding");
+# "In Progress" status is dropped from the workflow (replaced by "Working");
 # if issues still use it, it is kept. Never changes issue statuses.
 set -euo pipefail
 # >>> ah_kc_guard (canonical: full/lib/kc-guard.sh): macOS `security` resolves the default keychain from $HOME; under a
@@ -38,7 +38,7 @@ if [[ -n "${AH_FLOW_JSON:-}" ]]; then
   WANT=(); while IFS= read -r l; do WANT+=("$l"); done < <(jq -r '.[].name' "$AH_FLOW_JSON")
   cat_of() { jq -r --arg n "$1" '[.[]|select(.name==$n)][0].category // "IN_PROGRESS"' "$AH_FLOW_JSON"; }
 else
-WANT=("To Do" "In Progress" "Product Work" "BA Question" "Planned" "Pre Coding" "Coding" "QC" "In Review" "Done")
+WANT=("To Do" "In Progress" "Product Work" "BA Question" "Planned" "PreWork" "Working" "QC" "In Review" "Done")
 cat_of() { case "$1" in "To Do"|"Product Work"|"BA Question"|"Planned") echo TODO;; "Done") echo DONE;; *) echo IN_PROGRESS;; esac; }
 fi
 
@@ -97,7 +97,7 @@ for i in $(seq 0 $((NWF-1))); do
   for r in "${REFS[@]}"; do jq -e --arg r "$r" 'any(.[];.id==$r)' <<<"$NAMES" >/dev/null || NAMES=$(jq --argjson s "$(api GET /rest/api/3/status/$r | jq '{id,name,statusCategory:.statusCategory.key|ascii_upcase|sub("NEW";"TODO")|sub("INDETERMINATE";"IN_PROGRESS"),statusReference:.id}')" '.+[$s]' <<<"$NAMES"); done
   DJ=$( ((${#DROPPED[@]})) && printf '%s\n' "${DROPPED[@]}" | jq -R . | jq -s . || echo '[]')
   ITS=$(api GET "/rest/api/3/project/$KEY/statuses" | jq '[.[].id]')
-  MAP=$(jq -n --argjson d "$DJ" --argjson its "$ITS" --arg p "$PID" --arg to "$(idget Coding)" 'if ($d|length)==0 then [] else [$its[]|{issueTypeId:., projectId:$p, statusMigrations:[]}] end')
+  MAP=$(jq -n --argjson d "$DJ" --argjson its "$ITS" --arg p "$PID" --arg to "$(idget Working)" 'if ($d|length)==0 then [] else [$its[]|{issueTypeId:., projectId:$p, statusMigrations:[]}] end')
   INIT=$(jq '[.transitions[]|select(.type=="INITIAL")]' <<<"$WF")
   BODY=$(jq -n --argjson wf "$WF" --argjson refs "$REFJSON" --argjson st "$NAMES" --argjson init "$INIT" --argjson map "$MAP" '
     {statuses:$st,

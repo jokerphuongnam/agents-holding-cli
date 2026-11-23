@@ -51,7 +51,7 @@ const logDir = join(homedir(), "Library/Logs/agents-holding");
 mkdirSync(logDir, { recursive: true });
 const logFile = join(logDir, "jira-listener.log");
 process.title = "Jira Listener";
-// Coding/QC may legitimately spend a long time in host-native builds. Keep a
+// Working/QC may legitimately spend a long time in host-native builds. Keep a
 // safety cap, but do not kill normal Marlin integration work after 15 minutes.
 // Projects can still override this with AH_RUN_TIMEOUT_MIN.
 const runTimeoutMs = Number(process.env.AH_RUN_TIMEOUT_MIN ?? 60) * 60 * 1000; // hard cap per agent run
@@ -455,7 +455,7 @@ async function refreshJiraRoute() {
 const sessDir = (sid, home = join(homedir(), ".grok")) => join(home, "sessions", encodeURIComponent(repo), sid);
 
 // User events on the same card within AH_DEBOUNCE_SEC (default 15s) are coalesced into ONE run (latest notice wins):
-// e.g. the user drags In Review -> Coding AND comments the feedback = 2 webhooks, but one coding run.
+// e.g. the user drags In Review -> Working AND comments the feedback = 2 webhooks, but one coding run.
 const DEBOUNCED = new Set(["user_move", "user_comment", "review_feedback"]);
 const debounceMs = Number(process.env.AH_DEBOUNCE_SEC ?? 15) * 1000, timers = new Map();
 function debounce(p) {
@@ -761,7 +761,7 @@ function spawnGrok(gargs, out, issue, sid, o = {}) {
 let stageModels = {}; // flow per-stage models of the current run (next_action model/chain[].model), honored by leanModel
 async function leanModel(kind, issue, stage, prompt, role = null, context = null, options = {}) {
   const sid = randomUUID(), out = join(logDir, `run-${Date.now()}.log`), buf = [];
-  const text = kind !== "code", schema = kind === "tech" ? L.TECH_SCHEMA : kind === "diagnosis" ? L.QC_DIAGNOSIS_SCHEMA : kind === "habits" ? L.HABITS_SCHEMA : text ? L.TEXT_SCHEMA : L.CODE_SCHEMA, system = kind === "tech" ? L.TECH_SYSTEM : kind === "diagnosis" ? L.QC_DIAGNOSIS_SYSTEM : kind === "habits" ? L.HABITS_SYSTEM : text ? L.TEXT_SYSTEM : null;
+  const text = kind !== "code", schema = kind === "tech" ? L.TECH_SCHEMA : kind === "diagnosis" ? L.QC_DIAGNOSIS_SCHEMA : kind === "qc_review" ? L.QC_REVIEW_SCHEMA : kind === "habits" ? L.HABITS_SCHEMA : text ? L.TEXT_SCHEMA : L.CODE_SCHEMA, system = kind === "tech" ? L.TECH_SYSTEM : kind === "diagnosis" ? L.QC_DIAGNOSIS_SYSTEM : kind === "qc_review" ? L.QC_REVIEW_SYSTEM : kind === "habits" ? L.HABITS_SYSTEM : text ? L.TEXT_SYSTEM : null;
   const localCfg = L.loadAgentCfg(homedir(), company);
   let repoStaff = {};
   try {
@@ -950,19 +950,19 @@ async function leanRunInner(p, na, depth, vis) {
           log(`lean: advance ${from} -> ${to} failed: ${e.message}`);
           // A Jira workflow may reject an automated recovery transition (most
           // commonly QC -> Reopened). Mark the issue as waiting instead of
-          // allowing reconcile/comments to start another Coding/QC loop.
+          // allowing reconcile/comments to start another Working/QC loop.
           if (/Reopened can only be entered by the user|workflow.*reject|transition.*not allowed/i.test(String(e.message))) {
             if (to === "coding" && jira) {
               try {
-                await jira.transition(issue, "Coding");
+                await jira.transition(issue, "Working");
                 X.ckptSave(st, issue, { stage: "coding", done: [], workflow_blocked: null, failed: null, running: true });
                 log(`lean: ${issue} ${from} -> coding restored Jira status directly after workflow rejection`);
                 return true;
-              } catch (jiraError) { log(`lean: ${issue} direct Jira Coding recovery failed: ${jiraError.message}`); }
+              } catch (jiraError) { log(`lean: ${issue} direct Jira Working recovery failed: ${jiraError.message}`); }
             }
             // Reopened is a user-only Jira status in some company workflows.
             // It is not a reason to freeze the local workflow: QC failure is
-            // already recorded, so continue from Coding (or the configured
+            // already recorded, so continue from Working (or the configured
             // earlier technical stage) and let the next Jira reconciliation
             // mirror the actual card status. Reopened remains available for
             // an explicit user action later in the flow.
@@ -978,7 +978,7 @@ async function leanRunInner(p, na, depth, vis) {
                 return true;
               } catch (fallbackError) {
                 // Reconcile may already have moved the durable task back to
-                // Coding before this local retry arrives. Treat coding->coding
+                // Working before this local retry arrives. Treat coding->coding
                 // as idempotent success instead of turning it into another
                 // workflow block.
                 if (fallback === "coding" && /cannot move coding -> coding/i.test(String(fallbackError.message))) {
@@ -1013,7 +1013,7 @@ async function leanRunInner(p, na, depth, vis) {
     if (vis.started.has(s0)) return; vis.started.add(s0);
     if (jira && !vis.labeled) { vis.labeled = true; await jira.label(issue, "add").catch((e) => log("Jira label add failed:", e.message)); }
     if (jira && kind !== "script" && vis.staffRole !== role) { vis.staffRole = role; await jira.staffLabel(issue, role, L.loadAgentCfg(homedir(), company).staff?.[role]?.jira_user || null).then(async (acct) => { if (!acct) return null; const cur = await jira.meta(issue).catch(() => null); if (cur?.assignee?.accountId === acct) return null; return mcp("set_task_assignee", { company, task: issue, account: acct }).catch((e) => log("persist assignee failed:", e.message)); }).catch((e) => log("Jira staff label failed:", e.message)); }
-    if (kind !== "script" && !(kind === "code" && na.review_feedback)) await say(false, L.startedComment(vis.staff, s0, L.staffWhy(na, s0, { kind, developer: dev0 }))); // review: the "back to Coding" comment says it
+    if (kind !== "script" && !(kind === "code" && na.review_feedback)) await say(false, L.startedComment(vis.staff, s0, L.staffWhy(na, s0, { kind, developer: dev0 }))); // review: the "back to Working" comment says it
     const ck = L.loadPlan(st, issue);
     if (!ck[`work_checklist_${s0}`]) {
       const checklist = L.workChecklist(na, { issue, stage: s0, plan: ck.plan ?? ck.tech_plan ?? null });
@@ -1065,13 +1065,34 @@ Jira: ${issue}` });
     const devRoles = na.dev_roles ?? [], rname = (rp) => rp.split("/").pop();
     const filesOf = (rp) => { try { return L.git(rp, "ls-files").split("\n").filter(Boolean); } catch { return []; } };
     const approval = plan || p.event === "user_approved" ? "Plan approved; go ahead." : null;
-    if (seg.kind === "techplan") { // Pre Coding: tech plan + pick the developer. NO code changes here.
+    if (seg.kind === "techplan") { // PreWork: tech plan + pick the developer. NO code changes here.
       const who = L.stageStaff(na, s0, { kind: "techplan" });
       if (resumable(s0, "tech_plan") && saved.tech_plan) { log(`lean: ${issue} ${s0}: resume from checkpoint (tech plan already done)`); if (seg.moves[0] && !(await advance(s0, seg.moves[0], () => saved.tech_plan))) return; continue; }
       const files = filesOf(repo), hints = L.fileHints(files, `${iss.summary} ${iss.description} ${plan ?? ""}`);
       const listed = files.length <= 40 ? files : hints;
       const r = await leanModel("tech", issue, s0, L.techPlanPrompt(iss, {  plan, feedback: fb, files: listed, snippets: L.fileSnippets(repo, hints.slice(0, 5)), devRoles }), L.stageRole(na, s0, { kind: "techplan" }), L.contextOf({ brief: await brief(L.stageRole(na, s0, { kind: "techplan" })), habits }));
       if (r.question && !r.tech_plan) { await record("question", r.question); await say(who, `QUESTION\n${r.question}`, "question"); return; }
+      const bugLike = /bug|defect/i.test(String(iss.issueType ?? "")) || /\b(bug|defect|regression|crash|broken|not working)\b/i.test(`${iss.summary} ${iss.description}`);
+      if (r.outcome === "unable_to_reproduce") {
+        if (!bugLike) throw new Error("Only a reported Bug can be closed as unable_to_reproduce; use no_work_needed for a completed Task/Story");
+        const repro = r.reproduction ?? {}, attempts = repro.attempts;
+        if (!Array.isArray(attempts) || !attempts.length || attempts.some((x) => !String(x.steps ?? "").trim() || !String(x.result ?? "").trim()) || !String(repro.setup ?? "").trim() || !String(repro.expected ?? "").trim() || !String(repro.actual ?? "").trim()) throw new Error("PreWork cannot close this Bug without setup, expected/actual results, and detailed attempts");
+        const body = JSON.stringify({ issue_type: "Bug", outcome: "unable_to_reproduce", setup: repro.setup, expected: repro.expected, actual: repro.actual, attempts });
+        await record("bug_unreproducible", body); await say(who, `BUG UNABLE TO REPRODUCE\n${body}\nClosing from PreWork; it will not enter Working.`);
+        if (!(await advance(s0, "done"))) return; return;
+      }
+      if (r.outcome === "no_work_needed") {
+        if (bugLike) throw new Error("A reported Bug cannot use no_work_needed; reproduce it or record unable_to_reproduce attempts");
+        if (!String(r.evidence ?? "").trim()) throw new Error("PreWork cannot close without evidence that no work remains");
+        const body = JSON.stringify({ reason: r.tech_plan || "No remaining deliverable identified.", evidence: r.evidence });
+        await record("no_work_needed", body); await say(who, `NO WORK REMAINS\n${body}\nClosing from PreWork.`);
+        if (!(await advance(s0, "done"))) return; return;
+      }
+      if (bugLike && r.outcome === "proceed") {
+        const repro = r.reproduction ?? {};
+        if (repro.status !== "reproduced" || !String(repro.setup ?? "").trim() || !Array.isArray(repro.steps) || !repro.steps.length || repro.steps.some((x) => !String(x ?? "").trim()) || !String(repro.expected ?? "").trim() || !String(repro.actual ?? "").trim() || !String(repro.evidence ?? "").trim()) throw new Error("PreWork cannot route a Bug to Working without setup, steps, expected/actual results and reproduction evidence");
+        await record("bug_reproduced", JSON.stringify({ issue_type: "Bug", outcome: "reproduced", setup: repro.setup, steps: repro.steps, expected: repro.expected, actual: repro.actual, evidence: repro.evidence }));
+      }
       const techPlan = r.tech_plan || r.summary || ""; if (!techPlan) { throw new Error("the model returned an empty tech plan"); }
       const dev = L.pickDeveloper(devRoles, r.developer, na.assigned_role, `${iss.summary} ${iss.description} ${techPlan}`);
       if (dev !== "tech-lead" && dev !== na.assigned_role) await mcp("assign", { company, task: issue, role: dev }).catch((e) => log(`assign ${dev} failed:`, e.message));
@@ -1084,7 +1105,7 @@ Jira: ${issue}` });
     }
     const segs = L.segments(na), qcAhead = segs.some((x) => x.kind === "qc");
     const codeOnce = async (stage, o) => { // one coding call per repo (multi-repo task = feature/<KEY> in each), commit by script
-      let r = null; const wheres = [];
+      let r = null; const wheres = [], changedPaths = [], noWorkReports = []; let expectedNoWork = 0;
       for (const rp of runRepos) {
         repo = rp;
         log(`lean: ${rp} branch ${branch}: ${L.ensureBranch(rp, branch)}`);
@@ -1108,7 +1129,9 @@ Jira: ${issue}` });
           if (r1.question && !r1.summary) { await record("question", r1.question); await say(o.who, `QUESTION (${workerRole}/${rname(rp)})\n${r1.question}`, "question"); repo = runRepos[0]; return null; }
           results.push({ ...r1, worker: workerRole, scope });
         }
-        const r1 = results.reduce((a, x) => ({ ...a, ...x, summary: [a.summary, x.summary].filter(Boolean).join("\n"), tests: [a.tests, x.tests].filter(Boolean).join("\n") }), {});
+        expectedNoWork += results.length;
+        for (const x of results) { if (x.no_work_needed && x.repo_changes === false && !(x.changed_files ?? []).length && String(x.no_work_needed.reason ?? "").trim() && String(x.no_work_needed.evidence ?? "").trim()) noWorkReports.push({ repo: rname(rp), role: x.worker, ...x.no_work_needed }); if (Array.isArray(x.changed_files)) changedPaths.push(...x.changed_files.map((f) => `${runRepos.length > 1 ? `${rname(rp)}::` : ""}${f}`)); }
+        const r1 = results.reduce((a, x) => ({ ...a, ...x, summary: [a.summary, x.summary].filter(Boolean).join("\n"), tests: [a.tests, x.tests].filter(Boolean).join("\n"), changed_files: [...new Set([...(a.changed_files ?? []), ...(x.changed_files ?? [])])], repo_changes: a.repo_changes === true || x.repo_changes === true }), {});
         // Remove newly-created unrequested artifacts before the implementation
         // commit. Explicit cleanup_paths are committed separately below so
         // the branch history clearly records the workflow cleanup.
@@ -1123,7 +1146,7 @@ Jira: ${issue}` });
           log(`lean: ${issue} artifact cleanup removed ${cleanup.removed.join(", ")}`);
           r1.summary = [r1.summary, `Workflow artifact cleanup removed: ${cleanup.removed.join(", ")}`].filter(Boolean).join("\n");
         }
-        const sha = L.commitAll(rp, `${o.wip ? `WIP(${issue}) ${o.wip}: ` : `${issue}: `}${r1.commit_message || iss.summary || "agent change"}`);
+        const sha = r1.repo_changes === false ? null : L.commitPaths(rp, `${o.wip ? `WIP(${issue}) ${o.wip}: ` : `${issue}: `}${r1.commit_message || iss.summary || "agent change"}`, r1.changed_files);
         if (typeof sha === "string" && sha.startsWith("failed:")) { const e = new Error(`git staging/commit failed: ${sha}`); e.command = "git add -u --; git ls-files --others --exclude-standard; git add -- <eligible paths>; git commit"; e.agentOut = sha; e.agentCode = 1; throw e; }
         const explicitCleanup = L.cleanupUnrequestedArtifacts(rp, { baseline: artifactBaseline, policy: runSettings.artifact_policy });
         if (explicitCleanup.removed.length) {
@@ -1135,15 +1158,15 @@ Jira: ${issue}` });
         wheres.push(`${runRepos.length > 1 ? rname(rp) + ": " : ""}Branch ${branch}${sha ? ` @ ${sha}` : " (no changes)"}${h.url ? ` PR ${h.url}${h.merged ? " (merged)" : ""}` : " (local, not pushed)"}${h.msg.length && !h.url ? ` - ${h.msg.join("; ")}` : ""}`);
         if (!r) r = { ...r1, commit: sha, workers: results }; else r = { ...r, summary: `${r.summary ?? ""}\n${r1.summary ?? ""}`, tests: [r.tests, r1.tests].filter(Boolean).join("\n"), tech_plan: [r.tech_plan, r1.tech_plan].filter(Boolean).join("\n"), workers: [...(r.workers ?? []), ...results] };
       }
-      repo = runRepos[0]; return { ...r, where: wheres.join("\n") };
+      repo = runRepos[0]; return { ...r, no_work_needed: expectedNoWork > 0 && noWorkReports.length === expectedNoWork ? { reason: noWorkReports.map((x) => `${x.repo}/${x.role}: ${x.reason}`).join("; "), evidence: noWorkReports.map((x) => `${x.repo}/${x.role}: ${x.evidence}`).join("; ") } : null, changed_files: [...new Set(changedPaths)], where: wheres.join("\n") };
     };
-    if (seg.kind === "code") { // Coding: the card is already in Coding (moved by advance), now the developer codes
+    if (seg.kind === "code") { // Working: the card is already in Working (moved by advance), now the developer codes
       const sv = L.loadPlan(st, issue);
-      // review feedback (In Review -> Coding): the SAME developer who coded it fixes it on the existing feature/<KEY> branch
+      // review feedback (In Review -> Working): the SAME developer who coded it fixes it on the existing feature/<KEY> branch
       const review = !!na.review_feedback;
       const dev = sv.developer || (review && L.codingDeveloper(sv, na.assigned_role, devRoles)) || L.pickDeveloper(devRoles, null, na.assigned_role, `${iss.summary} ${iss.description}`);
       const who = L.stageStaff(na, s0, { kind: "code", developer: dev });
-      if (review) { await jiraOps(issue); await say(false, L.reviewBackComment(dev)); log(`lean: ${issue} review feedback -> back to Coding, developer ${dev}`); }
+      if (review) { await jiraOps(issue); await say(false, L.reviewBackComment(dev)); log(`lean: ${issue} review feedback -> back to Working, developer ${dev}`); }
       // QC baseline (script, no tokens): run the repo's checks on the untouched tree so QC only blames new failures
       const baselines = { ...(sv.qc_baseline ?? {}) }, selfCheck = {};
       for (const rp of runRepos) {
@@ -1151,7 +1174,7 @@ Jira: ${issue}` });
         // Never create a local baseline for QC terminal checks. A pre-existing
         // failure is still a failed quality gate: In Review must only receive
         // a fresh successful terminal transcript.
-        selfCheck[rp] = L.needsSelfCheck(baselines[rp]); // no script check at all -> the developer runs the cheapest check itself (a failing baseline is ignored, not looped on)
+        selfCheck[rp] = ["code", "deletion"].includes(sv.work_kind ?? "code") && L.needsSelfCheck(baselines[rp]); // only implementation/deletion work gets a code self-check
       }
       const steps = review ? [sv.tech_plan ?? ""] : X.splitSteps(sv.tech_plan, Number(process.env.AH_CODE_STEPS ?? 3)), host1 = L.prSteps(na, seg).open || L.prSteps(na, seg).merge;
       let r = null;
@@ -1162,7 +1185,7 @@ Jira: ${issue}` });
         let done = ck.stage === s0 && (ck.running || ck.failed) ? [...(ck.code_done ?? [])] : [];
         // A stale checkpoint can claim every sub-step is done without a
         // durable implementation commit (for example after a worker crash).
-        // Never enter the evidence gate in that state: restart Coding at step 1.
+        // Never enter the evidence gate in that state: restart Working at step 1.
         if (done.length >= steps.length && !sv.commit && !ck.last_commit) {
           log(`lean: ${issue} coding checkpoint ${done.length}/${steps.length} has no commit; resetting to sub-step 1/${steps.length}`);
           done = [];
@@ -1183,18 +1206,44 @@ Jira: ${issue}` });
           : { summary: sv.summary ?? "resumed: all sub-steps were already committed", tests: sv.tests ?? "", commit: sv.commit ?? ck.last_commit ?? null, where: sv.where ?? `Branch ${branch}` };
       }
       if (!r) return;
+      if (r.no_work_needed) { const body = JSON.stringify(r.no_work_needed); await record("no_work_needed", body); await say(who, `NO WORK REMAINS\n${body}\nClosing from Working without inventing edits or a PR.`); L.savePlan(st, issue, { summary: r.no_work_needed.reason, work_kind: "no_change", repo_changed: false, where: r.where }); if (!(await advance(s0, "done"))) return; continue; }
+      const completionWorkKind = r.work_kind ?? sv.work_kind ?? (r.commit ? "code" : "no_change");
       const evidencePolicy = { ...(na.implementation_policy ?? na.workflow_policy?.implementation ?? {}), allow_missing_tests: qcAhead, allow_no_commit: !(runSettings.evidence_actions ?? []).includes("history_commit") };
       const evidence = L.implementationEvidence(r, r.commit, r.where, evidencePolicy);
       if (!evidence.ok) { const e = new Error(`implementation evidence gate failed: ${evidence.reasons.join("; ")}`); e.command = "coding worker + local commit + required build/test"; e.agentCode = 1; e.agentOut = JSON.stringify({ summary: r.summary ?? "", tests: r.tests ?? "", commit: r.commit ?? null, where: r.where ?? "", reasons: evidence.reasons }); throw e; }
-      L.savePlan(st, issue, { tech_plan: sv.tech_plan ?? r.tech_plan, summary: r.summary, tests: r.tests, commit: r.commit, branch, repos: runRepos, developer: dev, qc_baseline: baselines, where: r.where, implementation_evidence: evidence });
+      L.savePlan(st, issue, { tech_plan: sv.tech_plan ?? r.tech_plan, summary: r.summary, tests: r.tests, commit: r.commit, repo_changed: !!r.commit, changed_files: r.changed_files ?? [], work_kind: completionWorkKind, branch, repos: runRepos, developer: dev, qc_baseline: baselines, where: r.where, implementation_evidence: evidence });
       await say(who, [review ? "CODE (review feedback)" : "CODE", !sv.tech_plan && r.tech_plan && `Tech plan:\n${r.tech_plan}`, `Summary: ${r.summary ?? ""}`, r.tests && `Checks: ${r.tests}`, r.where].filter(Boolean).join("\n"));
-      const art = (k) => ({ tech_plan: r.tech_plan, pr: `${r.summary}\n${r.where}`, qc_pass: r.tests || r.summary, note: `${r.summary}\n${r.tests ?? ""}\n${r.where}` }[k] ?? r.summary);
+      const art = (k) => ({ tech_plan: r.tech_plan, pr: `${r.summary}\n${r.where}`, qc_pass: r.tests || r.summary, note: `Work kind: ${completionWorkKind}\nRepository changes: ${r.commit ? "yes" : "no"}\n${r.summary}\n${r.tests ?? ""}\nAcceptance criteria and deliverable evidence: ${r.implementation_evidence?.summary ?? r.implementation_evidence?.where ?? "see task summary"}\n${r.where}` }[k] ?? r.summary);
       const to = seg.moves[0];
       if (to) { const need = L.neededArtifact(s0, to); if (need) await record(need, art(need)); if (!(await advance(s0, to, art))) return; }
       continue;
     }
-    if (seg.kind === "qc") { // QC by script: diagnose exact evidence; route only confirmed task regressions to Coding
+    if (seg.kind === "qc") { // QC by work kind: test code changes; review non-code deliverables directly
       const who = L.stageStaff(na, s0, { kind: "qc" });
+      const workState = L.loadPlan(st, issue), effectiveWorkKind = workState.work_kind ?? (workState.repo_changed === false ? "no_change" : "code");
+      const configuredQc = na.qc_policy?.checks ?? [];
+      const requiredQc = configuredQc.filter((x) => x.required !== false);
+      const nonCodeReview = ["configuration", "documentation", "design", "content", "external", "analysis", "research", "no_change"].includes(effectiveWorkKind) && !requiredQc.length;
+      if (nonCodeReview) {
+        const reviews = [];
+        for (const rp of runRepos) {
+          const files = filesOf(rp), scope = `${iss.summary} ${iss.description} ${workState.tech_plan ?? ""} ${workState.summary ?? ""}`;
+          const hints = L.fileHints(files, scope), changed = (workState.changed_files ?? []).filter((f) => !runRepos.length || runRepos.length === 1 || f.startsWith(`${rname(rp)}::`)).map((f) => f.includes("::") ? f.slice(f.indexOf("::") + 2) : f);
+          const relevant = [...new Set([...changed, ...hints])].slice(0, 10);
+          const review = await leanModel("qc_review", issue, s0, L.qcReviewPrompt(iss, { plan: workState.tech_plan, summary: workState.summary, files: relevant, snippets: L.fileSnippets(rp, relevant.slice(0, 6)) }), na.qc_policy?.owner ?? "qc-lead", L.contextOf({ brief: await brief(na.qc_policy?.owner ?? "qc-lead"), habits }));
+          const item = { repo: rname(rp), summary: review.summary ?? (review.pass ? "Review passed" : "Review failed"), acceptance_criteria: Array.isArray(review.acceptance_criteria) ? review.acceptance_criteria.filter((x) => String(x ?? "").trim()) : [], evidence: String(review.evidence ?? "").trim() };
+          if (review.pass === true && (!item.acceptance_criteria.length || !item.evidence)) throw new Error("Non-code QC pass needs acceptance criteria and review evidence");
+          if (review.pass !== true) {
+            const rows = Array.isArray(review.findings) && review.findings.length ? review.findings.map((f, i) => ({ id: f.id || `deliverable-${i + 1}`, reproduction: `Review ${f.file || relevant.join(", ") || "task deliverable"}`, expected: f.expected || "The deliverable meets the acceptance criteria", actual: f.actual || review.summary || "The reviewer could not confirm the criteria", evidence: f.evidence || review.summary || "Review did not pass" })) : [{ id: "deliverable-review", reproduction: `Review ${relevant.join(", ") || "task deliverable"}`, expected: "The deliverable meets the acceptance criteria", actual: review.summary || "The reviewer could not confirm the criteria", evidence: "QC review did not pass" }];
+            const txt = JSON.stringify({ findings: rows }); await record("qc_fail", txt); await say(who, `QC FAIL\n${txt}`);
+            const back = (na.flow_stages ?? []).includes("reopened") ? "reopened" : "coding"; if ((na.flow_stages ?? []).includes(back) && !(await advance(s0, back))) return; return;
+          }
+          reviews.push(item);
+        }
+        const report = { outcome: "pass", work_kind: effectiveWorkKind, deliverable: reviews.map((x) => `${x.repo}: ${x.summary}`).join("; "), acceptance_criteria: reviews.flatMap((x) => x.acceptance_criteria), evidence: reviews.map((x) => `${x.repo}: ${x.evidence}`).join("; ") };
+        const txt = JSON.stringify(report); await record("qc_pass", txt); await say(who, `QC PASS (DELIVERABLE REVIEW)\n${txt}`);
+        const to = seg.moves[0]; if (to && !(await advance(s0, to, () => txt))) return; continue;
+      }
       const checklistState = L.loadPlan(st, issue);
       if (!checklistState.qc_checklist_posted) {
         const checklist = L.qcChecklist(na.qc_policy ?? {}, { issue });
@@ -1296,7 +1345,7 @@ Jira: ${issue}` });
         return;
       }
       if (currentSignature && failureHistory.has(currentSignature)) {
-        await blockQc("QC has returned the same diagnostic failure evidence already seen on this task; there is no measurable progress, so Coding will not repeat the same fix.", remediationReport(res), currentSignature);
+        await blockQc("QC has returned the same diagnostic failure evidence already seen on this task; there is no measurable progress, so Working will not repeat the same fix.", remediationReport(res), currentSignature);
         return;
       }
       if (currentSignature && failureHistory.size) {
@@ -1304,7 +1353,7 @@ Jira: ${issue}` });
         const diagnosis = await leanModel("diagnosis", issue, s0, L.qcDiagnosisPrompt(iss, { plan, implementation: implementationDiff(), failures: remediationReport(res) }), diagnosisRole, L.contextOf({ brief: await brief(diagnosisRole), habits }));
         const diagnosisText = [`Classification: ${diagnosis.classification ?? "uncertain"}`, `Root cause: ${diagnosis.root_cause ?? "not established"}`, `Evidence: ${diagnosis.evidence ?? "not supplied"}`, diagnosis.fix_direction && `Focused fix: ${diagnosis.fix_direction}`, diagnosis.question && `Question: ${diagnosis.question}`].filter(Boolean).join("\n");
         if (diagnosis.classification !== "task_regression" || !diagnosis.root_cause || !diagnosis.evidence || !diagnosis.fix_direction) {
-          await blockQc(`QC recovery found no evidence-backed task regression after prior remediation; refusing speculative Coding.`, `${diagnosisText}\n\n${remediationReport(res)}`, currentSignature);
+          await blockQc(`QC recovery found no evidence-backed task regression after prior remediation; refusing speculative Working.`, `${diagnosisText}\n\n${remediationReport(res)}`, currentSignature);
           return;
         }
       }
@@ -1316,7 +1365,7 @@ Jira: ${issue}` });
         const diagnosis = await leanModel("diagnosis", issue, s0, L.qcDiagnosisPrompt(iss, { plan, implementation: implementationDiff(), failures: report }), qcRole, L.contextOf({ brief: await brief(qcRole), habits }));
         const diagnosisText = [`Classification: ${diagnosis.classification ?? "uncertain"}`, `Root cause: ${diagnosis.root_cause ?? "not established"}`, `Evidence: ${diagnosis.evidence ?? "not supplied"}`, diagnosis.fix_direction && `Focused fix: ${diagnosis.fix_direction}`, diagnosis.question && `Question: ${diagnosis.question}`].filter(Boolean).join("\n");
         if (diagnosis.classification !== "task_regression" || !diagnosis.root_cause || !diagnosis.evidence || !diagnosis.fix_direction) {
-          await blockQc(`QC diagnosis is ${diagnosis.classification ?? "uncertain"}; Coding will not make a speculative change.`, `${diagnosisText}\n\n${report}`, currentSignature);
+          await blockQc(`QC diagnosis is ${diagnosis.classification ?? "uncertain"}; Working will not make a speculative change.`, `${diagnosisText}\n\n${report}`, currentSignature);
           return;
         }
         await say(who, `QC FAIL — evidence-based remediation\n${diagnosisText}\n\n${report}`);
@@ -1325,19 +1374,19 @@ Jira: ${issue}` });
         // QC remediation is an engineering loop; Reopened is a user-facing
         // post-Done state and may be user-only in Jira workflows.
         const recoveryKey = codingKey;
-        // Some Jira workflows intentionally disallow QC -> Coding (and make
+        // Some Jira workflows intentionally disallow QC -> Working (and make
         // Reopened user-only). Keep the Jira card in its current QC status,
-        // persist the Coding checkpoint, and run the remediation worker
+        // persist the Working checkpoint, and run the remediation worker
         // directly. The next successful QC can transition normally.
         if (!(await advance(s0, recoveryKey))) {
-          log(`lean: ${issue} Jira did not allow ${s0} -> ${recoveryKey}; running Coding remediation from checkpoint`);
+          log(`lean: ${issue} Jira did not allow ${s0} -> ${recoveryKey}; running Working remediation from checkpoint`);
           X.ckptSave(st, issue, { stage: codingKey, running: true, workflow_blocked: false, last_error: null });
         }
         const sv = L.loadPlan(st, issue), dev = sv.developer ?? "tech-lead", dwho = L.stageStaff(na, codingKey, { kind: "code", developer: dev });
         const r = await codeOnce(codingKey, { techPlan: sv.tech_plan, dev, qcRemediation: JSON.stringify(diagnosis), feedback: report, who: dwho });
         if (!r) return;
         if (!r.qc_root_cause || !r.qc_fix_for) {
-          await blockQc("Coding did not confirm the diagnosed root cause and target check in its implementation evidence; no further remediation will run.", `${diagnosisText}\n${report}`, currentSignature);
+          await blockQc("Working did not confirm the diagnosed root cause and target check in its implementation evidence; no further remediation will run.", `${diagnosisText}\n${report}`, currentSignature);
           return;
         }
         L.savePlan(st, issue, { summary: `${sv.summary ?? ""}\nFix: ${r.summary ?? ""}`, commit: r.commit, where: r.where });
@@ -1347,7 +1396,7 @@ Jira: ${issue}` });
         if (res.some((x) => !x.v.pass)) {
           const nextSignature = failureSignature(res);
           if (failureHistory.has(nextSignature)) {
-            await blockQc("The focused Coding change did not resolve the failure, and QC has returned to diagnostic evidence already seen on this task; stopping the repeated remediation cycle.", remediationReport(res), nextSignature);
+            await blockQc("The focused Working change did not resolve the failure, and QC has returned to diagnostic evidence already seen on this task; stopping the repeated remediation cycle.", remediationReport(res), nextSignature);
             return;
           }
           const diagnosisRole = L.stageRole(na, s0);
@@ -1368,14 +1417,14 @@ Jira: ${issue}` });
       const sv = L.loadPlan(st, issue);
       const ck = X.ckptLoad(st, issue) ?? {};
       const workerEvidence = [sv.tests, sv.summary, sv.where, sv.implementation_evidence].filter(Boolean).join("\n");
-      // Old Coding evidence is historical context, not the QC result. Once a
+      // Old Working evidence is historical context, not the QC result. Once a
       // configured terminal check has produced a result, only that fresh
       // result decides the gate; otherwise an old "not run" note can make
       // every later QC attempt fail forever.
       const executionBlocked = !res.length && /(?:sandbox_apply|sandbox-exec|operation not permitted|permission denied|chưa chạy được|not run|không chạy)/i.test(workerEvidence);
       // Reopened retries may legitimately have no new commit. Preserve the
       // implementation evidence from the task branch history instead of
-      // checking only the current Coding worker result.
+      // checking only the current Working worker result.
       const historyCommitRequired = (runSettings.evidence_actions ?? []).includes("history_commit");
       const historyCommit = historyCommitRequired && (sv.commit || ck.last_commit || runRepos.map((rp) => {
         try { return L.git(rp, "rev-list", "--max-count=1", "--no-merges", branch, "--not", "develop", "main"); }
@@ -1385,10 +1434,10 @@ Jira: ${issue}` });
         const txt = [qcText(res), executionBlocked && "QC execution evidence invalid: worker was blocked before running the requested checks."] .filter(Boolean).join("\n");
         await record("qc_fail", txt);
         if (codingKey) {
-          await blockQc("QC is still failing after remediation; no actionable Coding role is available for this checkpoint.", remediationReport(res), currentSignature);
+          await blockQc("QC is still failing after remediation; no actionable Working role is available for this checkpoint.", remediationReport(res), currentSignature);
           return;
         }
-        await blockQc("QC failed and the workflow has no configured Coding remediation stage.", txt, currentSignature);
+        await blockQc("QC failed and the workflow has no configured Working remediation stage.", txt, currentSignature);
         return;
       }
       L.savePlan(st, issue, { qc_remediation_blocked: null, qc_failure_signature: null, qc_failure_history: [] });
@@ -1406,7 +1455,7 @@ Jira: ${issue}` });
         const failed = checkRows.filter((x) => !x.ok).map((x) => x.id).join(", ");
         const failureText = `QC evidence gate failed: ${failed}`;
         await record("qc_fail", failureText);
-        await blockQc(`QC evidence gate failed (${failed}); this is an evidence/configuration mismatch, not a Coding instruction.`, failureText, currentSignature);
+        await blockQc(`QC evidence gate failed (${failed}); this is an evidence/configuration mismatch, not a Working instruction.`, failureText, currentSignature);
         return;
       }
       await record("qc_report", JSON.stringify(qcReport));
@@ -1565,8 +1614,8 @@ async function reconcile(company, sinceIso, forceActive = false) {
         }
         await applyJiraRules({ company, issue: x.key, event: x.status?.toLowerCase() === "done" ? "issue_transitioned" : "label_added" });
         // The server checkpoint, not a Jira-status-to-stage guess, is the
-        // source of truth. This resumes Product Work/BA/Planning/Pre Coding,
-        // Coding, QC, Reopened and custom active stages at their exact stage.
+        // source of truth. This resumes Product Work/BA/Planning/PreWork,
+        // Working, QC, Reopened and custom active stages at their exact stage.
         let ck = X.ckptLoad(st, x.key);
         // v2026111304 used a fixed retry count. That policy is superseded by
         // evidence-based diagnosis; release only those legacy cap blocks so an
@@ -1591,7 +1640,7 @@ async function reconcile(company, sinceIso, forceActive = false) {
         }
         // Server next_action describes the workflow's next legal action, but
         // during restart it may be ahead of a local QC checkpoint (for example
-        // the server was advanced to Coding while QC was mid-run). Never let
+        // the server was advanced to Working while QC was mid-run). Never let
         // that stale/advanced server stage bypass locally persisted QC work.
         const planCheckpoint = L.loadPlan(st, x.key);
         const localStage = String(ck?.stage ?? "").toLowerCase();
