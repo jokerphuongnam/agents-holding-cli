@@ -7,10 +7,11 @@ import "./kc-guard.mjs"; // pin keychain calls to the real login keychain (never
 import * as O from "./outbound.mjs";
 import { localMeta, crawlPublic } from "./skills.mjs";
 import { execFileSync, spawn } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync, openSync, closeSync, unlinkSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync, openSync, closeSync, unlinkSync } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { homedir, hostname } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import * as L from "./lean.mjs";
 import { enrichBriefWithPackSkills, enrichBriefWithLocalSkills } from "./pack-skills.mjs";
 import * as P from "./providers/index.mjs";
@@ -612,6 +613,51 @@ async function useCtx(p) {
 }
 let runSettings = {};
 
+function companyHistoryRuntime(project, slug) {
+  const agents = join(project, ".agents");
+  try {
+    const dirs = readdirSync(agents).filter((name) => name === slug || name === `${slug}-company` || name.startsWith(`${slug}-company-`));
+    for (const name of dirs) {
+      const root = join(agents, name);
+      if (!existsSync(join(root, "COMPANY.md")) && !existsSync(join(root, "COMPANY_BOOT.md"))) continue;
+      const script = join(root, "system", "install", "work_history.py");
+      if (existsSync(script)) return { root, script };
+    }
+  } catch {}
+  return null;
+}
+
+async function beginWorkHistory(issue, event, stage) {
+  const companySlug = company, project = repo;
+  const runtime = companyHistoryRuntime(project, companySlug);
+  if (!runtime) return null;
+  const room = `listener-${String(issue).toLowerCase().replace(/[^a-z0-9-]/g, "-")}-${Date.now()}-${randomUUID().slice(0, 8)}`;
+  const historyCli = join(dirname(fileURLToPath(import.meta.url)), "history.mjs");
+  try {
+    execFileSync("python3", [runtime.script, "init", "--company", runtime.root], { cwd: project, stdio: "ignore" });
+    try { execFileSync(process.execPath, [historyCli, "pull", "--company", companySlug], { cwd: project, stdio: "ignore" }); }
+    catch (e) { log(`history pull ${issue}: ${String(e.stderr || e.message).trim()}`); }
+    const userLine = `Jira Listener chat start: ${issue} · event ${event ?? "unknown"} · stage ${stage ?? "unknown"}`;
+    execFileSync("python3", [runtime.script, "say", "--company", runtime.root, "--room-name", room, "--who", "user", "--message", userLine, "--thread", "jira-listener", "--source", project], { cwd: project, stdio: "ignore" });
+    return { ...runtime, room, historyCli, company: companySlug, project };
+  } catch (e) {
+    log(`history start ${issue}: ${String(e.stderr || e.message).trim()}`);
+    return null;
+  }
+}
+
+async function finishWorkHistory(lifecycle, issue, stage, code) {
+  if (!lifecycle) return;
+  try {
+    const endNote = `Chat ended: ${issue} · stage ${stage ?? "unknown"} · exit ${code ?? "unknown"} · project ${lifecycle.project} · company ${lifecycle.root}`;
+    execFileSync("python3", [lifecycle.script, "say", "--company", lifecycle.root, "--room-name", lifecycle.room, "--who", "jira-listener", "--message", endNote, "--thread", "jira-listener"], { cwd: lifecycle.project, stdio: "ignore" });
+    const result = execFileSync("python3", [lifecycle.script, "capture-project", "--company", lifecycle.root, "--project", lifecycle.project, "--room-name", lifecycle.room, "--staff", "jira-listener", "--message", endNote], { cwd: lifecycle.project, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+    log(`history captured ${issue} ${lifecycle.room} ${result}`);
+    try { execFileSync(process.execPath, [lifecycle.historyCli, "push", "--company", lifecycle.company], { cwd: lifecycle.project, stdio: "ignore" }); }
+    catch (e) { log(`history push ${issue}: ${String(e.stderr || e.message).trim()}`); }
+  } catch (e) { log(`history capture ${issue}: ${String(e.stderr || e.message).trim()}`); }
+}
+
 async function run(p, depth = 0) {
   const issue = p.issue ?? p.task_id ?? "";
   if (depth === 0 && !(await useCtx(p))) return;
@@ -654,7 +700,13 @@ async function run(p, depth = 0) {
   // missed Jira event.  Let the local runner continue from the reconciled
   // checkpoint even when the previous next_action response carried waiting.
   if ((na?.waiting || p.workflow_error) && p.event !== "manual" && !STATUS_RECOVERY_EVENTS.has(p.event)) { await announceWaiting(issue, na, p); log(`waiting ${issue}: ${na?.stage ?? "workflow-invalid"}`); return; }
-  if (lean && na) return leanRun(p, na, depth);
+  const lifecycle = await beginWorkHistory(issue, p.event, na?.stage ?? p.stage);
+  if (lean && na) {
+    let code = 0;
+    try { return await leanRun(p, na, depth); }
+    catch (e) { code = 1; throw e; }
+    finally { await finishWorkHistory(lifecycle, issue, na?.stage ?? p.stage, code); }
+  }
   const model = process.env.AH_MODEL || na?.model || null;
   const chainTxt = na?.chain?.length ? ` Chain these stages in this run: ${na.chain.map((c) => c.name).join(" -> ")}.` : "";
   const jiraTxt = dryJira
@@ -673,7 +725,9 @@ async function run(p, depth = 0) {
   const gargs = grokArgs(prompt, sid, { resume, model });
   log("launch grok for", issue, resume ? "RESUME session" : "session", sid, model ? `model ${model}` : "", dryJira ? "(dry-jira)" : "", "->", out);
   const t0 = Date.now();
-  const code = await spawnGrok(gargs, out, issue, sid);
+  let code = 1;
+  try { code = await spawnGrok(gargs, out, issue, sid); }
+  finally { await finishWorkHistory(lifecycle, issue, na?.stage ?? p.stage, code); }
   const wall = Date.now() - t0;
   log("grok exited", code, "for", issue, `after ${Math.round(wall / 1000)}s`);
   if (resume && code !== 0 && Date.now() - t0 < 20000 && depth === 0) { // resume failed: fresh session with the compact server context

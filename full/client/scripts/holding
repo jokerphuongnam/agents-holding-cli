@@ -29,6 +29,7 @@ usage: holding <noun> <verb> [args]   (chat: /<noun> <verb> ...; no verb = list/
   staff run <staff> "<task>" [--proceed] | staff test <staff> | staff presets   (headless sub-agent runners, local LLMs too)
   staff add <role> --preset <id> [--model M]   attach a headless runner (no chat window)
   task list [all] | history [n] | plan <KEY> | set <KEY> --staff <role> | add "<description>" | split <KEY>   (add/split: in your agent)
+  history init|push|pull|sync | code timeline|diff|revert | plan record|log <JIRA-KEY> [--actor <role>]   (company work-history + plan revisions)
   provider list | set [staff ...] [--agent P --model M --effort E] | set --default <role> <provider> [model] [effort] | unset <role>
   skill add <staff> <skill> | skill remove <staff> <skill> | skill list [--custom]
   skill where|check|set <name> public|private|sync [--dry-run]|consent <name>|run <name> <script>
@@ -83,6 +84,7 @@ case " $* " in *" --all "*) case "$noun $verb" in "status "|"status --all"|"task
 case "$noun" in update|upgrade|help|document|docs|-h|--help) ;; *) [ "${AH_NO_UPDATE_CHECK:-}" = 1 ] || [ "${AH_HOOK_RUN:-}" = 1 ] || bash "$here/update.sh" --check 2>/dev/null </dev/tty || true ;; esac
 case "$noun" in
   terminal) exec node "$here/terminal.mjs" "$verb" "$@" ;;
+  history) exec node "$here/history.mjs" "$verb" "$@" ;;
   update|upgrade) exec bash "$here/update.sh" ${verb:+"$verb"} "$@" ;;
   uninstall) exec bash "$here/uninstall-local.sh" ${verb:+"$verb"} "$@" ;;
   codegraph|code-graph) case "${verb:-status}" in
