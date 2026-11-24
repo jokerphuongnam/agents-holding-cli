@@ -45,6 +45,9 @@ const onlyRepo = repoArg ? (() => {
 let repo = onlyRepo ?? process.cwd(); // current run's repo (one run at a time; set per run by useCtx)
 let runRepos = [repo];
 const once = args.includes("--once");
+const resumeActiveAfterUpdate = args.includes("--resume-active");
+const updateRecoveryDone = new Set();
+const taskWorkKind = (na) => String(na?.work_kind ?? na?.steps?.join(" ").match(/review the actual ([a-z_-]+) deliverable/i)?.[1] ?? "").toLowerCase();
 const base = process.env.AH_URL ?? "https://mznrffnvmhmiudvfuquk.supabase.co";
 const grokBin = process.env.GROK_BIN ?? "grok";
 const logDir = join(homedir(), "Library/Logs/agents-holding");
@@ -646,8 +649,17 @@ async function run(p, depth = 0) {
     }
   }
   if (na && runSettings.qc_policy) {
+    const localChecks = runSettings.qc_policy.checks;
+    const workKind = taskWorkKind(na);
+    const nonCodeWork = workKind && !["code", "configuration", "deletion"].includes(workKind);
+    const applicableLocalChecks = Array.isArray(localChecks) ? localChecks.filter((spec) => {
+      const kinds = Array.isArray(spec.work_kinds) ? spec.work_kinds : [];
+      // A known non-code deliverable must opt into a matching check. Generic
+      // repo tests cannot leak back in through a local company override.
+      return nonCodeWork ? kinds.includes(workKind) : (!kinds.length || kinds.includes(workKind));
+    }) : na.qc_policy?.checks;
     na = { ...na, qc_policy: { ...(na.qc_policy ?? {}), ...runSettings.qc_policy,
-      checks: runSettings.qc_policy.checks ?? na.qc_policy?.checks } };
+      checks: applicableLocalChecks ?? na.qc_policy?.checks } };
   }
   if (na && !(await ensureAgentOwnedAssignment(issue, na))) return;
   // Reconcile is not a passive notification: it is the recovery path after a
@@ -1215,7 +1227,7 @@ Jira: ${issue}` });
         for (const rp of runRepos) {
           const configuredChecks = na.qc_policy?.checks ?? [];
           const detected = L.detectChecks(rp);
-          const checks = configuredChecks.length
+          const checks = Array.isArray(na.qc_policy?.checks)
             ? configuredChecks.map((spec) => {
                 const id = String(spec.id ?? spec.name ?? "check");
                 const command = spec.command ?? (spec.commands ?? []).join(" && ");
@@ -1259,7 +1271,9 @@ Jira: ${issue}` });
         return rows;
       };
       const qcText = (res) => res.map((x) => `${runRepos.length > 1 ? rname(x.rp) + ": " : ""}${x.v.text}`).join("\n");
-      for (const rp of runRepos) L.ensureBranch(rp, branch);
+      const workKind = taskWorkKind(na);
+      const automatedChecksConfigured = Array.isArray(na.qc_policy?.checks) && na.qc_policy.checks.length > 0;
+      if (automatedChecksConfigured) for (const rp of runRepos) L.ensureBranch(rp, branch);
       let res = await runQc();
       const failureRows = (rows) => rows.flatMap(({ rp, v }) => v.failed.map((f) => ({ repo: rname(rp), name: f.name, command: f.command ?? f.name, runner: f.runner ?? "unknown", exit_code: f.exit_code ?? null, failure_kind: f.failure_kind ?? "check", evidence: String(f.out ?? "").replace(/\u001b\[[0-9;]*m/g, "").replace(/\r/g, "").trim().slice(-6000) })));
       const failureSignature = (rows) => {
@@ -1372,7 +1386,7 @@ Jira: ${issue}` });
       // configured terminal check has produced a result, only that fresh
       // result decides the gate; otherwise an old "not run" note can make
       // every later QC attempt fail forever.
-      const executionBlocked = !res.length && /(?:sandbox_apply|sandbox-exec|operation not permitted|permission denied|chưa chạy được|not run|không chạy)/i.test(workerEvidence);
+      const executionBlocked = (!workKind || ["code", "configuration", "deletion"].includes(workKind)) && !res.length && /(?:sandbox_apply|sandbox-exec|operation not permitted|permission denied|chưa chạy được|not run|không chạy)/i.test(workerEvidence);
       // Reopened retries may legitimately have no new commit. Preserve the
       // implementation evidence from the task branch history instead of
       // checking only the current Coding worker result.
@@ -1398,7 +1412,20 @@ Jira: ${issue}` });
       await say(who, `QC PASS\n${txt}${where ? `\n${where}` : ""}`);
       if (h.msg.some((m) => /NOT done|failed/.test(m))) return;
       const digest = (s) => `sha256:${createHash("sha256").update(String(s ?? "")).digest("hex")}`;
-      const configured = na.qc_policy?.checks ?? ["implementation_command", "build_install", "tests", "working_tree_artifact_policy", ...(historyCommitRequired ? ["local_commit"] : [])].map((id) => ({ id, required: true }));
+      const configured = Array.isArray(na.qc_policy?.checks) ? na.qc_policy.checks
+        : ["implementation_command", "build_install", "tests", "working_tree_artifact_policy", ...(historyCommitRequired ? ["local_commit"] : [])].map((id) => ({ id, required: true }));
+      if (!configured.length && workKind && !["code", "configuration", "deletion"].includes(workKind)) {
+        const summary = String(sv.summary ?? "").trim();
+        const evidence = [qcText(res), sv.tests, sv.where].filter(Boolean).join("\n") || summary;
+        const review = { outcome: "pass", work_kind: workKind, deliverable: summary || String(iss.description ?? issue),
+          acceptance_criteria: [`Reviewed the requested ${workKind} deliverable against the task request`, `No unrelated automated tests or PR required for ${workKind} work`],
+          evidence: evidence || `Reviewed ${issue} work summary and acceptance criteria.` };
+        await record("qc_pass", JSON.stringify(review));
+        await say(who, `QC PASS\n${JSON.stringify(review)}`);
+        const to = seg.moves[0];
+        if (to && !(await advance(s0, to, () => JSON.stringify(review)))) return;
+        continue;
+      }
       const checksOut = res.flatMap((x) => [...x.v.passed, ...x.v.failed]);
       const checkRows = configured.map((spec) => { const id = String(spec.id), match = checksOut.find((x) => (id.includes("static") && /lint|typecheck|analy/i.test(x.name)) || (id === "build" && /build|install/i.test(x.name)) || (id.includes("unit") && /test|unit/i.test(x.name)) || (id.includes("integration") && /integration|smoke/i.test(x.name))); const x = id === "implementation_command" ? { command: "coding worker result + implementation evidence", ok: !!(sv.implementation_evidence || historyCommit), out: sv.implementation_evidence?.summary ?? (historyCommit ? `branch history commit ${historyCommit}` : "missing") } : id === "artifact-check" || id === "working_tree_artifact_policy" ? { command: "git status / artifact policy", ok: !!sv.where, out: sv.where ?? "missing" } : id === "local_commit" ? { command: "git history (local, no push)", ok: !!historyCommit, out: historyCommit || "no implementation commit found on task branch" } : match ? { command: match.name, ok: !!match.ok, out: match.out } : { command: spec.commands?.join(" && ") || spec.tool || id, ok: false, out: "missing configured evidence" }; return { id, ...x, exit_code: x.ok ? 0 : 1, stdout_digest: digest(x.out), stderr_digest: digest(x.ok ? "" : x.out), commit: historyCommit || sv.commit || "", tree: digest(sv.where ?? ""), artifacts: [sv.where, historyCommit || sv.commit].filter(Boolean), timestamp: new Date().toISOString(), actor: "agents-holding-qc", model: "script", ok: !!x.ok }; });
       const qcReport = { timestamp: new Date().toISOString(), actor: "agents-holding-qc", developer: sv.developer ?? null, model: "script", pass: checkRows.every((x) => x.ok), checks: checkRows };
@@ -1528,6 +1555,7 @@ const recoveryWakeStatus = new Map();
 const RECOVERABLE_JIRA_STATUSES = new Set(["in progress", "product work", "ba question", "planned", "pre coding", "reopened", "coding", "qc", "in review"]);
 async function reconcile(company, sinceIso, forceActive = false) {
   if (!jira || reconciling[company]) return; reconciling[company] = true;
+  const updateRecovery = forceActive && resumeActiveAfterUpdate && !updateRecoveryDone.has(company);
   try {
     const stc = L.readStatus(homedir())?.companies?.[company] ?? {};
     const since = [sinceIso, stc.last_event_at].filter(Boolean).sort()[0] ?? new Date(Date.now() - 3600e3).toISOString();
@@ -1606,6 +1634,13 @@ async function reconcile(company, sinceIso, forceActive = false) {
           ck = X.ckptLoad(st, x.key);
           log(`recovery ${x.key}: cleared QC stop after explicit user Jira move to ${idleStatus}; keeping stage QC`);
         }
+        if (updateRecovery && ck?.qc_remediation_blocked) {
+          L.savePlan(st, x.key, { qc_remediation_blocked: null, qc_failure_signature: null, qc_failure_history: [] });
+          X.ckptSave(st, x.key, { qc_remediation_blocked: null, running: false, failed: null, last_error: null });
+          if (jira) await jira.labels(x.key, [], [X.BLOCKED_LABEL]).catch((e) => log(`update recovery block cleanup failed for ${x.key}: ${e.message}`));
+          ck = X.ckptLoad(st, x.key);
+          log(`update recovery ${x.key}: cleared QC execution stop for explicit holding update`);
+        }
         const recoveryKey = `${company}/${x.key}`;
         const dispatchKey = `${idleStatus}|${resumeAction?.stage ?? ""}|${x.updated ?? ""}`;
         const mapKey = `${recoveryKey}:resume`;
@@ -1615,7 +1650,7 @@ async function reconcile(company, sinceIso, forceActive = false) {
         const shouldWake = userResumed || (idleRecovery && (forceActive || staleRun || !alreadyDispatched));
         if (shouldWake) {
           recoveryWakeStatus.set(mapKey, dispatchKey);
-          const event = userResumed ? "user_move" : staleRun ? "reconcile" : "jira_startup_scan";
+          const event = userResumed ? "user_move" : updateRecovery ? "manual" : staleRun ? "reconcile" : "jira_startup_scan";
           const recoveryStage = recoveryAction.stage;
           log(`reconcile ${x.key}: resuming ${checkpointStage ? "local QC evidence checkpoint" : "server checkpoint"} at ${recoveryStage} (Jira status ${idleStatus || "?"}${forceActive ? ", startup recovery" : ""})`);
           wake({ company, issue: x.key, event, stage: recoveryStage, updated: x.updated });
@@ -1624,6 +1659,7 @@ async function reconcile(company, sinceIso, forceActive = false) {
         }
       }
     }
+    if (updateRecovery) updateRecoveryDone.add(company);
     log(`reconcile ${company}: ${n} change(s) ${forceActive ? "from active recovery scan" : `since ${since}`}`);
     L.writeStatus(homedir(), { companies: { [company]: { reconciled_at: new Date().toISOString(), reconciled: n } } });
   } finally { reconciling[company] = false; }

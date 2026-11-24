@@ -200,21 +200,28 @@ if command -v launchctl >/dev/null 2>&1; then
 fi
 restore_listener() {
   [ "$listener_was_active" = 1 ] || return 0
+  local resume_active="${1:-1}"
   local script="$here/launchd/listener.sh" repo auto
   [ -x "$script" ] || script="${AH_INSTALL_DIR:-$HOME/.agents-holding}/scripts/launchd/listener.sh"
   echo "   restoring scoped Jira Listeners after update" >&2
+  local restore_rc=0
+  # This flag reaches only processes created by this explicit update.
+  [ "$resume_active" = 1 ] && launchctl setenv AH_UPDATE_RECOVERY 1
   while IFS='|' read -r repo auto; do
     [ -n "$repo" ] || continue
     if ! bash "$script" start --repo "$repo" >/dev/null 2>&1; then
       echo "ERROR: holding update could not restore listener for $repo" >&2
-      return 1
+      restore_rc=1
+      continue
     fi
     [ "$auto" = 1 ] && bash "$script" autostart on --repo "$repo" >/dev/null 2>&1 || true
   done < "$listener_state"
+  [ "$resume_active" = 1 ] && launchctl unsetenv AH_UPDATE_RECOVERY
+  return "$restore_rc"
 }
 if [ "$listener_was_active" = 1 ]; then
   update_rc=0
-  trap 'rc=$?; trap - EXIT; if [ "$rc" -ne 0 ]; then restore_listener || rc=1; fi; exit "$rc"' EXIT
+  trap 'rc=$?; trap - EXIT; if [ "$rc" -ne 0 ]; then restore_listener 0 || rc=1; fi; exit "$rc"' EXIT
 fi
 root="$(git -C "$here" rev-parse --show-toplevel 2>/dev/null || true)"
 echo "1/4 client scripts ($before_raw)"

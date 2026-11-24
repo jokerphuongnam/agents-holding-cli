@@ -63,6 +63,11 @@ if [ -f "$HOME/.config/agents-holding/jira.json" ] && ! grep -q '"oauth"[[:space
   fi
 fi
 export AH_JIRA_BASE_URL AH_JIRA_EMAIL AH_JIRA_TOKEN
+# `holding update` marks only the listener processes it restarts as an explicit
+# user action. Resume active tasks once; ordinary startup stays passive.
+if [ "${AH_UPDATE_RECOVERY:-}" = 1 ]; then
+  exec node "$AH_RUNNER_SCRIPT" --repo "$AH_REPO_DIR" --resume-active
+fi
 # The native Rust listener currently supports Jira API-token Basic Auth. OAuth
 # credentials are handled by the JS listener, which refreshes the Keychain token
 # and uses Atlassian's cloud API correctly.
